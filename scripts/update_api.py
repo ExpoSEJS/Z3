@@ -177,6 +177,7 @@ def def_Type(var, c_type, py_type):
     exec('%s = %s' % (var, next_type_id), globals())
     Type2Str[next_type_id]   = c_type
     Type2PyStr[next_type_id] = py_type
+    Type2JsStr[next_type_id] = py_type
     next_type_id    = next_type_id + 1
 
 def def_Types():
@@ -967,6 +968,7 @@ API2Id = {}
 def def_API(name, result, params):
     global API2Id, next_id
     global log_h, log_c
+    mk_js_binding(name, result, params)
     mk_py_binding(name, result, params)
     reg_dotnet(name, result, params)
     API2Id[next_id] = name

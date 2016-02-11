@@ -36,7 +36,7 @@ namespace smt {
         bool is_select(app const* n) const { return n->is_app_of(get_id(), OP_SELECT); }
         bool is_default(app const* n) const { return n->is_app_of(get_id(), OP_ARRAY_DEFAULT); }
         bool is_const(app const* n) const { return n->is_app_of(get_id(), OP_CONST_ARRAY); }
-        bool is_array_ext(app const * n) const { return n->is_app_of(get_id(), OP_ARRAY_EXT_SKOLEM); }
+        bool is_array_ext(app const * n) const { return n->is_app_of(get_id(), OP_ARRAY_EXT); }
         bool is_as_array(app const * n) const { return n->is_app_of(get_id(), OP_AS_ARRAY); }
         bool is_array_sort(sort const* s) const { return s->is_sort_of(get_id(), ARRAY_SORT); }
         bool is_array_sort(app const* n) const { return is_array_sort(get_manager().get_sort(n)); }
@@ -58,8 +58,8 @@ namespace smt {
         unsigned get_dimension(sort* s) const;
         
         ptr_vector<enode>                   m_axiom1_todo;
-        svector<std::pair<enode*, enode*> > m_axiom2_todo;
-        svector<std::pair<enode*, enode*> > m_extensionality_todo;
+        enode_pair_vector                   m_axiom2_todo;
+        enode_pair_vector                   m_extensionality_todo;
 
         void assert_axiom(unsigned num_lits, literal * lits);
         void assert_axiom(literal l1, literal l2);
@@ -181,8 +181,8 @@ namespace smt {
         bool is_unspecified_default_ok() const;
         void collect_defaults();
         void collect_selects();
-        void propagate_select_to_store_parents(enode * r, enode * sel, svector<enode_pair> & todo);
-        void propagate_selects_to_store_parents(enode * r, svector<enode_pair> & todo);
+        void propagate_select_to_store_parents(enode * r, enode * sel, enode_pair_vector & todo);
+        void propagate_selects_to_store_parents(enode * r, enode_pair_vector & todo);
         void propagate_selects();
         select_set * get_select_set(enode * n);
         virtual void finalize_model(model_generator & m);

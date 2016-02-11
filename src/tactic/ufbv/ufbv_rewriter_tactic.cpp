@@ -26,18 +26,13 @@ class ufbv_rewriter_tactic : public tactic {
 
     struct imp {
         ast_manager & m_manager;
-        bool m_cancel;
 
-        imp(ast_manager & m, params_ref const & p) : m_manager(m),m_cancel(false) {
+        imp(ast_manager & m, params_ref const & p) : m_manager(m) {
             updt_params(p);
         }
         
         ast_manager & m() const { return m_manager; }
-        
-        void set_cancel(bool f) {
-            m_cancel = f;
-        }
-        
+                
         void operator()(goal_ref const & g, 
                         goal_ref_buffer & result, 
                         model_converter_ref & mc, 
@@ -80,7 +75,7 @@ class ufbv_rewriter_tactic : public tactic {
         void updt_params(params_ref const & p) {
         }
     };
-    
+
     imp *      m_imp;
     params_ref m_params;
 
@@ -93,7 +88,7 @@ public:
     virtual tactic * translate(ast_manager & m) {
         return alloc(ufbv_rewriter_tactic, m, m_params);
     }
-        
+
     virtual ~ufbv_rewriter_tactic() {
         dealloc(m_imp);
     }
@@ -108,29 +103,22 @@ public:
         insert_produce_models(r);
         insert_produce_proofs(r);
     }
-    
-    virtual void operator()(goal_ref const & in, 
-                            goal_ref_buffer & result, 
-                            model_converter_ref & mc, 
+
+    virtual void operator()(goal_ref const & in,
+                            goal_ref_buffer & result,
+                            model_converter_ref & mc,
                             proof_converter_ref & pc,
                             expr_dependency_ref & core) {
         (*m_imp)(in, result, mc, pc, core);
     }
-    
+
     virtual void cleanup() {
         ast_manager & m = m_imp->m();
         imp * d = alloc(imp, m, m_params);
-        #pragma omp critical (tactic_cancel)
-        {
-            std::swap(d, m_imp);
-        }
+        std::swap(d, m_imp);
         dealloc(d);
     }
 
-    virtual void set_cancel(bool f) {
-        if (m_imp)
-            m_imp->set_cancel(f);
-    }
 };
 
 tactic * mk_ufbv_rewriter_tactic(ast_manager & m, params_ref const & p) {

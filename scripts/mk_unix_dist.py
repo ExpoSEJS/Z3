@@ -22,6 +22,7 @@ BUILD_DIR='build-dist'
 VERBOSE=True
 DIST_DIR='dist'
 FORCE_MK=False
+DOTNET_ENABLED=True
 JAVA_ENABLED=True
 GIT_HASH=False
 
@@ -42,16 +43,17 @@ def set_build_dir(path):
     mk_dir(BUILD_DIR)
 
 def display_help():
-    print "mk_unix_dist.py: Z3 Linux/OSX/BSD distribution generator\n"
-    print "This script generates the zip files containing executables, shared objects, header files for Linux/OSX/BSD."
-    print "It must be executed from the Z3 root directory."
-    print "\nOptions:"
-    print "  -h, --help                    display this message."
-    print "  -s, --silent                  do not print verbose messages."
-    print "  -b <sudir>, --build=<subdir>  subdirectory where x86 and x64 Z3 versions will be built (default: build-dist)."
-    print "  -f, --force                   force script to regenerate Makefiles."
-    print "  --nojava                      do not include Java bindings in the binary distribution files."
-    print "  --githash                     include git hash in the Zip file."
+    print("mk_unix_dist.py: Z3 Linux/OSX/BSD distribution generator\n")
+    print("This script generates the zip files containing executables, shared objects, header files for Linux/OSX/BSD.")
+    print("It must be executed from the Z3 root directory.")
+    print("\nOptions:")
+    print("  -h, --help                    display this message.")
+    print("  -s, --silent                  do not print verbose messages.")
+    print("  -b <sudir>, --build=<subdir>  subdirectory where x86 and x64 Z3 versions will be built (default: build-dist).")
+    print("  -f, --force                   force script to regenerate Makefiles.")
+    print("  --nodotnet                    do not include .NET bindings in the binary distribution files.")
+    print("  --nojava                      do not include Java bindings in the binary distribution files.")
+    print("  --githash                     include git hash in the Zip file.")
     exit(0)
 
 # Parse configuration option for mk_make script
@@ -76,6 +78,8 @@ def parse_options():
             display_help()
         elif opt in ('-f', '--force'):
             FORCE_MK = True
+        elif opt == '--nodotnet':
+            DOTNET_ENABLED = False            
         elif opt == '--nojava':
             JAVA_ENABLED = False
         elif opt == '--githash':
@@ -92,6 +96,8 @@ def check_build_dir(path):
 def mk_build_dir(path):
     if not check_build_dir(path) or FORCE_MK:
         opts = ["python", os.path.join('scripts', 'mk_make.py'), "-b", path, "--static"]
+        if DOTNET_ENABLED:
+            opts.append('--dotnet')            
         if JAVA_ENABLED:
             opts.append('--java')
         if GIT_HASH:
@@ -163,40 +169,29 @@ def mk_dist_dir():
     build_path = BUILD_DIR
     dist_path = os.path.join(DIST_DIR, get_z3_name())
     mk_dir(dist_path)
-    if JAVA_ENABLED:
-        # HACK: Propagate JAVA_ENABLED flag to mk_util
-        # TODO: fix this hack
-        mk_util.JAVA_ENABLED = JAVA_ENABLED
+    mk_util.DOTNET_ENABLED = DOTNET_ENABLED
+    mk_util.JAVA_ENABLED = JAVA_ENABLED
     mk_unix_dist(build_path, dist_path)
     if is_verbose():
-        print "Generated distribution folder at '%s'" % dist_path
-
-ZIPOUT = None
-
-def mk_zip_visitor(pattern, dir, files):
-    for filename in files:
-        if fnmatch(filename, pattern):
-            fname = os.path.join(dir, filename)
-            if not os.path.isdir(fname):
-                ZIPOUT.write(fname)
+        print("Generated distribution folder at '%s'" % dist_path)
 
 def get_dist_path():
     return get_z3_name()
 
 def mk_zip():
-    global ZIPOUT
     dist_path = get_dist_path()
     old = os.getcwd()
     try:
         os.chdir(DIST_DIR)
         zfname = '%s.zip' % dist_path
-        ZIPOUT = zipfile.ZipFile(zfname, 'w', zipfile.ZIP_DEFLATED)
-        os.path.walk(dist_path, mk_zip_visitor, '*')
+        zipout = zipfile.ZipFile(zfname, 'w', zipfile.ZIP_DEFLATED)
+        for root, dirs, files in os.walk(dist_path):
+            for f in files:
+                zipout.write(os.path.join(root, f))
         if is_verbose():
-            print "Generated '%s'" % zfname
+            print("Generated '%s'" % zfname)
     except:
         pass
-    ZIPOUT = None
     os.chdir(old)
 
 def cp_license():

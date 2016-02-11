@@ -220,7 +220,7 @@ namespace smt {
             for (unsigned i = 0; i < dimension; ++i) {
                 sort * ext_sk_domain[2] = { s_array, s_array };
                 parameter p(i);
-                func_decl * ext_sk_decl = m.mk_func_decl(get_id(), OP_ARRAY_EXT_SKOLEM, 1, &p, 2, ext_sk_domain);
+                func_decl * ext_sk_decl = m.mk_func_decl(get_id(), OP_ARRAY_EXT, 1, &p, 2, ext_sk_domain);
                 ext_skolems->push_back(ext_sk_decl);
             }
             m_sort2skolem.insert(s_array, ext_skolems);
@@ -310,10 +310,7 @@ namespace smt {
         func_decl_ref_vector * funcs = 0;
         sort *                     s = m.get_sort(e1);
 
-        if (!m_sort2skolem.find(s, funcs)) {
-            UNREACHABLE();
-            return;
-        }
+        VERIFY(m_sort2skolem.find(s, funcs));
 
         unsigned dimension = funcs->size();
 
@@ -715,7 +712,7 @@ namespace smt {
         }
     }
     
-    void theory_array_base::propagate_select_to_store_parents(enode * r, enode * sel, svector<enode_pair> & todo) {
+    void theory_array_base::propagate_select_to_store_parents(enode * r, enode * sel, enode_pair_vector & todo) {
         SASSERT(r->get_root() == r);
         SASSERT(is_select(sel));
         if (!get_context().is_relevant(r)) {
@@ -754,7 +751,7 @@ namespace smt {
         }
     }
 
-    void theory_array_base::propagate_selects_to_store_parents(enode * r, svector<enode_pair> & todo) {
+    void theory_array_base::propagate_selects_to_store_parents(enode * r, enode_pair_vector & todo) {
         select_set * sel_set = get_select_set(r);
         select_set::iterator it2  = sel_set->begin();
         select_set::iterator end2 = sel_set->end();
@@ -766,9 +763,9 @@ namespace smt {
     }
 
     void theory_array_base::propagate_selects() {
-        svector<enode_pair> todo;
-        ptr_vector<enode>::const_iterator it  = m_selects_domain.begin();
-        ptr_vector<enode>::const_iterator end = m_selects_domain.end();
+        enode_pair_vector todo;
+        enode_vector::const_iterator it  = m_selects_domain.begin();
+        enode_vector::const_iterator end = m_selects_domain.end();
         for (; it != end; ++it) {
             enode * r = *it;
             propagate_selects_to_store_parents(r, todo);
@@ -946,6 +943,18 @@ namespace smt {
                 result->add_entry(args.size(), args.c_ptr(), select);
             }
         }
+        TRACE("array", 
+              tout << mk_pp(n->get_root()->get_owner(), get_manager()) << "\n";
+              if (sel_set) {
+                  select_set::iterator it  = sel_set->begin();
+                  select_set::iterator end = sel_set->end();
+                  for (; it != end; ++it) {
+                      tout << "#" << (*it)->get_root()->get_owner()->get_id() << " " << mk_pp((*it)->get_owner(), get_manager()) << "\n";
+                  }
+              }
+              if (else_val_n) {
+                  tout << "else: " << mk_pp(else_val_n->get_owner(), get_manager()) << "\n";
+              });
         return result;
     }
 

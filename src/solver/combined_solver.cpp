@@ -84,7 +84,7 @@ private:
         volatile bool   m_canceled;
         aux_timeout_eh(solver * s):m_solver(s), m_canceled(false) {}
         virtual void operator()() {
-            m_solver->cancel();
+            m_solver->get_manager().limit().cancel();
             m_canceled = true;
         }
     };
@@ -95,6 +95,8 @@ private:
         m_ignore_solver1 = p.ignore_solver1();
         m_inc_unknown_behavior = static_cast<inc_unknown_behavior>(p.solver2_unknown());
     }
+
+    virtual ast_manager& get_manager() { return m_solver1->get_manager(); }
 
     bool has_quantifiers() const {
         unsigned sz = get_num_assertions();
@@ -125,6 +127,17 @@ public:
         m_inc_mode            = false;
         m_check_sat_executed  = false;
         m_use_solver1_results = true;
+    }
+
+    solver* translate(ast_manager& m, params_ref const& p) {
+        solver* s1 = m_solver1->translate(m, p);
+        solver* s2 = m_solver2->translate(m, p);
+        combined_solver* r = alloc(combined_solver, s1, s2, p);
+        r->m_solver2_initialized = m_solver2_initialized;
+        r->m_inc_mode = m_inc_mode;
+        r->m_check_sat_executed = m_check_sat_executed;
+        r->m_use_solver1_results = m_use_solver1_results;
+        return r;
     }
 
     virtual void updt_params(params_ref const & p) {
@@ -177,14 +190,14 @@ public:
     }
 
     virtual lbool check_sat(unsigned num_assumptions, expr * const * assumptions) {
-        m_check_sat_executed  = true;
-        
+        m_check_sat_executed  = true;        
+        m_use_solver1_results = false;
+
         if (get_num_assumptions() != 0 ||            
             num_assumptions > 0 || // assumptions were provided
             m_ignore_solver1)  {
             // must use incremental solver
             switch_inc_mode();
-            m_use_solver1_results = false;
             return m_solver2->check_sat(num_assumptions, assumptions);
         }
         
@@ -193,7 +206,6 @@ public:
                 IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 2 (without a timeout)\")\n";);            
                 lbool r = m_solver2->check_sat(0, 0);
                 if (r != l_undef || !use_solver1_when_undef()) {
-                    m_use_solver1_results = false;
                     return r;
                 }
             }
@@ -206,27 +218,18 @@ public:
                     r = m_solver2->check_sat(0, 0);
                 }
                 if ((r != l_undef || !use_solver1_when_undef()) && !eh.m_canceled) {
-                    m_use_solver1_results = false;
                     return r;
                 }
+                if (eh.m_canceled) {
+                    m_solver1->get_manager().limit().reset_cancel();
+                }
             }
-            IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"solver 2 failed, trying solver1\")\n";);                        
+            IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"solver 2 failed, trying solver1\")\n";);
         }
         
         IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 1\")\n";);
         m_use_solver1_results = true;
         return m_solver1->check_sat(0, 0);
-    }
-
-    virtual void set_cancel(bool f) {
-        if (f) {
-            m_solver1->cancel();
-            m_solver2->cancel();
-        }
-        else {
-            m_solver1->reset_cancel();
-            m_solver2->reset_cancel();
-        }
     }
     
     virtual void set_progress_callback(progress_callback * callback) {
@@ -289,6 +292,11 @@ public:
             return m_solver1->reason_unknown();
         else
             return m_solver2->reason_unknown();
+    }
+
+    virtual void set_reason_unknown(char const* msg) {
+        m_solver1->set_reason_unknown(msg);
+        m_solver2->set_reason_unknown(msg);
     }
 
     virtual void get_labels(svector<symbol> & r) {

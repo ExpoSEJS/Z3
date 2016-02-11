@@ -44,7 +44,16 @@ void fpa2bv_model_converter::display(std::ostream & out) {
         out << "\n  (" << n << " ";
         unsigned indent = n.size() + 4;
         out << mk_ismt2_pp(it->m_value, m, indent) << ")";
-    }    
+    }
+    for (obj_map<func_decl, std::pair<app*, app*> >::iterator it = m_specials.begin();
+         it != m_specials.end();
+         it++) {
+        const symbol & n = it->m_key->get_name();
+        out << "\n  (" << n << " ";
+        unsigned indent = n.size() + 4;
+        out << mk_ismt2_pp(it->m_value.first, m, indent) << "; " <<
+               mk_ismt2_pp(it->m_value.second, m, indent) << ")";
+    }
     out << ")" << std::endl;
 }
 
@@ -69,6 +78,26 @@ model_converter * fpa2bv_model_converter::translate(ast_translation & translator
         res->m_rm_const2bv.insert(k, v);
         translator.to().inc_ref(k);
         translator.to().inc_ref(v);
+    }
+    for (obj_map<func_decl, func_decl*>::iterator it = m_uf2bvuf.begin();
+         it != m_uf2bvuf.end();
+         it++) {
+        func_decl * k = translator(it->m_key);
+        func_decl * v = translator(it->m_value);
+        res->m_uf2bvuf.insert(k, v);
+        translator.to().inc_ref(k);
+        translator.to().inc_ref(v);
+    }
+    for (obj_map<func_decl, std::pair<app*, app*> >::iterator it = m_specials.begin();
+         it != m_specials.end();
+         it++) {
+        func_decl * k = translator(it->m_key);
+        app * v1 = translator(it->m_value.first);
+        app * v2 = translator(it->m_value.second);
+        res->m_specials.insert(k, std::pair<app*, app*>(v1, v2));
+        translator.to().inc_ref(k);
+        translator.to().inc_ref(v1);
+        translator.to().inc_ref(v2);
     }
     return res;
 }
@@ -103,22 +132,22 @@ expr_ref fpa2bv_model_converter::convert_bv2fp(sort * s, expr * sgn, expr * exp,
     mpzm.set(sig_z, sig_q.to_mpq().numerator());
     exp_z = mpzm.get_int64(exp_unbiased_q.to_mpq().numerator());
 
-    fu.fm().set(fp_val, ebits, sbits, !mpqm.is_zero(sgn_q.to_mpq()), sig_z, exp_z);
+    fu.fm().set(fp_val, ebits, sbits, !mpqm.is_zero(sgn_q.to_mpq()), exp_z, sig_z);
 
     mpzm.del(sig_z);
 
     res = fu.mk_value(fp_val);
 
-    TRACE("fpa2bv_mc", tout << "[" << mk_ismt2_pp(sgn, m) << 
-                               " " << mk_ismt2_pp(exp, m) << 
-                               " " << mk_ismt2_pp(sig, m) << "] == " << 
+    TRACE("fpa2bv_mc", tout << "[" << mk_ismt2_pp(sgn, m) <<
+                               " " << mk_ismt2_pp(exp, m) <<
+                               " " << mk_ismt2_pp(sig, m) << "] == " <<
                                mk_ismt2_pp(res, m) << std::endl;);
     fu.fm().del(fp_val);
 
     return res;
 }
 
-expr_ref fpa2bv_model_converter::convert_bv2fp(model * bv_mdl, sort * s, expr * bv) const {    
+expr_ref fpa2bv_model_converter::convert_bv2fp(model * bv_mdl, sort * s, expr * bv) const {
     fpa_util fu(m);
     bv_util bu(m);
 
@@ -144,7 +173,7 @@ expr_ref fpa2bv_model_converter::convert_bv2fp(model * bv_mdl, sort * s, expr * 
 expr_ref fpa2bv_model_converter::convert_bv2rm(expr * eval_v) const {
     fpa_util fu(m);
     bv_util bu(m);
-    expr_ref res(m);   
+    expr_ref res(m);
     rational bv_val(0);
     unsigned sz = 0;
 
@@ -168,7 +197,7 @@ expr_ref fpa2bv_model_converter::convert_bv2rm(model * bv_mdl, func_decl * var, 
     bv_util bu(m);
     expr_ref res(m);
 
-    expr_ref eval_v(m);        
+    expr_ref eval_v(m);
 
     if (val && bv_mdl->eval(val, eval_v, true))
         res = convert_bv2rm(eval_v);
@@ -184,9 +213,50 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
     for (unsigned i = 0; i < bv_mdl->get_num_constants(); i++)
         tout << bv_mdl->get_constant(i)->get_name() << " --> " <<
         mk_ismt2_pp(bv_mdl->get_const_interp(bv_mdl->get_constant(i)), m) << std::endl;
-    );
+    for (unsigned i = 0; i < bv_mdl->get_num_functions(); i++) {
+        func_decl * f = bv_mdl->get_function(i);
+        tout << f->get_name() << "(...) := " << std::endl;
+        func_interp * fi = bv_mdl->get_func_interp(f);
+        for (unsigned j = 0; j < fi->num_entries(); j++) {
+            func_entry const * fe = fi->get_entry(j);
+            for (unsigned k = 0; k < f->get_arity(); k++) {
+                tout << mk_ismt2_pp(fe->get_arg(k), m) << " ";
+            }
+            tout << "--> " << mk_ismt2_pp(fe->get_result(), m) << std::endl;
+        }
+        tout << "else " << mk_ismt2_pp(fi->get_else(), m) << std::endl;
+    });
 
     obj_hashtable<func_decl> seen;
+
+    for (obj_map<func_decl, std::pair<app*, app*> >::iterator it = m_specials.begin();
+         it != m_specials.end();
+         it++) {
+        func_decl * f = it->m_key;
+        expr_ref pzero(m), nzero(m);
+        pzero = fu.mk_pzero(f->get_range());
+        nzero = fu.mk_nzero(f->get_range());
+
+        expr_ref pn(m), np(m);
+        bv_mdl->eval(it->m_value.first, pn, true);
+        bv_mdl->eval(it->m_value.second, np, true);
+        seen.insert(it->m_value.first->get_decl());
+        seen.insert(it->m_value.second->get_decl());
+
+        rational pn_num, np_num;
+        unsigned bv_sz;
+        bu.is_numeral(pn, pn_num, bv_sz);
+        bu.is_numeral(np, np_num, bv_sz);
+
+        func_interp * flt_fi = alloc(func_interp, m, f->get_arity());
+        expr * pn_args[2] = { pzero, nzero };
+        if (pn != np) flt_fi->insert_new_entry(pn_args, (pn_num.is_one() ? nzero : pzero));
+        flt_fi->set_else(np_num.is_one() ? nzero : pzero);
+
+        float_mdl->register_decl(f, flt_fi);
+        TRACE("fpa2bv_mc", tout << "fp.min/fp.max special: " << std::endl <<
+                            mk_ismt2_pp(f, m) << " == " << mk_ismt2_pp(flt_fi->get_interp(), m) << std::endl;);
+    }
 
     for (obj_map<func_decl, expr*>::iterator it = m_const2bv.begin();
          it != m_const2bv.end();
@@ -197,7 +267,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
         SASSERT(fu.is_float(var->get_range()));
         SASSERT(var->get_range()->get_num_parameters() == 2);
 
-        expr_ref sgn(m), sig(m), exp(m);        
+        expr_ref sgn(m), sig(m), exp(m);
         bv_mdl->eval(val->get_arg(0), sgn, true);
         bv_mdl->eval(val->get_arg(1), exp, true);
         bv_mdl->eval(val->get_arg(2), sig, true);
@@ -211,7 +281,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
         seen.insert(to_app(val->get_arg(0))->get_decl());
         seen.insert(to_app(val->get_arg(1))->get_decl());
         seen.insert(to_app(val->get_arg(2))->get_decl());
-#else        
+#else
         SASSERT(a->get_arg(0)->get_kind() == OP_EXTRACT);
         SASSERT(to_app(a->get_arg(0))->get_arg(0)->get_kind() == OP_EXTRACT);
         seen.insert(to_app(to_app(val->get_arg(0))->get_arg(0))->get_decl());
@@ -234,11 +304,13 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
         func_decl * var = it->m_key;
         SASSERT(fu.is_rm(var->get_range()));
         expr * val = it->m_value;
+        SASSERT(is_app_of(val, fu.get_family_id(), OP_FPA_INTERNAL_RM));
+        expr * bvval = to_app(val)->get_arg(0);
         expr_ref fv(m);
-        fv = convert_bv2rm(bv_mdl, var, val);
-        TRACE("fpa2bv_mc", tout << var->get_name() << " == " << mk_ismt2_pp(fv, m) << std::endl;);
+        fv = convert_bv2rm(bv_mdl, var, bvval);
+        TRACE("fpa2bv_mc", tout << var->get_name() << " == " << mk_ismt2_pp(fv, m) << ")" << std::endl;);
         float_mdl->register_decl(var, fv);
-        seen.insert(to_app(val)->get_decl());
+        seen.insert(to_app(bvval)->get_decl());
     }
 
     for (obj_map<func_decl, func_decl*>::iterator it = m_uf2bvuf.begin();
@@ -272,7 +344,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
                 else
                     new_args.push_back(aj);
             }
-            
+
             expr_ref ret(m);
             ret = bv_fe->get_result();
             if (fu.is_float(rng))
@@ -280,7 +352,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
             else if (fu.is_rm(rng))
                 ret = convert_bv2rm(ret);
 
-            flt_fi->insert_new_entry(new_args.c_ptr(), ret);            
+            flt_fi->insert_new_entry(new_args.c_ptr(), ret);
         }
 
         expr_ref els(m);
@@ -292,7 +364,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
 
         flt_fi->set_else(els);
 
-        float_mdl->register_decl(f, flt_fi);        
+        float_mdl->register_decl(f, flt_fi);
     }
 
     // Keep all the non-float constants.
@@ -312,7 +384,7 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
         if (!seen.contains(f))
         {
             TRACE("fpa2bv_mc", tout << "Keeping: " << mk_ismt2_pp(f, m) << std::endl;);
-            func_interp * val = bv_mdl->get_func_interp(f);
+            func_interp * val = bv_mdl->get_func_interp(f)->copy();
             float_mdl->register_decl(f, val);
         }
     }
@@ -326,9 +398,6 @@ void fpa2bv_model_converter::convert(model * bv_mdl, model * float_mdl) {
     }
 }
 
-model_converter * mk_fpa2bv_model_converter(ast_manager & m,
-                                            obj_map<func_decl, expr*> const & const2bv,
-                                            obj_map<func_decl, expr*> const & rm_const2bv,
-                                            obj_map<func_decl, func_decl*> const & uf2bvuf) {
-    return alloc(fpa2bv_model_converter, m, const2bv, rm_const2bv, uf2bvuf);
+model_converter * mk_fpa2bv_model_converter(ast_manager & m, fpa2bv_converter const & conv) {
+    return alloc(fpa2bv_model_converter, m, conv);
 }

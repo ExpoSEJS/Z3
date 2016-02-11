@@ -2295,6 +2295,10 @@ namespace Duality {
                                         reporter->Message(std::string("interpolation failure:") + msg);
                                         throw DoRestart();
                                     }
+                                    catch(const RPFP::greedy_reduce_failed &){
+                                        // if we couldn't reduce, just continue (maybe should restart?)
+                                        reporter->Message("interpolant verification failed");
+                                    }
                                     if(RecordUpdate(node)){
                                         update_count++;
                                         total_updates++;
@@ -3453,7 +3457,7 @@ namespace Duality {
                     arg_sorts.push_back(params[j].get_sort());
                 arg_sorts.push_back(ctx.int_sort());
                 std::string new_name = std::string("@db@") + node->Name.name().str();
-                func_decl f = ctx.function(new_name.c_str(),arg_sorts.size(), &arg_sorts[0],ctx.bool_sort());
+                func_decl f = ctx.function(new_name.c_str(),arg_sorts.size(), VEC2PTR(arg_sorts),ctx.bool_sort());
                 std::vector<expr> args = params;
                 args.push_back(dvar);
                 expr pat = f(args);

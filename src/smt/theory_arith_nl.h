@@ -354,6 +354,7 @@ namespace smt {
     */
     template<typename Ext>
     interval theory_arith<Ext>::evaluate_as_interval(expr * n) {
+        expr* arg;
         TRACE("nl_evaluate", tout << "evaluating: " << mk_bounded_pp(n, get_manager(), 10) << "\n";);
         if (has_var(n)) {
             TRACE("nl_evaluate", tout << "n has a variable associated with it\n";);
@@ -384,6 +385,9 @@ namespace smt {
             } 
             TRACE("cross_nested_eval_bug", display_nested_form(tout, n); tout << "\ninterval: " << r << "\n";);
             return r;
+        }
+        else if (m_util.is_to_real(n, arg)) {
+            return evaluate_as_interval(arg);
         }
         else {
             rational val;
@@ -1660,7 +1664,7 @@ namespace smt {
                 3) (new non-int coeffs) This only happens in an optional step in the conversion. Now, for int rows, I only apply this optional step only if non-int coeffs are not created.
         */
 
-        if (is_mixed_real_integer(r))
+        if (!get_manager().int_real_coercions() && is_mixed_real_integer(r))
             return true; // giving up... see comment above
 
         TRACE("cross_nested", tout << "cheking problematic row...\n";);
@@ -1910,11 +1914,10 @@ namespace smt {
     */
     template<typename Ext>
     void theory_arith<Ext>::set_conflict(v_dependency * d) {
-        bool is_lia = false; // TODO: fix it, but this is only used for debugging.
-        antecedents& ante = get_antecedents();
+        antecedents ante(*this);
         derived_bound  b(null_theory_var, inf_numeral(0), B_LOWER);
         dependency2new_bound(d, b);
-        set_conflict(b.m_lits.size(), b.m_lits.c_ptr(), b.m_eqs.size(), b.m_eqs.c_ptr(), ante, is_lia, "arith_nl");
+        set_conflict(b, ante, "arith_nl");
         TRACE("non_linear", 
               for (unsigned i = 0; i < b.m_lits.size(); ++i) {
                   tout << b.m_lits[i] << " ";
@@ -2227,7 +2230,15 @@ namespace smt {
         
         while (true) {
             TRACE("non_linear_gb", tout << "before:\n"; gb.display(tout););
-            bool r = gb.compute_basis(m_params.m_nl_arith_gb_threshold);
+            bool r = false;
+            gb.compute_basis_init();
+            while (!r && gb.get_num_new_equations() < m_params.m_nl_arith_gb_threshold) {
+                if (get_context().get_cancel_flag()) {
+                    warn = true;
+                    break;
+                }
+                r = gb.compute_basis_step();
+            }
             m_stats.m_gb_simplify      += gb.m_stats.m_simplify;
             m_stats.m_gb_superpose     += gb.m_stats.m_superpose;
             m_stats.m_gb_num_processed += gb.m_stats.m_num_processed;

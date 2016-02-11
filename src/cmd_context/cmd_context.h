@@ -116,15 +116,13 @@ public:
     virtual bool empty() = 0;
     virtual void push() = 0;
     virtual void pop(unsigned n) = 0;
-    virtual void set_cancel(bool f) = 0;
-    virtual void reset_cancel() = 0;
-    virtual void cancel() = 0;
     virtual lbool optimize() = 0;
     virtual void set_hard_constraints(ptr_vector<expr> & hard) = 0;
     virtual void display_assignment(std::ostream& out) = 0;
     virtual bool is_pareto() = 0;
     virtual void set_logic(symbol const& s) = 0;
     virtual bool print_model() const = 0;
+    virtual void updt_params(params_ref const& p) = 0;
 };
 
 class cmd_context : public progress_callback, public tactic_manager, public ast_printer_context {
@@ -155,6 +153,7 @@ protected:
     bool                         m_print_success;
     unsigned                     m_random_seed;
     bool                         m_produce_unsat_cores;
+    bool                         m_produce_unsat_assumptions;
     bool                         m_produce_assignments;
     status                       m_status;
     bool                         m_numeral_as_real;
@@ -262,7 +261,7 @@ protected:
     bool supported_logic(symbol const & s) const;
 
     void print_unsupported_msg() { regular_stream() << "unsupported" << std::endl; }
-    void print_unsupported_info(symbol const& s) { if (s != symbol::null) diagnostic_stream() << "; " << s << std::endl;}
+    void print_unsupported_info(symbol const& s, int line, int pos) { if (s != symbol::null) diagnostic_stream() << "; " << s << " line: " << line << " position: " << pos << std::endl;}
 
     void mk_solver();
 
@@ -292,7 +291,7 @@ public:
     void set_print_success(bool flag) { m_print_success = flag; }
     bool print_success_enabled() const { return m_print_success; }
     void print_success() { if (print_success_enabled())  regular_stream() << "success" << std::endl; }
-    void print_unsupported(symbol const & s) { print_unsupported_msg(); print_unsupported_info(s); }
+    void print_unsupported(symbol const & s, int line, int pos) { print_unsupported_msg(); print_unsupported_info(s, line, pos); }
     bool global_decls() const { return m_global_decls; }
     void set_global_decls(bool flag) { SASSERT(!has_manager()); m_global_decls = flag; }
     unsigned random_seed() const { return m_random_seed; }
@@ -307,7 +306,9 @@ public:
     void set_produce_unsat_cores(bool flag);
     void set_produce_proofs(bool flag);
     void set_produce_interpolants(bool flag);
+    void set_produce_unsat_assumptions(bool flag) { m_produce_unsat_assumptions = flag; }
     bool produce_assignments() const { return m_produce_assignments; }
+    bool produce_unsat_assumptions() const { return m_produce_unsat_assumptions; }
     void set_produce_assignments(bool flag) { m_produce_assignments = flag; }
     void set_status(status st) { m_status = st; }
     status get_status() const { return m_status; }
@@ -341,6 +342,7 @@ public:
     void insert(probe_info * p) { tactic_manager::insert(p); } 
     void insert_user_tactic(symbol const & s, sexpr * d); 
     void insert_aux_pdecl(pdecl * p);
+    void insert_rec_fun(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* e);
     func_decl * find_func_decl(symbol const & s) const;
     func_decl * find_func_decl(symbol const & s, unsigned num_indices, unsigned const * indices, 
                                unsigned arity, sort * const * domain, sort * range) const;
@@ -389,6 +391,7 @@ public:
     void push(unsigned n);
     void pop(unsigned n);
     void check_sat(unsigned num_assumptions, expr * const * assumptions);
+    void reset_assertions();
     // display the result produced by a check-sat or check-sat-using commands in the regular stream
     void display_sat_result(lbool r);
     // check if result produced by check-sat or check-sat-using matches the known status

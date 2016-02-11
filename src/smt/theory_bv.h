@@ -34,6 +34,7 @@ namespace smt {
     
     struct theory_bv_stats {
         unsigned   m_num_diseq_static, m_num_diseq_dynamic, m_num_bit2core, m_num_th2core_eq, m_num_conflicts;
+        unsigned   m_num_eq_dynamic;
         void reset() { memset(this, 0, sizeof(theory_bv_stats)); }
         theory_bv_stats() { reset(); }
     };
@@ -124,8 +125,9 @@ namespace smt {
         typedef std::pair<numeral, unsigned> value_sort_pair;
         typedef pair_hash<obj_hash<numeral>, unsigned_hash> value_sort_pair_hash;
         typedef map<value_sort_pair, theory_var, value_sort_pair_hash, default_eq<value_sort_pair> > value2var;
-        value2var                m_fixed_var_table;
 
+        value2var                m_fixed_var_table;
+        
         literal_vector           m_tmp_literals;
         svector<var_pos>         m_prop_queue;
         bool                     m_approximates_large_bvs;
@@ -166,6 +168,7 @@ namespace smt {
         void find_wpos(theory_var v);
         friend class fixed_eq_justification;
         void fixed_var_eh(theory_var v);
+        void add_fixed_eq(theory_var v1, theory_var v2);
         bool get_fixed_value(theory_var v, numeral & result) const;
         void internalize_num(app * n);
         void internalize_add(app * n);
@@ -236,6 +239,7 @@ namespace smt {
         virtual void pop_scope_eh(unsigned num_scopes);
         virtual final_check_status final_check_eh();
         virtual void reset_eh();
+        virtual bool include_func_interp(func_decl* f);
         svector<theory_var>   m_merge_aux[2]; //!< auxiliary vector used in merge_zero_one_bits
         bool merge_zero_one_bits(theory_var r1, theory_var r2);
 
@@ -252,7 +256,7 @@ namespace smt {
         theory_bv(ast_manager & m, theory_bv_params const & params, bit_blaster_params const & bb_params);
         virtual ~theory_bv();
         
-        virtual theory * mk_fresh(context * new_ctx) { return alloc(theory_bv, get_manager(), m_params, m_bb.get_params()); }
+        virtual theory * mk_fresh(context * new_ctx);
 
         virtual char const * get_name() const { return "bit-vector"; }
 

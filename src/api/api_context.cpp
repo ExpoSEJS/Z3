@@ -32,26 +32,9 @@ void install_tactics(tactic_manager & ctx);
 
 namespace api {
 
-    static void default_error_handler(Z3_context, Z3_error_code c) {
-        printf("Error: %s\n", Z3_get_error_msg(c));
+    static void default_error_handler(Z3_context ctx, Z3_error_code c) {
+        printf("Error: %s\n", Z3_get_error_msg(ctx, c));
         exit(1);
-    }
-
-    Z3_search_failure mk_Z3_search_failure(smt::failure f) {
-        switch(f) {
-        case smt::OK: return Z3_NO_FAILURE;
-        case smt::UNKNOWN: return Z3_UNKNOWN;
-        case smt::TIMEOUT: return Z3_TIMEOUT;
-        case smt::MEMOUT: return Z3_MEMOUT_WATERMARK;
-        case smt::CANCELED: return Z3_CANCELED;
-        case smt::NUM_CONFLICTS: return Z3_NUM_CONFLICTS;
-        case smt::THEORY: return Z3_THEORY;
-        case smt::QUANTIFIERS: return Z3_QUANTIFIERS;
-        default:
-            UNREACHABLE();
-            break;
-        }
-        return static_cast<Z3_search_failure>(f);
     }
 
     context::add_plugins::add_plugins(ast_manager & m) {
@@ -90,11 +73,11 @@ namespace api {
         m_datalog_util(m()),
         m_fpa_util(m()),
         m_dtutil(m()),
+        m_sutil(m()),
         m_last_result(m()),
         m_ast_trail(m()),
-        m_replay_stack() {
+        m_pmanager(m_limit) {
 
-        m_solver     = 0;
         m_error_code = Z3_OK;
         m_print_mode = Z3_PRINT_SMTLIB_FULL;
         m_searching  = false;
@@ -103,9 +86,7 @@ namespace api {
 
         m_smtlib_parser           = 0;
         m_smtlib_parser_has_decls = false;
-        
-        z3_bound_num_procs();
-        
+                
         m_error_handler = &default_error_handler;
 
         m_basic_fid = m().get_basic_family_id();
@@ -116,26 +97,15 @@ namespace api {
         m_dt_fid    = m().mk_family_id("datatype");
         m_datalog_fid = m().mk_family_id("datalog_relation");
         m_fpa_fid   = m().mk_family_id("fpa");
+        m_seq_fid   = m().mk_family_id("seq");
         m_dt_plugin = static_cast<datatype_decl_plugin*>(m().get_plugin(m_dt_fid));
-
-        if (!m_user_ref_count) {
-            m_replay_stack.push_back(0);
-        }
     
         install_tactics(*this);
     }
 
 
     context::~context() {
-        m_last_obj = 0;
-        if (!m_user_ref_count) {
-            for (unsigned i = 0; i < m_replay_stack.size(); ++i) {
-                dealloc(m_replay_stack[i]);
-            }
-            m_ast_trail.reset();
-        }
         reset_parser();
-        dealloc(m_solver);
     }
 
     void context::interrupt() {
@@ -143,9 +113,8 @@ namespace api {
         {
             if (m_interruptable)
                 (*m_interruptable)();
-            m().set_cancel(true);
-            if (m_rcf_manager.get() != 0)
-                m_rcf_manager->set_cancel(true);
+            m_limit.cancel();
+            m().limit().cancel();
         }
     }
     
@@ -209,20 +178,6 @@ namespace api {
         } }
     }
 
-    void context::persist_ast(ast * n, unsigned num_scopes) {
-        // persist_ast is irrelevant when m_user_ref_count == true
-        if (m_user_ref_count)
-            return;
-        if (num_scopes > m_ast_lim.size()) {
-            num_scopes = m_ast_lim.size();
-        }
-        SASSERT(m_replay_stack.size() > num_scopes);
-        unsigned j = m_replay_stack.size() - num_scopes - 1;
-        if (!m_replay_stack[j]) {
-            m_replay_stack[j] = alloc(ast_ref_vector, m());
-        }
-        m_replay_stack[j]->push_back(n);
-    }
 
     void context::save_ast_trail(ast * n) {
         SASSERT(m().contains(n));
@@ -318,52 +273,6 @@ namespace api {
         }
     }
 
-    // ------------------------
-    //
-    // Solver interface for backward compatibility 
-    //
-    // ------------------------
-
-    smt::kernel & context::get_smt_kernel() {
-        if (!m_solver) {
-            m_fparams.updt_params(m_params);
-            m_solver = alloc(smt::kernel, m(), m_fparams);
-        }
-        return *m_solver;
-    }
-        
-    void context::assert_cnstr(expr * a) {
-        get_smt_kernel().assert_expr(a);
-    }
-    
-    lbool context::check(model_ref & m) {
-        flet<bool> searching(m_searching, true);
-        lbool r;
-        r = get_smt_kernel().check();
-        if (r != l_false)
-            get_smt_kernel().get_model(m);
-        return r;
-    }
-    
-    void context::push() {
-        get_smt_kernel().push();
-        m_ast_lim.push_back(m_ast_trail.size());
-        m_replay_stack.push_back(0);        
-    }
-    
-    void context::pop(unsigned num_scopes) {
-        for (unsigned i = 0; i < num_scopes; ++i) {
-            unsigned sz = m_ast_lim.back();
-            m_ast_lim.pop_back();
-            dealloc(m_replay_stack.back());
-            m_replay_stack.pop_back();
-            while (m_ast_trail.size() > sz) {
-                m_ast_trail.pop_back();
-            }
-        }
-        SASSERT(num_scopes <= get_smt_kernel().get_scope_level());
-        get_smt_kernel().pop(num_scopes);
-    }
 
     // ------------------------
     //
@@ -404,7 +313,7 @@ namespace api {
     // -----------------------
     realclosure::manager & context::rcfm() {
         if (m_rcf_manager.get() == 0) {
-            m_rcf_manager = alloc(realclosure::manager, m_rcf_qm);
+            m_rcf_manager = alloc(realclosure::manager, m_limit, m_rcf_qm);
         }
         return *(m_rcf_manager.get());
     }
@@ -478,13 +387,6 @@ extern "C" {
         Z3_CATCH;
     }
 
-    Z3_bool Z3_API Z3_set_logic(Z3_context c, Z3_string logic) {
-        Z3_TRY;
-        LOG_Z3_set_logic(c, logic);
-        RESET_ERROR_CODE();
-        return mk_c(c)->get_smt_kernel().set_logic(symbol(logic));
-        Z3_CATCH_RETURN(Z3_FALSE);
-    }
 
     void Z3_API Z3_get_version(unsigned * major, 
                                unsigned * minor, 
@@ -536,7 +438,7 @@ extern "C" {
         SET_ERROR_CODE(e);
     }
 
-    static char const * _get_error_msg_ex(Z3_context c, Z3_error_code err) {
+    static char const * _get_error_msg(Z3_context c, Z3_error_code err) {
         switch(err) {
         case Z3_OK:                return "ok";
         case Z3_SORT_ERROR:        return "type error";
@@ -555,24 +457,12 @@ extern "C" {
         }
     }
 
-    Z3_API char const * Z3_get_error_msg(Z3_error_code err) {
-        LOG_Z3_get_error_msg(err);
-        return _get_error_msg_ex(0, err);
+
+    Z3_API char const * Z3_get_error_msg(Z3_context c, Z3_error_code err) {
+        LOG_Z3_get_error_msg(c, err);
+        return _get_error_msg(c, err);
     }
 
-    Z3_API char const * Z3_get_error_msg_ex(Z3_context c, Z3_error_code err) {
-        LOG_Z3_get_error_msg_ex(c, err);
-        return _get_error_msg_ex(c, err);
-    }
-
-    void Z3_API Z3_persist_ast(Z3_context c, Z3_ast n, unsigned num_scopes) {
-        Z3_TRY;
-        LOG_Z3_persist_ast(c, n, num_scopes);
-        RESET_ERROR_CODE();
-        CHECK_VALID_AST(to_ast(n), );
-        mk_c(c)->persist_ast(to_ast(n), num_scopes);
-        Z3_CATCH;
-    }
 
     void Z3_API Z3_set_ast_print_mode(Z3_context c, Z3_ast_print_mode mode) {
         Z3_TRY;

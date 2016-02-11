@@ -240,7 +240,7 @@ namespace pdr {
         void check_pre_closed();
         void set_closed();     
         void set_open();
-        void set_pre_closed() { m_closed = true; }
+        void set_pre_closed() { TRACE("pdr", tout << state() << "\n";); m_closed = true; }
         void reset() { m_children.reset(); }
 
         void set_rule(datalog::rule const* r) { m_rule = r; }
@@ -268,7 +268,6 @@ namespace pdr {
         void enqueue_leaf(model_node* n); // add leaf to priority queue.
         void update_models();
         void set_leaf(model_node& n); // Set node as leaf, remove children.
-        bool is_repeated(model_node& n) const;
         unsigned num_goals() const; 
 
     public:
@@ -337,7 +336,6 @@ namespace pdr {
         unsigned             m_expanded_lvl;
         ptr_vector<core_generalizer>  m_core_generalizers;
         stats                m_stats;
-        volatile bool        m_cancel;
         model_converter_ref  m_mc;
         proof_converter_ref  m_pc;
         
@@ -351,10 +349,10 @@ namespace pdr {
         lbool expand_state(model_node& n, expr_ref_vector& cube, bool& uses_level);
         void create_children(model_node& n);
         expr_ref mk_sat_answer() const;
-        expr_ref mk_unsat_answer() const;
+        expr_ref mk_unsat_answer();
         
         // Generate inductive property
-        void get_level_property(unsigned lvl, expr_ref_vector& res, vector<relation_info> & rs) const;
+        void get_level_property(unsigned lvl, expr_ref_vector& res, vector<relation_info> & rs);
 
 
         // Initialization
@@ -408,13 +406,10 @@ namespace pdr {
 
         std::ostream& display(std::ostream& strm) const;        
 
-        void display_certificate(std::ostream& strm) const;
+        void display_certificate(std::ostream& strm);
 
         lbool solve();
 
-        void cancel();
-
-        void cleanup();
 
         void reset();
 

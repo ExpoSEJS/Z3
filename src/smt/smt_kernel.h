@@ -50,6 +50,8 @@ namespace smt {
 
         ~kernel();
 
+        static void copy(kernel& src, kernel& dst);
+
         ast_manager & m() const;
         
         /**
@@ -153,6 +155,12 @@ namespace smt {
         */
         std::string last_failure_as_string() const;
 
+
+        /**
+           \brief Set the reason for unknown.
+        */
+        void set_reason_unknown(char const* msg);
+
         /**
            \brief Return the set of formulas assigned by the kernel.
         */
@@ -202,18 +210,7 @@ namespace smt {
            \brief Display statistics in low level format.
         */
         void display_istatistics(std::ostream & out) const;
-        
-        /**
-           \brief Interrupt the kernel. 
-        */
-        void set_cancel(bool f = true);
-        void cancel() { set_cancel(true); }
-
-        /**
-           \brief Reset interruption.
-        */
-        void reset_cancel() { set_cancel(false); }
-        
+                
         /**
            \brief Return true if the kernel was interrupted.
         */

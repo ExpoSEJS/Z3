@@ -37,6 +37,12 @@ namespace smt {
             if (m_logic != symbol::null)
                 m_context.set_logic(m_logic);
         }
+
+        virtual solver* translate(ast_manager& m, params_ref const& p) {            
+            solver* result = alloc(solver, m, p, m_logic);
+            smt::kernel::copy(m_context, result->m_context);
+            return result;
+        }
         
         virtual ~solver() {
         }
@@ -89,15 +95,18 @@ namespace smt {
             return m_context.last_failure_as_string();
         }
 
+        virtual void set_reason_unknown(char const* msg) {
+            m_context.set_reason_unknown(msg);
+        }
+
         virtual void get_labels(svector<symbol> & r) {
             buffer<symbol> tmp;
             m_context.get_relevant_labels(0, tmp);
             r.append(tmp.size(), tmp.c_ptr());
         }
 
-        virtual void set_cancel(bool f) {
-            m_context.set_cancel(f);
-        }
+        virtual ast_manager& get_manager() { return m_context.m(); }
+
 
         virtual void set_progress_callback(progress_callback * callback) {
             m_callback = callback;

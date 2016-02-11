@@ -31,17 +31,16 @@ namespace opt {
         virtual expr_ref mk_gt(unsigned i, model_ref& model) = 0;
         virtual expr_ref mk_ge(unsigned i, model_ref& model) = 0;
         virtual expr_ref mk_le(unsigned i, model_ref& model) = 0;
-        virtual void set_model(model_ref& m) = 0;
         virtual void fix_model(model_ref& m) = 0;
     };
     class pareto_base {
     protected:
         ast_manager&     m;
         pareto_callback& cb;
-        volatile bool    m_cancel;
         ref<solver>      m_solver;
         params_ref       m_params;
         model_ref        m_model;
+        svector<symbol>  m_labels;
     public:
         pareto_base(
             ast_manager & m, 
@@ -50,7 +49,6 @@ namespace opt {
             params_ref & p):
             m(m),
             cb(cb),            
-            m_cancel(false),
             m_solver(s),
             m_params(p) {
         }
@@ -65,20 +63,14 @@ namespace opt {
         virtual void collect_statistics(statistics & st) const {
             m_solver->collect_statistics(st);
         }
-        virtual void set_cancel(bool f) {
-            if (f) 
-                m_solver->cancel();
-            else 
-                m_solver->reset_cancel();
-            m_cancel = f;
-        }
         virtual void display(std::ostream & out) const {
             m_solver->display(out);
         }
         virtual lbool operator()() = 0;
 
-        virtual void get_model(model_ref& mdl) {
+        virtual void get_model(model_ref& mdl, svector<symbol>& labels) {
             mdl = m_model;
+            labels = m_labels;
         }
 
     protected:

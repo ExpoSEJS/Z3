@@ -68,14 +68,12 @@ namespace smt {
         arith_simplifier_plugin *        m_as;
 
         already_processed                m_already_processed;
-        svector<enode_pair>              m_restart_pairs;
+        enode_pair_vector                m_restart_pairs;
         svector<parameter>               m_proof_hint;
 
         context & get_context() const { return m_owner.get_context(); }
         ast_manager & get_manager() const { return m_owner.get_manager(); }
         enode * get_enode(theory_var v) const { return m_owner.get_enode(v); }
-
-        arith_simplifier_plugin * get_simplifier();
 
     public:
         arith_eq_adapter(theory & owner, theory_arith_params & params, arith_util & u):m_owner(owner), m_params(params), m_util(u), m_as(0) {}

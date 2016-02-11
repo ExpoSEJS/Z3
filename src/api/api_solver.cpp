@@ -6,7 +6,8 @@ Module Name:
     api_solver.cpp
 
 Abstract:
-    New solver API
+
+    Solver API
 
 Author:
 
@@ -93,6 +94,20 @@ extern "C" {
         Z3_solver_ref * s = alloc(Z3_solver_ref, mk_tactic2solver_factory(to_tactic_ref(t)));
         mk_c(c)->save_object(s);
         Z3_solver r = of_solver(s);
+        RETURN_Z3(r);
+        Z3_CATCH_RETURN(0);
+    }
+
+    Z3_solver Z3_API Z3_solver_translate(Z3_context c, Z3_solver s, Z3_context target) {
+        Z3_TRY;
+        LOG_Z3_solver_translate(c, s, target);
+        RESET_ERROR_CODE();
+        params_ref const& p = to_solver(s)->m_params; 
+        Z3_solver_ref * sr = alloc(Z3_solver_ref, 0);
+        init_solver(c, s);
+        sr->m_solver = to_solver(s)->m_solver->translate(mk_c(target)->m(), p);
+        mk_c(target)->save_object(sr);
+        Z3_solver r = of_solver(sr);
         RETURN_Z3(r);
         Z3_CATCH_RETURN(0);
     }
@@ -256,7 +271,7 @@ extern "C" {
         unsigned timeout     = to_solver(s)->m_params.get_uint("timeout", mk_c(c)->get_timeout());
         unsigned rlimit      = to_solver(s)->m_params.get_uint("rlimit", mk_c(c)->get_rlimit());
         bool     use_ctrl_c  = to_solver(s)->m_params.get_bool("ctrl_c", false);
-        cancel_eh<solver> eh(*to_solver_ref(s));
+        cancel_eh<reslimit> eh(mk_c(c)->m().limit());
         api::context::set_interruptable si(*(mk_c(c)), eh);
         lbool result;
         {

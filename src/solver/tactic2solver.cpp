@@ -22,6 +22,7 @@ Notes:
 #include"solver_na2as.h"
 #include"tactic.h"
 #include"ast_pp_util.h"
+#include"ast_translation.h"
 
 /**
    \brief Simulates the incremental solver interface using a tactic.
@@ -45,6 +46,8 @@ public:
     tactic2solver(ast_manager & m, tactic * t, params_ref const & p, bool produce_proofs, bool produce_models, bool produce_unsat_cores, symbol const & logic);
     virtual ~tactic2solver();
 
+    virtual solver* translate(ast_manager& m, params_ref const& p);
+
     virtual void updt_params(params_ref const & p);
     virtual void collect_param_descrs(param_descrs & r);
 
@@ -56,13 +59,13 @@ public:
     virtual void pop_core(unsigned n);
     virtual lbool check_sat_core(unsigned num_assumptions, expr * const * assumptions);
 
-    virtual void set_cancel(bool f);
 
     virtual void collect_statistics(statistics & st) const;
     virtual void get_unsat_core(ptr_vector<expr> & r);
     virtual void get_model(model_ref & m);
     virtual proof * get_proof();
     virtual std::string reason_unknown() const;
+    virtual void set_reason_unknown(char const* msg);
     virtual void get_labels(svector<symbol> & r) {}
 
     virtual void set_progress_callback(progress_callback * callback) {}
@@ -71,7 +74,10 @@ public:
     virtual expr * get_assertion(unsigned idx) const;
 
     virtual void display(std::ostream & out) const;
+    virtual ast_manager& get_manager(); 
 };
+
+ast_manager& tactic2solver::get_manager() { return m_assertions.get_manager(); }
 
 tactic2solver::tactic2solver(ast_manager & m, tactic * t, params_ref const & p, bool produce_proofs, bool produce_models, bool produce_unsat_cores, symbol const & logic):
     solver_na2as(m),
@@ -174,14 +180,22 @@ lbool tactic2solver::check_sat_core(unsigned num_assumptions, expr * const * ass
     return m_result->status();
 }
 
-void tactic2solver::set_cancel(bool f) {
-    if (m_tactic.get()) {
-        if (f) 
-            m_tactic->cancel();
-        else
-            m_tactic->reset_cancel();
+
+solver* tactic2solver::translate(ast_manager& m, params_ref const& p) {
+    tactic* t = m_tactic->translate(m);
+    tactic2solver* r = alloc(tactic2solver, m, t, p, m_produce_proofs, m_produce_models, m_produce_unsat_cores, m_logic);
+    r->m_result = 0;
+    if (!m_scopes.empty()) {
+        throw default_exception("translation of contexts is only supported at base level");
     }
+    ast_translation tr(m_assertions.get_manager(), m, false);
+    
+    for (unsigned i = 0; i < get_num_assertions(); ++i) {
+        r->m_assertions.push_back(tr(get_assertion(i)));
+    }
+    return r;
 }
+
 
 void tactic2solver::collect_statistics(statistics & st) const {    
     st.copy(m_stats);
@@ -210,6 +224,12 @@ std::string tactic2solver::reason_unknown() const {
         return m_result->reason_unknown();
     else
         return std::string("unknown");
+}
+
+void tactic2solver::set_reason_unknown(char const* msg) {
+    if (m_result.get()) {
+        m_result->set_reason_unknown(msg);
+    }
 }
 
 unsigned tactic2solver::get_num_assertions() const {

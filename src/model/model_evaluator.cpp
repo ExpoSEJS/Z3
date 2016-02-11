@@ -24,6 +24,7 @@ Revision History:
 #include"arith_rewriter.h"
 #include"bv_rewriter.h"
 #include"pb_rewriter.h"
+#include"seq_rewriter.h"
 #include"datatype_rewriter.h"
 #include"array_rewriter.h"
 #include"fpa_rewriter.h"
@@ -39,6 +40,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
     datatype_rewriter               m_dt_rw;
     pb_rewriter                     m_pb_rw;
     fpa_rewriter                    m_f_rw;
+    seq_rewriter                    m_seq_rw;
     unsigned long long              m_max_memory;
     unsigned                        m_max_steps;
     bool                            m_model_completion;
@@ -47,15 +49,16 @@ struct evaluator_cfg : public default_rewriter_cfg {
     evaluator_cfg(ast_manager & m, model & md, params_ref const & p):
         m_model(md),
         m_b_rw(m),
-        // We must allow customers to set parameters for arithmetic rewriter/evaluator. 
+        // We must allow customers to set parameters for arithmetic rewriter/evaluator.
         // In particular, the maximum degree of algebraic numbers that will be evaluated.
-        m_a_rw(m, p), 
+        m_a_rw(m, p),
         m_bv_rw(m),
         // See comment above. We want to allow customers to set :sort-store
         m_ar_rw(m, p),
         m_dt_rw(m),
         m_pb_rw(m),
-        m_f_rw(m) {
+        m_f_rw(m),
+        m_seq_rw(m) {
         m_b_rw.set_flat(false);
         m_a_rw.set_flat(false);
         m_bv_rw.set_flat(false);
@@ -70,8 +73,13 @@ struct evaluator_cfg : public default_rewriter_cfg {
         m_model_completion = p.completion();
         m_cache            = p.cache();
     }
-        
+
     ast_manager & m() const { return m_model.get_manager(); }
+
+    bool evaluate(func_decl* f, unsigned num, expr * const * args, expr_ref & result) {
+        func_interp* fi = m_model.get_func_interp(f);
+        return (fi != 0) && eval_fi(fi, num, args, result);
+    }
 
     // Try to use the entries to quickly evaluate the fi
     bool eval_fi(func_interp * fi, unsigned num, expr * const * args, expr_ref & result) {
@@ -81,11 +89,11 @@ struct evaluator_cfg : public default_rewriter_cfg {
         SASSERT(fi->get_arity() == num);
 
         bool actuals_are_values = true;
-    
+
         for (unsigned i = 0; actuals_are_values && i < num; i++) {
             actuals_are_values = m().is_value(args[i]);
         }
-        
+
         if (!actuals_are_values)
             return false; // let get_macro handle it
 
@@ -101,32 +109,24 @@ struct evaluator_cfg : public default_rewriter_cfg {
     br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
         result_pr = 0;
         family_id fid = f->get_family_id();
-        if (fid == null_family_id) {
-            if (num == 0) {
-                expr * val = m_model.get_const_interp(f);
-                if (val != 0) {
-                    result = val;
-                    return BR_DONE;
-                }
-                
-                if (m_model_completion) {
-                    sort * s   = f->get_range();
-                    expr * val = m_model.get_some_value(s);
-                    m_model.register_decl(f, val);
-                    result = val;
-                    return BR_DONE;
-                }
-                return BR_FAILED;
-            }
-            SASSERT(num > 0);
-            func_interp * fi = m_model.get_func_interp(f);
-            if (fi != 0 && eval_fi(fi, num, args, result)) {
-                TRACE("model_evaluator", tout << "reduce_app " << f->get_name() << "\n";
-                      for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << "\n";
-                      tout << "---->\n" << mk_ismt2_pp(result, m()) << "\n";);
+        if (fid == null_family_id && num == 0) {
+            expr * val = m_model.get_const_interp(f);
+            if (val != 0) {
+                result = val;
                 return BR_DONE;
             }
+
+            if (m_model_completion) {
+                sort * s   = f->get_range();
+                expr * val = m_model.get_some_value(s);
+                m_model.register_decl(f, val);
+                result = val;
+                return BR_DONE;
+            }
+            return BR_FAILED;
         }
+
+        br_status st = BR_FAILED;
 
         if (fid == m_b_rw.get_fid()) {
             decl_kind k = f->get_decl_kind();
@@ -134,7 +134,6 @@ struct evaluator_cfg : public default_rewriter_cfg {
                 // theory dispatch for =
                 SASSERT(num == 2);
                 family_id s_fid = m().get_sort(args[0])->get_family_id();
-                br_status st = BR_FAILED;
                 if (s_fid == m_a_rw.get_fid())
                     st = m_a_rw.mk_eq_core(args[0], args[1], result);
                 else if (s_fid == m_bv_rw.get_fid())
@@ -143,61 +142,81 @@ struct evaluator_cfg : public default_rewriter_cfg {
                     st = m_dt_rw.mk_eq_core(args[0], args[1], result);
                 else if (s_fid == m_f_rw.get_fid())
                     st = m_f_rw.mk_eq_core(args[0], args[1], result);
+                else if (s_fid == m_seq_rw.get_fid())
+                    st = m_seq_rw.mk_eq_core(args[0], args[1], result);
                 if (st != BR_FAILED)
                     return st;
             }
             return m_b_rw.mk_app_core(f, num, args, result);
         }
+
         if (fid == m_a_rw.get_fid())
-            return m_a_rw.mk_app_core(f, num, args, result);
-        if (fid == m_bv_rw.get_fid())
-            return m_bv_rw.mk_app_core(f, num, args, result);
-        if (fid == m_ar_rw.get_fid()) 
-            return m_ar_rw.mk_app_core(f, num, args, result);
-        if (fid == m_dt_rw.get_fid())
-            return m_dt_rw.mk_app_core(f, num, args, result);
-        if (fid == m_pb_rw.get_fid())
-            return m_pb_rw.mk_app_core(f, num, args, result);
-        if (fid == m_f_rw.get_fid())
-            return m_f_rw.mk_app_core(f, num, args, result);
-        return BR_FAILED;
+            st = m_a_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_bv_rw.get_fid())
+            st = m_bv_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_ar_rw.get_fid())
+            st = m_ar_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_dt_rw.get_fid())
+            st = m_dt_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_pb_rw.get_fid())
+            st = m_pb_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_f_rw.get_fid())
+            st = m_f_rw.mk_app_core(f, num, args, result);
+        else if (fid == m_seq_rw.get_fid())
+            st = m_seq_rw.mk_app_core(f, num, args, result);
+        else if (evaluate(f, num, args, result)) {
+            TRACE("model_evaluator", tout << "reduce_app " << f->get_name() << "\n";
+                  for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << "\n";
+                  tout << "---->\n" << mk_ismt2_pp(result, m()) << "\n";);
+            return BR_DONE;
+        }
+        if (st == BR_DONE && is_app(result)) {
+            app* a = to_app(result);
+            if (evaluate(a->get_decl(), a->get_num_args(), a->get_args(), result)) {
+                return BR_DONE;
+            }
+        }
+        TRACE("model_evaluator", tout << f->get_name() << "\n";);
+        return st;
     }
 
-    bool get_macro(func_decl * f, expr * & def, quantifier * & q, proof * & def_pr) { 
-        if (f->get_family_id() == null_family_id) {
-            func_interp * fi = m_model.get_func_interp(f);
-            
-            if (fi != 0) {
-                if (fi->is_partial()) {
-                    if (m_model_completion) {
-                        sort * s   = f->get_range();
-                        expr * val = m_model.get_some_value(s);
-                        fi->set_else(val);
-                    }
-                    else {
-                        return false;
-                    }
+    bool get_macro(func_decl * f, expr * & def, quantifier * & q, proof * & def_pr) {
+        TRACE("model_evaluator", tout << "get_macro for " << f->get_name() << " (model completion: " << m_model_completion << ")\n";);
+
+        func_interp * fi = m_model.get_func_interp(f);
+        if (fi != 0) {
+            if (fi->is_partial()) {
+                if (m_model_completion) {
+                    sort * s   = f->get_range();
+                    expr * val = m_model.get_some_value(s);
+                    fi->set_else(val);
                 }
-                
-                def    = fi->get_interp();
-                SASSERT(def != 0);
-                return true;
+                else {
+                    return false;
+                }
             }
-            
-            if (m_model_completion) {
-                sort * s   = f->get_range();
-                expr * val = m_model.get_some_value(s);
-                func_interp * new_fi = alloc(func_interp, m(), f->get_arity());
-                new_fi->set_else(val);
-                m_model.register_decl(f, new_fi);
-                def = val;
-                return true;
-            }
+            def    = fi->get_interp();
+            SASSERT(def != 0);
+            return true;
+        }
+
+        if (m_model_completion &&
+            (f->get_family_id() == null_family_id ||
+             m().get_plugin(f->get_family_id())->is_considered_uninterpreted(f)))
+        {
+            sort * s   = f->get_range();
+            expr * val = m_model.get_some_value(s);
+            func_interp * new_fi = alloc(func_interp, m(), f->get_arity());
+            new_fi->set_else(val);
+            m_model.register_decl(f, new_fi);
+            def = val;
+            return true;
         }
         return false;
     }
-    
-    bool max_steps_exceeded(unsigned num_steps) const { 
+
+
+    bool max_steps_exceeded(unsigned num_steps) const {
         cooperate("model evaluator");
         if (memory::get_allocation_size() > m_max_memory)
             throw rewriter_exception(Z3_MAX_MEMORY_MSG);
@@ -213,7 +232,7 @@ template class rewriter_tpl<evaluator_cfg>;
 struct model_evaluator::imp : public rewriter_tpl<evaluator_cfg> {
     evaluator_cfg m_cfg;
     imp(model & md, params_ref const & p):
-        rewriter_tpl<evaluator_cfg>(md.get_manager(), 
+        rewriter_tpl<evaluator_cfg>(md.get_manager(),
                                     false, // no proofs for evaluator
                                     m_cfg),
         m_cfg(md.get_manager(), md, p) {
@@ -248,12 +267,6 @@ unsigned model_evaluator::get_num_steps() const {
     return m_imp->get_num_steps();
 }
 
-void model_evaluator::set_cancel(bool f) {
-    #pragma omp critical (model_evaluator)
-    {
-        m_imp->set_cancel(f);
-    }
-}
 
 void model_evaluator::cleanup(params_ref const & p) {
     model & md = m_imp->cfg().m_model;

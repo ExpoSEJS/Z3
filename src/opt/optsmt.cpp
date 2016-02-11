@@ -41,16 +41,12 @@ Notes:
 namespace opt {
 
 
-    void optsmt::set_cancel(bool f) {
-        TRACE("opt", tout << "set cancel: " << f << "\n";);
-        m_cancel = f;
-    }
-
     void optsmt::set_max(vector<inf_eps>& dst, vector<inf_eps> const& src, expr_ref_vector& fmls) {
         for (unsigned i = 0; i < src.size(); ++i) {
             if (src[i] >= dst[i]) {
                 dst[i] = src[i];
                 m_models.set(i, m_s->get_model(i));
+                m_s->get_labels(m_labels);
                 m_lower_fmls[i] = fmls[i].get();
                 if (dst[i].is_pos() && !dst[i].is_finite()) { // review: likely done already.
                     m_lower_fmls[i] = m.mk_false();
@@ -73,7 +69,7 @@ namespace opt {
         expr* vars[1];
 
         solver::scoped_push _push(*m_s);
-        while (is_sat == l_true && !m_cancel) {
+        while (is_sat == l_true && !m.canceled()) {
 
             tmp = m.mk_fresh_const("b", m.mk_bool_sort());            
             vars[0] = tmp;
@@ -85,7 +81,7 @@ namespace opt {
             }
         }      
         
-        if (m_cancel || is_sat == l_undef) {
+        if (m.canceled() || is_sat == l_undef) {
             return l_undef;
         }
 
@@ -109,11 +105,11 @@ namespace opt {
 
         lbool is_sat = l_true;
 
-        while (is_sat == l_true && !m_cancel) {
+        while (is_sat == l_true && !m.canceled()) {
             is_sat = update_upper();
         }      
         
-        if (m_cancel || is_sat == l_undef) {
+        if (m.canceled() || is_sat == l_undef) {
             return l_undef;
         }
 
@@ -149,14 +145,15 @@ namespace opt {
             lbool is_sat = l_true;
 
             solver::scoped_push _push(*m_s);
-            while (!m_cancel) {
+            while (!m.canceled()) {
                 m_s->assert_expr(fml);
                 TRACE("opt", tout << fml << "\n";);
                 is_sat = m_s->check_sat(1,vars);
                 if (is_sat == l_true) {
                     disj.reset();
                     m_s->maximize_objectives(disj);
-                    m_s->get_model(m_model);                   
+                    m_s->get_model(m_model);       
+                    m_s->get_labels(m_labels);            
                     for (unsigned i = 0; i < ors.size(); ++i) {
                         expr_ref tmp(m);
                         m_model->eval(ors[i].get(), tmp);
@@ -183,7 +180,7 @@ namespace opt {
         bound = m.mk_or(m_lower_fmls.size(), m_lower_fmls.c_ptr());
         m_s->assert_expr(bound);
         
-        if (m_cancel) {
+        if (m.canceled()) {
             return l_undef;
         }
         return basic_opt();
@@ -203,6 +200,7 @@ namespace opt {
     expr_ref optsmt::update_lower() {
         expr_ref_vector disj(m);
         m_s->get_model(m_model);
+        m_s->get_labels(m_labels);
         m_s->maximize_objectives(disj);
         set_max(m_lower, m_s->get_objective_values(), disj);
         TRACE("opt",
@@ -239,7 +237,7 @@ namespace opt {
 
         vector<inf_eps> mid;
 
-        for (unsigned i = 0; i < m_lower.size() && !m_cancel; ++i) {
+        for (unsigned i = 0; i < m_lower.size() && !m.canceled(); ++i) {
             if (m_lower[i] < m_upper[i]) {
                 mid.push_back((m_upper[i]+m_lower[i])/rational(2));
                 bound = m_s->mk_ge(i, mid[i]);
@@ -251,7 +249,7 @@ namespace opt {
             }
         }
         bool progress = false;
-        for (unsigned i = 0; i < m_lower.size() && !m_cancel; ++i) {
+        for (unsigned i = 0; i < m_lower.size() && !m.canceled(); ++i) {
             if (m_lower[i] <= mid[i] && mid[i] <= m_upper[i] && m_lower[i] < m_upper[i]) {
                 th.enable_record_conflict(bounds[i].get());
                 lbool is_sat = m_s->check_sat(1, bounds.c_ptr() + i);
@@ -281,7 +279,7 @@ namespace opt {
                 progress = true;
             }
         }
-        if (m_cancel) {
+        if (m.canceled()) {
             return l_undef;
         }
         if (!progress) {
@@ -325,12 +323,13 @@ namespace opt {
         for (unsigned i = 0; i < obj_index; ++i) {
             commit_assignment(i);
         }
-        while (is_sat == l_true && !m_cancel) {
+        while (is_sat == l_true && !m.canceled()) {
             is_sat = m_s->check_sat(0, 0); 
             if (is_sat != l_true) break;
             
             m_s->maximize_objective(obj_index, block);
             m_s->get_model(m_model);
+            m_s->get_labels(m_labels);
             inf_eps obj = m_s->saved_objective_value(obj_index);
             if (obj > m_lower[obj_index]) {
                 m_lower[obj_index] = obj;                
@@ -353,8 +352,8 @@ namespace opt {
             // on current state.
         }
         
-        if (m_cancel || is_sat == l_undef) {
-            TRACE("opt", tout << "undef: " << m_cancel << " " << is_sat << "\n";);
+        if (m.canceled() || is_sat == l_undef) {
+            TRACE("opt", tout << "undef: " << m.canceled() << " " << is_sat << "\n";);
             return l_undef;
         }
 
@@ -405,8 +404,9 @@ namespace opt {
         return m_upper[i];
     }
 
-    void optsmt::get_model(model_ref& mdl) {
+    void optsmt::get_model(model_ref& mdl, svector<symbol> & labels) {
         mdl = m_model.get();
+        labels = m_labels;
     }
 
     // force lower_bound(i) <= objective_value(i)    

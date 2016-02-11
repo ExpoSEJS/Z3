@@ -316,7 +316,7 @@ namespace smt {
     // -----------------------------------
 
     template<typename Ext>
-    void theory_arith<Ext>::antecedents::init() {
+    void theory_arith<Ext>::antecedents_t::init() {
         if (!m_init && !empty()) {
             m_params.push_back(parameter(symbol("unknown-arith")));
             for (unsigned i = 0; i < m_lits.size(); i++) {
@@ -330,7 +330,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    void theory_arith<Ext>::antecedents::reset() { 
+    void theory_arith<Ext>::antecedents_t::reset() { 
         m_init = false; 
         m_eq_coeffs.reset();
         m_lit_coeffs.reset();
@@ -340,7 +340,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    void theory_arith<Ext>::antecedents::push_lit(literal l, numeral const& r, bool proofs_enabled) { 
+    void theory_arith<Ext>::antecedents_t::push_lit(literal l, numeral const& r, bool proofs_enabled) { 
         m_lits.push_back(l);
         if (proofs_enabled) {
             m_lit_coeffs.push_back(r); 
@@ -348,7 +348,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    void theory_arith<Ext>::antecedents::push_eq(enode_pair const& p, numeral const& r, bool proofs_enabled) { 
+    void theory_arith<Ext>::antecedents_t::push_eq(enode_pair const& p, numeral const& r, bool proofs_enabled) { 
         m_eqs.push_back(p);
         if (proofs_enabled) {
             m_eq_coeffs.push_back(r); 
@@ -356,7 +356,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    parameter * theory_arith<Ext>::antecedents::params(char const* name) {
+    parameter * theory_arith<Ext>::antecedents_t::params(char const* name) {
         if (empty()) return 0;
         init();
         m_params[0] = parameter(symbol(name));
@@ -740,8 +740,8 @@ namespace smt {
             }
         }
         else {
-            a.lits().append(m_lits.size(), m_lits.c_ptr());
-            a.eqs().append(m_eqs.size(), m_eqs.c_ptr());
+            a.append(m_lits.size(), m_lits.c_ptr());
+            a.append(m_eqs.size(), m_eqs.c_ptr());
         }
     }
 
@@ -804,8 +804,7 @@ namespace smt {
     */
     template<typename Ext>
     void theory_arith<Ext>::accumulate_justification(bound & b, derived_bound& new_bound, numeral const& coeff, literal_idx_set & lits, eq_set & eqs) {
-        antecedents& ante = m_tmp_antecedents;
-        ante.reset();
+        antecedents ante(*this);
         b.push_justification(ante, coeff, proofs_enabled());
         unsigned num_lits = ante.lits().size();
         for (unsigned i = 0; i < num_lits; ++i) {
@@ -839,8 +838,9 @@ namespace smt {
     
     template<typename Ext>
     typename theory_arith<Ext>::inf_numeral theory_arith<Ext>::normalize_bound(theory_var v, inf_numeral const & k, bound_kind kind) {
-        if (is_real(v))
+        if (is_real(v)) {
             return k;
+        }
         if (kind == B_LOWER)
             return inf_numeral(ceil(k));
         SASSERT(kind == B_UPPER);
@@ -1346,7 +1346,7 @@ namespace smt {
                 empty_column ||
                 (unbounded_gain(max_gain) == (x_i == null_theory_var)));
         
-        return !empty_column && safe_gain(min_gain, max_gain);
+        return safe_gain(min_gain, max_gain);
     }
 
     template<typename Ext>
@@ -1451,6 +1451,11 @@ namespace smt {
             normalize_gain(min_gain.get_rational(), max_gain);
         }
 
+        if (is_int(x_i) && !max_gain.is_rational()) {
+            max_gain = inf_numeral(floor(max_gain));
+            normalize_gain(min_gain.get_rational(), max_gain);
+        }
+
         if (!max_inc.is_minus_one()) {
             if (is_int(x_i)) {
                 TRACE("opt",
@@ -1530,6 +1535,7 @@ namespace smt {
         while (best_efforts < max_efforts && !ctx.get_cancel_flag()) {
             theory_var x_j = null_theory_var;
             theory_var x_i = null_theory_var;
+            bool has_bound = false;
             max_gain.reset();
             min_gain.reset();
             ++round;
@@ -1538,25 +1544,27 @@ namespace smt {
             typename vector<row_entry>::const_iterator it  = r.begin_entries();
             typename vector<row_entry>::const_iterator end = r.end_entries();
             for (; it != end; ++it) {  
-                if (it->is_dead()) continue;                                                  
+                if (it->is_dead()) continue;  
                 theory_var curr_x_j = it->m_var;
                 theory_var curr_x_i = null_theory_var;
                 SASSERT(is_non_base(curr_x_j));
                 curr_coeff    = it->m_coeff;
-                bool curr_inc = curr_coeff.is_pos() ? max : !max;                 
+                bool curr_inc = curr_coeff.is_pos() ? max : !max;  
+                if ((curr_inc && upper(curr_x_j)) || (!curr_inc && lower(curr_x_j))) {
+                    has_bound = true;
+                }
                 if ((curr_inc && at_upper(curr_x_j)) || (!curr_inc && at_lower(curr_x_j))) {
                     // variable cannot be used for max/min.
                     continue; 
                 }
-                bool picked_var = pick_var_to_leave(curr_x_j, curr_inc, curr_a_ij, 
+                bool safe_to_leave = pick_var_to_leave(curr_x_j, curr_inc, curr_a_ij, 
                                                     curr_min_gain, curr_max_gain, 
                                                     has_shared, curr_x_i);
 
-
-                SASSERT(!picked_var || safe_gain(curr_min_gain, curr_max_gain));
                 
-                if (!picked_var) { //  && (r.size() > 1 || !safe_gain(curr_min_gain, curr_max_gain))
+                if (!safe_to_leave) {
                     TRACE("opt", tout << "no variable picked\n";);
+                    has_bound = true;
                     best_efforts++;
                 }
                 else if (curr_x_i == null_theory_var) {
@@ -1592,7 +1600,15 @@ namespace smt {
 
             TRACE("opt", tout << "after traversing row:\nx_i: v" << x_i << ", x_j: v" << x_j << ", gain: " << max_gain << "\n";
                   tout << "best efforts: " << best_efforts << " has shared: " << has_shared << "\n";);
+
             
+            if (!has_bound && x_i == null_theory_var && x_j == null_theory_var) {
+                has_shared = false;
+                best_efforts = 0;
+                result = UNBOUNDED;                                
+                break;
+            }
+
             if (x_j == null_theory_var) {
                 TRACE("opt", tout << "row is " << (max ? "maximized" : "minimized") << "\n";
                       display_row(tout, r, true););
@@ -2138,10 +2154,14 @@ namespace smt {
     */
     template<typename Ext>
     bool theory_arith<Ext>::is_shared(theory_var v) const {
+        if (!m_found_underspecified_op) {
+            return false;
+        }
         enode * n      = get_enode(v);
         enode * r      = n->get_root();
         enode_vector::const_iterator it  = r->begin_parents();
         enode_vector::const_iterator end = r->end_parents();
+        TRACE("shared", tout << get_context().get_scope_level() << " " <<  v << " " << r->get_num_parents() << "\n";);
         for (; it != end; ++it) {
             enode * parent = *it;
             app *   o = parent->get_owner();

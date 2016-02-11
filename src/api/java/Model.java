@@ -56,7 +56,7 @@ public class Model extends Z3Object
                         Native.getRange(getContext().nCtx(), f.getNativeObject())) == Z3_sort_kind.Z3_ARRAY_SORT
                         .toInt())
             throw new Z3Exception(
-                    "Non-zero arity functions and arrays have FunctionInterpretations as a model. Use FuncInterp.");
+                    "Non-zero arity functions and arrays have FunctionInterpretations as a model. Use getFuncInterp.");
 
         long n = Native.modelGetConstInterp(getContext().nCtx(), getNativeObject(),
                 f.getNativeObject());
@@ -101,7 +101,7 @@ public class Model extends Z3Object
             } else
             {
                 throw new Z3Exception(
-                        "Constant functions do not have a function interpretation; use ConstInterp");
+                        "Constant functions do not have a function interpretation; use getConstInterp");
             }
         } else
         {
@@ -201,10 +201,11 @@ public class Model extends Z3Object
      * Remarks:  This function may fail if {@code t} contains
      * quantifiers, is partial (MODEL_PARTIAL enabled), or if {@code t} is not well-sorted. In this case a
      * {@code ModelEvaluationFailedException} is thrown.  
-     * @param t An expression {@code completion} When this flag
+	 * @param t the expression to evaluate
+     * @param completion An expression {@code completion} When this flag
      * is enabled, a model value will be assigned to any constant or function
      * that does not have an interpretation in the model.
-     * 
+
      * @return The evaluation of {@code t} in the model.
      * @throws Z3Exception
      **/

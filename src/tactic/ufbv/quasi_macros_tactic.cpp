@@ -31,17 +31,13 @@ class quasi_macros_tactic : public tactic {
 
     struct imp {
         ast_manager & m_manager;
-        bool m_cancel;
 
-        imp(ast_manager & m, params_ref const & p) : m_manager(m),m_cancel(false) {
+        imp(ast_manager & m, params_ref const & p) : m_manager(m) {
             updt_params(p);
         }
         
         ast_manager & m() const { return m_manager; }
         
-        void set_cancel(bool f) {
-            m_cancel = f;
-        }
         
         void operator()(goal_ref const & g, 
                         goal_ref_buffer & result, 
@@ -80,9 +76,9 @@ class quasi_macros_tactic : public tactic {
             }
         
             while (more) { // CMW: use repeat(...) ?
-                if (m_cancel) 
-                  throw tactic_exception(TACTIC_CANCELED_MSG);
-
+                if (m().canceled())
+                    throw tactic_exception(m().limit().get_cancel_msg());
+            
                 new_forms.reset();
                 new_proofs.reset();
                 more = qm(forms.size(), forms.c_ptr(), proofs.c_ptr(), new_forms, new_proofs);            
@@ -152,17 +148,10 @@ public:
     virtual void cleanup() {
         ast_manager & m = m_imp->m();
         imp * d = alloc(imp, m, m_params);
-        #pragma omp critical (tactic_cancel)
-        {
-            std::swap(d, m_imp);
-        }
+        std::swap(d, m_imp);        
         dealloc(d);
     }
 
-    virtual void set_cancel(bool f) {
-        if (m_imp)
-            m_imp->set_cancel(f);
-    }
 };
 
 tactic * mk_quasi_macros_tactic(ast_manager & m, params_ref const & p) {

@@ -23,6 +23,7 @@ Revision History:
 #include"array_simplifier_plugin.h"
 #include"datatype_simplifier_plugin.h"
 #include"fpa_simplifier_plugin.h"
+#include"seq_simplifier_plugin.h"
 #include"bv_simplifier_plugin.h"
 #include"for_each_expr.h"
 #include"well_sorted.h"
@@ -54,8 +55,7 @@ asserted_formulas::asserted_formulas(ast_manager & m, smt_params & p):
     m_macro_manager(m, m_simplifier),
     m_bit2int(m),
     m_bv_sharing(m),
-    m_inconsistent(false),
-    m_cancel_flag(false) {
+    m_inconsistent(false){
 
     m_bsimp = 0;
     m_bvsimp = 0;
@@ -99,6 +99,7 @@ void asserted_formulas::setup_simplifier_plugins(simplifier & s, basic_simplifie
     s.register_plugin(bvsimp);
     s.register_plugin(alloc(datatype_simplifier_plugin, m_manager, *bsimp));    
     s.register_plugin(alloc(fpa_simplifier_plugin, m_manager, *bsimp));
+    s.register_plugin(alloc(seq_simplifier_plugin, m_manager, *bsimp));
 }
 
 void asserted_formulas::init(unsigned num_formulas, expr * const * formulas, proof * const * prs) {
@@ -223,9 +224,6 @@ void asserted_formulas::reset() {
     m_inconsistent = false;
 }
 
-void asserted_formulas::set_cancel_flag(bool f) {
-    m_cancel_flag = f; 
-}
 
 #ifdef Z3DEBUG
 bool asserted_formulas::check_well_sorted() const {
@@ -259,7 +257,7 @@ void asserted_formulas::reduce() {
     INVOKE(m_params.m_propagate_booleans, propagate_booleans());
     INVOKE(m_params.m_propagate_values, propagate_values());
     INVOKE(m_params.m_macro_finder && has_quantifiers(), find_macros());
-    INVOKE(m_params.m_nnf_cnf, nnf_cnf());
+    INVOKE(m_params.m_nnf_cnf || (m_params.m_mbqi && has_quantifiers()), nnf_cnf());
     INVOKE(m_params.m_eliminate_and, eliminate_and());
     INVOKE(m_params.m_pull_cheap_ite_trees, pull_cheap_ite_trees());
     INVOKE(m_params.m_pull_nested_quantifiers && has_quantifiers(), pull_nested_quantifiers());
@@ -593,7 +591,7 @@ void asserted_formulas::propagate_values() {
     bool found = false;
     // Separate the formulas in two sets: C and R
     // C is a set which contains formulas of the form
-    // { x = n }, where x is a variable and n a numberal.
+    // { x = n }, where x is a variable and n a numeral.
     // R contains the rest.
     // 
     // - new_exprs1 is the set C
@@ -606,22 +604,26 @@ void asserted_formulas::propagate_values() {
     proof_ref_vector new_prs2(m_manager);
     unsigned sz = m_asserted_formulas.size();
     for (unsigned i = 0; i < sz; i++) {
-        expr * n    = m_asserted_formulas.get(i);
-        proof * pr  = m_asserted_formula_prs.get(i, 0);
+        expr_ref   n(m_asserted_formulas.get(i), m_manager);
+        proof_ref pr(m_asserted_formula_prs.get(i, 0), m_manager);
         TRACE("simplifier", tout << mk_pp(n, m_manager) << "\n";);
         if (m_manager.is_eq(n)) {
             expr * lhs = to_app(n)->get_arg(0);
             expr * rhs = to_app(n)->get_arg(1);
             if (m_manager.is_value(lhs) || m_manager.is_value(rhs)) {
-                if (m_manager.is_value(lhs))
+                if (m_manager.is_value(lhs)) {
                     std::swap(lhs, rhs);
+                    n = m_manager.mk_eq(lhs, rhs);
+                    pr = m_manager.mk_symmetry(pr);
+                }
                 if (!m_manager.is_value(lhs) && !m_simplifier.is_cached(lhs)) {
                     if (i >= m_asserted_qhead) {
                         new_exprs1.push_back(n);
                         if (m_manager.proofs_enabled())
                             new_prs1.push_back(pr);
                     }
-                    TRACE("propagate_values", tout << "found:\n" << mk_pp(lhs, m_manager) << "\n->\n" << mk_pp(rhs, m_manager) << "\n";);
+                    TRACE("propagate_values", tout << "found:\n" << mk_pp(lhs, m_manager) << "\n->\n" << mk_pp(rhs, m_manager) << "\n";
+                          if (pr) tout << "proof: " << mk_pp(pr, m_manager) << "\n";);
                     m_simplifier.cache_result(lhs, rhs, pr);
                     found = true;
                     continue;

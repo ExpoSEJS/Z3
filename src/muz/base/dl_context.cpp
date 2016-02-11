@@ -230,8 +230,7 @@ namespace datalog {
         m_enable_bind_variables(true),
         m_last_status(OK),
         m_last_answer(m),
-        m_engine_type(LAST_ENGINE),
-        m_cancel(false) {
+        m_engine_type(LAST_ENGINE) {
         re.set_context(this);
         updt_params(pa);
     }
@@ -750,16 +749,7 @@ namespace datalog {
         m_background.push_back(e); 
     }
 
-
-    void context::cancel() {
-        m_cancel = true;
-        m_last_status = CANCELED;
-        m_transf.cancel();
-        if (m_engine) m_engine->cancel();
-    }
-
     void context::cleanup() {
-        m_cancel = false;
         m_last_status = OK;
         if (m_engine) m_engine->cleanup();
     }
@@ -901,6 +891,7 @@ namespace datalog {
     }
 
     lbool context::rel_query(unsigned num_rels, func_decl * const* rels) {        
+        m_last_answer = 0;
         ensure_engine();
         return m_engine->query(num_rels, rels);
     }
@@ -973,7 +964,7 @@ namespace datalog {
         }
     }
    
-    void context::get_raw_rule_formulas(expr_ref_vector& rules, svector<symbol>& names, vector<unsigned> &bounds) {
+    void context::get_raw_rule_formulas(expr_ref_vector& rules, svector<symbol>& names, unsigned_vector &bounds) {
         for (unsigned i = 0; i < m_rule_fmls.size(); ++i) {
             expr_ref r = bind_vars(m_rule_fmls[i].get(), true);
             rules.push_back(r.get());
@@ -988,7 +979,6 @@ namespace datalog {
         
         // ensure that rules are all using bound variables.
         for (unsigned i = m_rule_fmls_head; i < m_rule_fmls.size(); ++i) {
-            ptr_vector<sort> sorts;
             m_free_vars(m_rule_fmls[i].get());
             if (!m_free_vars.empty()) {
                 rm.mk_rule(m_rule_fmls[i].get(), 0, m_rule_set, m_rule_names[i]);
@@ -1079,14 +1069,7 @@ namespace datalog {
         func_decl_set::iterator it = rels.begin(), end = rels.end();
         for (; it != end; ++it) {
             func_decl* f = *it;
-            out << "(declare-rel " << f->get_name() << " (";
-            for (unsigned i = 0; i < f->get_arity(); ++i) {                
-                ast_smt2_pp(out, f->get_domain(i), env);
-                if (i + 1 < f->get_arity()) {
-                    out << " ";
-                }
-            }
-            out << "))\n";
+            display_rel_decl(out, f);
         }
 
         if (use_fixedpoint_extensions && do_declare_vars) {
@@ -1130,9 +1113,29 @@ namespace datalog {
         }
         if (use_fixedpoint_extensions) {
             for (unsigned i = 0; i < queries.size(); ++i) {
-                out << "(query ";
-                PP(queries[i].get());                
-                out << ")\n";
+                expr* q = queries[i].get();
+                func_decl_ref fn(m);
+                if (is_query(q)) {
+                    fn = to_app(q)->get_decl();
+                }
+                else {
+                    m_free_vars(q);
+                    m_free_vars.set_default_sort(m.mk_bool_sort());
+                    sort* const* domain = m_free_vars.c_ptr();
+                    expr_ref qfn(m);
+                    expr_ref_vector args(m);
+                    fn = m.mk_fresh_func_decl(symbol("q"), symbol(""), m_free_vars.size(), domain, m.mk_bool_sort());
+                    display_rel_decl(out, fn);
+                    for (unsigned j = 0; j < m_free_vars.size(); ++j) {
+                        args.push_back(m.mk_var(j, m_free_vars[j]));
+                    }
+                    qfn = m.mk_implies(q, m.mk_app(fn, args.size(), args.c_ptr()));
+                    
+                    out << "(assert ";
+                    PP(qfn);
+                    out << ")\n";
+                }
+                out << "(query " << fn->get_name() << ")\n";
             }
         }
         else {
@@ -1147,6 +1150,35 @@ namespace datalog {
                 if (queries.size() > 1) out << "(pop)\n";
             }
         }
+    }
+
+    void context::display_rel_decl(std::ostream& out, func_decl* f) {
+        smt2_pp_environment_dbg env(m);
+        out << "(declare-rel " << f->get_name() << " (";
+        for (unsigned i = 0; i < f->get_arity(); ++i) {                
+            ast_smt2_pp(out, f->get_domain(i), env);
+            if (i + 1 < f->get_arity()) {
+                out << " ";
+            }
+        }
+        out << "))\n";
+    }
+
+    bool context::is_query(expr* q) {
+        if (!is_app(q) || !is_predicate(to_app(q)->get_decl())) {
+            return false;
+        }
+        app* a = to_app(q);
+        for (unsigned i = 0; i < a->get_num_args(); ++i) {
+            if (!is_var(a->get_arg(i))) {
+                return false;
+            }
+            var* v = to_var(a->get_arg(i));
+            if (v->get_idx() != i) {
+                return false;
+            }
+        }
+        return true;
     }
 
 

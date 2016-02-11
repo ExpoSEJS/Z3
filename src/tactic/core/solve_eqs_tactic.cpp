@@ -22,7 +22,7 @@ Revision History:
 #include"occurs.h"
 #include"cooperate.h"
 #include"goal_shared_occs.h"
-#include"ast_smt2_pp.h"
+#include"ast_pp.h"
 
 class solve_eqs_tactic : public tactic {
     struct imp {
@@ -48,7 +48,6 @@ class solve_eqs_tactic : public tactic {
         bool                          m_produce_proofs;
         bool                          m_produce_unsat_cores;
         bool                          m_produce_models;
-        volatile bool                 m_cancel;
         
         imp(ast_manager & m, params_ref const & p, expr_replacer * r, bool owner):
             m_manager(m),
@@ -56,8 +55,8 @@ class solve_eqs_tactic : public tactic {
             m_r_owner(r == 0 || owner),
             m_a_util(m),
             m_num_steps(0),
-            m_num_eliminated_vars(0),
-            m_cancel(false) {
+            m_num_eliminated_vars(0)
+             {
             updt_params(p);
             if (m_r == 0)
                 m_r       = mk_default_expr_replacer(m);
@@ -75,16 +74,11 @@ class solve_eqs_tactic : public tactic {
             m_theory_solver  = p.get_bool("theory_solver", true);
             m_max_occs       = p.get_uint("solve_eqs_max_occs", UINT_MAX);
         }
-        
-        void set_cancel(bool f) {
-            m_cancel = f;
-            m_r->set_cancel(f);
-        }
-        
+                
         void checkpoint() {
-            if (m_cancel)
-                throw tactic_exception(TACTIC_CANCELED_MSG);
-            cooperate("solve-eqs");
+            if (m().canceled())
+                throw tactic_exception(m().limit().get_cancel_msg());
+        cooperate("solve-eqs");
         }
         
         // Check if the number of occurrences of t is below the specified threshold :solve-eqs-max-occs
@@ -98,18 +92,25 @@ class solve_eqs_tactic : public tactic {
         }
         
         // Use: (= x def) and (= def x)
-        bool trivial_solve(expr * lhs, expr * rhs, app_ref & var, expr_ref & def, proof_ref & pr) {
+
+        bool trivial_solve1(expr * lhs, expr * rhs, app_ref & var, expr_ref & def, proof_ref & pr) { 
+
             if (is_uninterp_const(lhs) && !m_candidate_vars.is_marked(lhs) && !occurs(lhs, rhs) && check_occs(lhs)) {
                 var = to_app(lhs); 
                 def = rhs;
                 pr  = 0;
                 return true;
             }
-            else if (is_uninterp_const(rhs) && !m_candidate_vars.is_marked(rhs) && !occurs(rhs, lhs) && check_occs(rhs)) {
-                var = to_app(rhs);
-                def = lhs;
-                if (m_produce_proofs)
+            else {
+                return false;
+            }
+        }
+        bool trivial_solve(expr * lhs, expr * rhs, app_ref & var, expr_ref & def, proof_ref & pr) {
+            if (trivial_solve1(lhs, rhs, var, def, pr)) return true;
+            if (trivial_solve1(rhs, lhs, var, def, pr)) {
+                if (m_produce_proofs) {
                     pr = m().mk_commutativity(m().mk_eq(lhs, rhs));
+                }
                 return true;
             }
             return false;
@@ -757,10 +758,7 @@ public:
 
         imp * d = alloc(imp, m, m_params, r, owner);
         d->m_num_eliminated_vars = num_elim_vars;
-        #pragma omp critical (tactic_cancel)
-        {
-            std::swap(d, m_imp);
-        }
+        std::swap(d, m_imp);        
         dealloc(d);
     }
 
@@ -772,10 +770,6 @@ public:
         m_imp->m_num_eliminated_vars = 0;
     }
     
-    virtual void set_cancel(bool f) {
-        if (m_imp)
-            m_imp->set_cancel(f);
-    }
 };
 
 tactic * mk_solve_eqs_tactic(ast_manager & m, params_ref const & p, expr_replacer * r) {

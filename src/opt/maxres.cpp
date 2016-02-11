@@ -188,6 +188,7 @@ public:
     }
 
     lbool mus_solver() {
+        lbool is_sat = l_true;
         init();
         init_local();
         trace();
@@ -198,8 +199,8 @@ public:
                   tout << "\n";
                   display(tout);
                   );
-            lbool is_sat = check_sat_hill_climb(m_asms);
-            if (m_cancel) {
+            is_sat = check_sat_hill_climb(m_asms);
+            if (m.canceled()) {
                 return l_undef;
             }
             switch (is_sat) {
@@ -232,7 +233,7 @@ public:
         exprs cs;
         while (m_lower < m_upper) {
             lbool is_sat = check_sat_hill_climb(m_asms);
-            if (m_cancel) {
+            if (m.canceled()) {
                 return l_undef;
             }
             switch (is_sat) {
@@ -785,11 +786,6 @@ public:
         remove_soft(core, m_asms);
     }
 
-    virtual void set_cancel(bool f) {
-        maxsmt_solver_base::set_cancel(f);
-        m_mus.set_cancel(f);
-    }
-
     virtual void updt_params(params_ref& p) {
         maxsmt_solver_base::updt_params(p);
         opt_params _p(p);
@@ -833,9 +829,7 @@ public:
                 s().assert_expr(m_asms[i].get());
             }
         }
-        else {
-            maxsmt_solver_base::commit_assignment();
-        }
+        // else: there is only a single assignment to these soft constraints.
     }
 
     void verify_core(exprs const& core) {

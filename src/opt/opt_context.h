@@ -162,6 +162,8 @@ namespace opt {
         bool                         m_pp_neat;
         symbol                       m_maxsat_engine;
         symbol                       m_logic;
+        svector<symbol>              m_labels;
+        std::string                  m_unknown;
     public:
         context(ast_manager& m);
         virtual ~context();
@@ -173,20 +175,17 @@ namespace opt {
         virtual void push();
         virtual void pop(unsigned n);
         virtual bool empty() { return m_scoped_state.m_objectives.empty(); }
-        virtual void set_cancel(bool f);
-        virtual void reset_cancel() { set_cancel(false); }
-        virtual void cancel() { set_cancel(true); }
         virtual void set_hard_constraints(ptr_vector<expr> & hard);
         virtual lbool optimize();
         virtual bool print_model() const;
         virtual void get_model(model_ref& _m);
-        virtual void set_model(model_ref& _m);
         virtual void fix_model(model_ref& _m);
         virtual void collect_statistics(statistics& stats) const;
         virtual proof* get_proof() { return 0; }
-        virtual void get_labels(svector<symbol> & r) {}
+        virtual void get_labels(svector<symbol> & r);
         virtual void get_unsat_core(ptr_vector<expr> & r) {}
         virtual std::string reason_unknown() const;
+        virtual void set_reason_unknown(char const* msg) { m_unknown = msg; }
 
         virtual void display_assignment(std::ostream& out);
         virtual bool is_pareto() { return m_pareto.get() != 0; }
@@ -195,7 +194,7 @@ namespace opt {
 
         void display(std::ostream& out);
         static void collect_param_descrs(param_descrs & r);
-        void updt_params(params_ref& p);
+        virtual void updt_params(params_ref const& p);
         params_ref& get_params() { return m_params; }
 
         expr_ref get_lower(unsigned idx);
@@ -229,6 +228,7 @@ namespace opt {
         lbool execute_lex();
         lbool execute_box();
         lbool execute_pareto();
+        lbool adjust_unknown(lbool r);
         bool scoped_lex();
         expr_ref to_expr(inf_eps const& n);
 

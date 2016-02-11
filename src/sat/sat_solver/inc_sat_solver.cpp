@@ -32,6 +32,7 @@ Notes:
 #include "model_smt2_pp.h"
 #include "filter_model_converter.h"
 #include "bit_blaster_model_converter.h"
+#include "ast_translation.h"
 
 // incremental SAT solver.
 class inc_sat_solver : public solver {
@@ -59,6 +60,8 @@ class inc_sat_solver : public solver {
     model_converter_ref m_mc2;   
     expr_dependency_ref m_dep_core;
     svector<double>     m_weights;
+    std::string         m_unknown;
+
 
     typedef obj_map<expr, sat::literal> dep2asm_t;
 public:
@@ -72,7 +75,8 @@ public:
         m_map(m),
         m_bb_rewriter(m, p),
         m_num_scopes(0), 
-        m_dep_core(m) {
+        m_dep_core(m),
+        m_unknown("no reason given") {
         m_params.set_bool("elim_vars", false);
         m_solver.updt_params(m_params);
         params_ref simp2_p = p;
@@ -83,17 +87,36 @@ public:
         simp2_p.set_uint("local_ctx_limit", 10000000);
         simp2_p.set_bool("flat", true); // required by som
         simp2_p.set_bool("hoist_mul", false); // required by som
+        simp2_p.set_bool("elim_and", true);
         m_preprocess = 
             and_then(mk_card2bv_tactic(m, m_params),
                      using_params(mk_simplify_tactic(m), simp2_p),
                      mk_max_bv_sharing_tactic(m),
                      mk_bit_blaster_tactic(m, &m_bb_rewriter), 
-                     mk_aig_tactic(),
+                     //mk_aig_tactic(),
                      using_params(mk_simplify_tactic(m), simp2_p));               
     }
     
     virtual ~inc_sat_solver() {}
-    
+   
+    virtual solver* translate(ast_manager& dst_m, params_ref const& p) {
+        ast_translation tr(m, dst_m);
+        if (m_num_scopes > 0) {
+            throw default_exception("Cannot translate sat solver at non-base level");
+        }
+        inc_sat_solver* result = alloc(inc_sat_solver, dst_m, p);
+        expr_ref fml(dst_m);
+        for (unsigned i = 0; i < m_fmls.size(); ++i) {
+            fml = tr(m_fmls[i].get());
+            result->m_fmls.push_back(fml);
+        }
+        for (unsigned i = 0; i < m_asmsf.size(); ++i) {
+            fml = tr(m_asmsf[i].get());
+            result->m_asmsf.push_back(fml);
+        }
+        return result;
+    }
+
     virtual void set_progress_callback(progress_callback * callback) {}
 
     virtual lbool check_sat(unsigned num_assumptions, expr * const * assumptions) { 
@@ -148,11 +171,6 @@ public:
         }
         return r;
     }
-    virtual void set_cancel(bool f) {
-        m_goal2sat.set_cancel(f);
-        m_solver.set_cancel(f);
-        if (f) m_preprocess->cancel(); else m_preprocess->reset_cancel();
-    }
     virtual void push() {
         internalize_formulas();
         m_solver.user_push();
@@ -194,6 +212,7 @@ public:
             assert_expr(t);
         }
     }
+    virtual ast_manager& get_manager() { return m; }
     virtual void assert_expr(expr * t) {
         TRACE("sat", tout << mk_pp(t, m) << "\n";);
         m_fmls.push_back(t);
@@ -227,11 +246,14 @@ public:
         UNREACHABLE();
         return 0;
     }
+    
     virtual std::string reason_unknown() const {
-        return "no reason given";
+        return m_unknown;
+    }
+    virtual void set_reason_unknown(char const* msg) {
+        m_unknown = msg;
     }
     virtual void get_labels(svector<symbol> & r) {
-        UNREACHABLE();
     }
     virtual unsigned get_num_assertions() const {
         return m_fmls.size();

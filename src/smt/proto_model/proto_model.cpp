@@ -174,6 +174,13 @@ bool eval(func_interp & fi, simplifier & s, expr * const * args, expr_ref & resu
     return true;
 }
 
+bool proto_model::is_select_of_model_value(expr* e) const {
+    return 
+        is_app_of(e, m_afid, OP_SELECT) && 
+        is_as_array(to_app(e)->get_arg(0)) &&
+        has_interpretation(array_util(m_manager).get_as_array_func_decl(to_app(to_app(e)->get_arg(0))));
+}
+
 /**
    \brief Evaluate the expression e in the current model, and store the result in \c result.
    It returns \c true if succeeded, and false otherwise. If the evaluation fails,
@@ -196,6 +203,7 @@ bool proto_model::eval(expr * e, expr_ref & result, bool model_completion) {
     ptr_buffer<expr> args;
     expr * null = static_cast<expr*>(0);
     todo.push_back(std::make_pair(e, null));
+    
 
     expr * a;
     expr * expanded_a;
@@ -254,8 +262,9 @@ bool proto_model::eval(expr * e, expr_ref & result, bool model_completion) {
                     if (new_t.get() == 0) {
                         // t is interpreted or model completion is disabled.
                         m_simplifier.mk_app(f, num_args, args.c_ptr(), new_t);
+                        TRACE("model_eval", tout << mk_pp(t, m_manager) << " -> " << new_t << "\n";);
                         trail.push_back(new_t);
-                        if (!is_app(new_t) || to_app(new_t)->get_decl() != f) {
+                        if (!is_app(new_t) || to_app(new_t)->get_decl() != f || is_select_of_model_value(new_t)) {
                             // if the result is not of the form (f ...), then assume we must simplify it.
                             expr * new_new_t = 0;
                             if (!eval_cache.find(new_t.get(), new_new_t)) {
@@ -302,6 +311,7 @@ bool proto_model::eval(expr * e, expr_ref & result, bool model_completion) {
                         else {
                             SASSERT(r1);
                             trail.push_back(r1);
+                            TRACE("model_eval", tout << mk_pp(a, m_manager) << "\nevaluates to: " << r1 << "\n";);
                             expr * r2 = 0;
                             if (!eval_cache.find(r1.get(), r2)) {
                                 todo.back().second = r1;
@@ -585,7 +595,7 @@ void proto_model::register_value(expr * n) {
     }
 }
 
-bool proto_model::is_array_value(expr * v) const {
+bool proto_model::is_as_array(expr * v) const {
     return is_app_of(v, m_afid, OP_AS_ARRAY);
 }
 

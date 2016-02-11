@@ -415,10 +415,7 @@ public class Expr extends AST
      **/
     public boolean isInt()
     {
-        return (Native.isNumeralAst(getContext().nCtx(), getNativeObject()) && Native
-                .getSortKind(getContext().nCtx(),
-                        Native.getSort(getContext().nCtx(), getNativeObject())) == Z3_sort_kind.Z3_INT_SORT
-                .toInt());
+        return Native.getSortKind(getContext().nCtx(), Native.getSort(getContext().nCtx(), getNativeObject())) == Z3_sort_kind.Z3_INT_SORT.toInt();
     }
 
     /**
@@ -428,9 +425,7 @@ public class Expr extends AST
      **/
     public boolean isReal()
     {
-        return Native.getSortKind(getContext().nCtx(),
-                Native.getSort(getContext().nCtx(), getNativeObject())) == Z3_sort_kind.Z3_REAL_SORT
-                .toInt();
+        return Native.getSortKind(getContext().nCtx(), Native.getSort(getContext().nCtx(), getNativeObject())) == Z3_sort_kind.Z3_REAL_SORT.toInt();
     }
 
     /**
@@ -2165,6 +2160,8 @@ public class Expr extends AST
                 return new FPNum(ctx, obj);
             case Z3_ROUNDING_MODE_SORT:
                 return new FPRMNum(ctx, obj);
+            case Z3_FINITE_DOMAIN_SORT:
+                return new FiniteDomainNum(ctx, obj);
             default: ;
             }
         }
@@ -2187,6 +2184,12 @@ public class Expr extends AST
             return new FPExpr(ctx, obj);
         case Z3_ROUNDING_MODE_SORT:
             return new FPRMExpr(ctx, obj);
+        case Z3_FINITE_DOMAIN_SORT:
+            return new FiniteDomainExpr(ctx, obj);
+	case Z3_SEQ_SORT:
+	    return new SeqExpr(ctx, obj);
+	case Z3_RE_SORT:
+	    return new ReExpr(ctx, obj);
         default: ;
         }
 

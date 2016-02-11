@@ -74,7 +74,6 @@ class hnf::imp {
 
     ast_manager&          m;
     bool                  m_produce_proofs;
-    volatile bool         m_cancel;
     expr_ref_vector       m_todo;
     proof_ref_vector      m_proofs;
     expr_ref_vector       m_refs;
@@ -96,7 +95,6 @@ public:
     imp(ast_manager & m):
         m(m),
         m_produce_proofs(false),
-        m_cancel(false),
         m_todo(m),
         m_proofs(m),
         m_refs(m), 
@@ -156,7 +154,7 @@ public:
         m_todo.push_back(n);
         m_proofs.push_back(p);
         m_produce_proofs = p != 0;
-        while (!m_todo.empty() && !m_cancel) {
+        while (!m_todo.empty() && checkpoint()) {
             fml = m_todo.back();
             pr = m_proofs.back();
             m_todo.pop_back();
@@ -174,8 +172,8 @@ public:
               });
     }
 
-    void set_cancel(bool f) {
-        m_cancel = f;
+    bool checkpoint() {
+        return !m.canceled();
     }
 
     void set_name(symbol const& n) {
@@ -192,7 +190,6 @@ public:
     }
 
     void reset() {
-        m_cancel = false;
         m_todo.reset();
         m_proofs.reset();
         m_refs.reset();
@@ -328,9 +325,10 @@ private:
 
     void eliminate_disjunctions(expr_ref_vector::element_ref& body, proof_ref_vector& proofs) {
         expr* b = body.get(); 
-        expr* e1;
+        expr* e1, *e2;
         bool negate_args = false;
         bool is_disj = false;
+        expr_ref_vector _body(m);
         unsigned num_disj = 0;
         expr* const* disjs = 0;
         if (!contains_predicate(b)) {
@@ -348,6 +346,14 @@ private:
             negate_args = true;
             num_disj = to_app(e1)->get_num_args();
             disjs = to_app(e1)->get_args();
+        }
+        if (m.is_implies(b, e1, e2)) {
+            is_disj = true;
+            _body.push_back(mk_not(m, e1));
+            _body.push_back(e2);
+            disjs = _body.c_ptr();
+            num_disj = 2;
+            negate_args = false;
         }
         if (is_disj) {
             app* old_head = 0;
@@ -524,9 +530,6 @@ void hnf::operator()(expr * n, proof* p, expr_ref_vector & rs, proof_ref_vector&
           );
 }
 
-void hnf::set_cancel(bool f) {
-    m_imp->set_cancel(f);
-}
 
 void hnf::set_name(symbol const& n) {
     m_imp->set_name(n);

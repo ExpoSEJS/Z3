@@ -40,6 +40,11 @@ namespace smt {
     }
 
     template<typename Ext>
+    theory* theory_dense_diff_logic<Ext>::mk_fresh(context * new_ctx) { 
+        return alloc(theory_dense_diff_logic<Ext>, new_ctx->get_manager(), m_params); 
+    }
+
+    template<typename Ext>
     inline app * theory_dense_diff_logic<Ext>::mk_zero_for(expr * n) {
         return m_autil.mk_numeral(rational(0), get_manager().get_sort(n));
     }
@@ -891,8 +896,8 @@ namespace smt {
     template<typename Ext>
     inf_eps_rational<inf_rational> theory_dense_diff_logic<Ext>::maximize(theory_var v, expr_ref& blocker, bool& has_shared) {
         typedef simplex::simplex<simplex::mpq_ext> Simplex;
-        Simplex S;
         ast_manager& m = get_manager();
+        Simplex S(m.limit());
         objective_term const& objective = m_objectives[v];
         has_shared = false;
         

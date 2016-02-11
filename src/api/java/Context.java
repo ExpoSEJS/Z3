@@ -18,6 +18,7 @@ Notes:
 package com.microsoft.z3;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.microsoft.z3.enumerations.Z3_ast_print_mode;
 
@@ -30,10 +31,12 @@ public class Context extends IDisposable
      * Constructor.
      **/
     public Context()
-    {
+    {        
         super();
-        m_ctx = Native.mkContextRc(0);
-        initContext();
+        synchronized (creation_lock) {            
+            m_ctx = Native.mkContextRc(0);
+            initContext();
+        }
     }
 
     /**
@@ -56,12 +59,14 @@ public class Context extends IDisposable
     public Context(Map<String, String> settings)
     {
         super();
-        long cfg = Native.mkConfig();
-        for (Map.Entry<String, String> kv : settings.entrySet())
-            Native.setParamValue(cfg, kv.getKey(), kv.getValue());
-        m_ctx = Native.mkContextRc(cfg);
-        Native.delConfig(cfg);
-        initContext();
+        synchronized (creation_lock) {            
+            long cfg = Native.mkConfig();
+            for (Map.Entry<String, String> kv : settings.entrySet())
+                Native.setParamValue(cfg, kv.getKey(), kv.getValue());
+            m_ctx = Native.mkContextRc(cfg);
+            Native.delConfig(cfg);
+            initContext();
+        }
     }
 
     /**
@@ -98,6 +103,7 @@ public class Context extends IDisposable
     private BoolSort m_boolSort = null;
     private IntSort m_intSort = null;
     private RealSort m_realSort = null;
+    private SeqSort m_stringSort = null;
 
     /**
      * Retrieves the Boolean sort of the context.
@@ -135,6 +141,16 @@ public class Context extends IDisposable
     public BoolSort mkBoolSort()
     {
         return new BoolSort(this);
+    }
+
+    /**
+     * Retrieves the Integer sort of the context.
+     **/
+    public SeqSort getStringSort()
+    {
+        if (m_stringSort == null)
+            m_stringSort = mkStringSort();
+        return m_stringSort;
     }
 
     /**
@@ -187,6 +203,31 @@ public class Context extends IDisposable
         checkContextMatch(range);
         return new ArraySort(this, domain, range);
     }
+
+    /**
+     * Create a new string sort
+     **/
+    public SeqSort mkStringSort()
+    {
+        return new SeqSort(this, Native.mkStringSort(nCtx()));
+    }
+
+    /**
+     * Create a new sequence sort
+     **/
+    public SeqSort mkSeqSort(Sort s)
+    {
+        return new SeqSort(this, Native.mkSeqSort(nCtx(), s.getNativeObject()));
+    }
+
+    /**
+     * Create a new regular expression sort
+     **/
+    public ReSort mkReSort(Sort s)
+    {
+        return new ReSort(this, Native.mkReSort(nCtx(), s.getNativeObject()));
+    }
+
 
     /**
      * Create a new tuple sort.
@@ -365,16 +406,15 @@ public class Context extends IDisposable
      * Update a datatype field at expression t with value v.
      * The function performs a record update at t. The field
      * that is passed in as argument is updated with value v,
-     * the remainig fields of t are unchanged.	
+     * the remainig fields of t are unchanged.    
      **/
     public Expr MkUpdateField(FuncDecl field, Expr t, Expr v) 
-            throws Z3Exception
+        throws Z3Exception
     {
-	return Expr.create
-	    (this, 
-	     Native.datatypeUpdateField
-	     (nCtx(), field.getNativeObject(),
-	      t.getNativeObject(), v.getNativeObject()));		
+        return Expr.create (this, 
+                            Native.datatypeUpdateField
+                            (nCtx(), field.getNativeObject(),
+                             t.getNativeObject(), v.getNativeObject()));        
     }
 
 
@@ -429,8 +469,8 @@ public class Context extends IDisposable
     /**
      * Creates a fresh function declaration with a name prefixed with
      * {@code prefix}. 
-     * @see mkFuncDecl(String,Sort,Sort)
-     * @see mkFuncDecl(String,Sort[],Sort)
+     * @see #mkFuncDecl(String,Sort,Sort)
+     * @see #mkFuncDecl(String,Sort[],Sort)
      **/
     public FuncDecl mkFreshFuncDecl(String prefix, Sort[] domain, Sort range)
            
@@ -1714,6 +1754,17 @@ public class Context extends IDisposable
     }
 
     /**
+     * Create Extentionality index. Two arrays are equal if and only if they are equal on the index returned by MkArrayExt.
+     **/
+    public Expr mkArrayExt(ArrayExpr arg1, ArrayExpr arg2)
+    {
+    checkContextMatch(arg1);
+    checkContextMatch(arg2);
+    return Expr.create(this, Native.mkArrayExt(nCtx(), arg1.getNativeObject(), arg2.getNativeObject()));
+    }
+
+
+    /**
      * Create a set type.
      **/
     public SetSort mkSetSort(Sort ty)
@@ -1833,6 +1884,184 @@ public class Context extends IDisposable
                 Native.mkSetSubset(nCtx(), arg1.getNativeObject(),
                         arg2.getNativeObject()));
     }
+
+
+    /**
+     * Sequences, Strings and regular expressions.
+     */
+
+    /**
+     * Create the empty sequence.
+    */
+    public SeqExpr MkEmptySeq(Sort s) 
+    {
+	checkContextMatch(s);
+	return new SeqExpr(this, Native.mkSeqEmpty(nCtx(), s.getNativeObject()));
+    }
+
+    /**
+     * Create the singleton sequence.
+     */
+    public SeqExpr MkUnit(Expr elem) 
+    {
+	checkContextMatch(elem);
+	return new SeqExpr(this, Native.mkSeqUnit(nCtx(), elem.getNativeObject()));
+    }
+    
+    /**
+     * Create a string constant.
+     */
+    public SeqExpr MkString(String s) 
+    {
+	return new SeqExpr(this, Native.mkString(nCtx(), s));
+    }
+    
+    /**
+     * Concatentate sequences.
+     */
+    public SeqExpr MkConcat(SeqExpr... t)
+    {
+	checkContextMatch(t);
+	return new SeqExpr(this, Native.mkSeqConcat(nCtx(), (int)t.length, AST.arrayToNative(t)));
+    }
+    
+    
+    /**
+     * Retrieve the length of a given sequence.
+     */
+    public IntExpr MkLength(SeqExpr s)
+    {
+	checkContextMatch(s);
+	return (IntExpr) Expr.create(this, Native.mkSeqLength(nCtx(), s.getNativeObject()));
+    }
+    
+    /**
+     * Check for sequence prefix.
+     */
+    public BoolExpr MkPrefixOf(SeqExpr s1, SeqExpr s2) 
+    {
+	checkContextMatch(s1, s2);
+	return new BoolExpr(this, Native.mkSeqPrefix(nCtx(), s1.getNativeObject(), s2.getNativeObject()));
+    }
+    
+    /**
+     * Check for sequence suffix.
+     */
+    public BoolExpr MkSuffixOf(SeqExpr s1, SeqExpr s2) 
+    {
+	checkContextMatch(s1, s2);
+	return new BoolExpr(this, Native.mkSeqSuffix(nCtx(), s1.getNativeObject(), s2.getNativeObject()));
+    }
+    
+    /**
+     * Check for sequence containment of s2 in s1.
+     */
+    public BoolExpr MkContains(SeqExpr s1, SeqExpr s2) 
+    {
+	checkContextMatch(s1, s2);
+	return new BoolExpr(this, Native.mkSeqContains(nCtx(), s1.getNativeObject(), s2.getNativeObject()));
+    }
+    
+    /**
+     * Retrieve sequence of length one at index.
+     */
+    public SeqExpr MkAt(SeqExpr s, IntExpr index)
+    {
+	checkContextMatch(s, index);
+	return new SeqExpr(this, Native.mkSeqAt(nCtx(), s.getNativeObject(), index.getNativeObject()));
+    }
+    
+    /**
+     * Extract subsequence.
+     */
+    public SeqExpr MkExtract(SeqExpr s, IntExpr offset, IntExpr length)
+    {
+	checkContextMatch(s, offset, length);
+	return new SeqExpr(this, Native.mkSeqExtract(nCtx(), s.getNativeObject(), offset.getNativeObject(), length.getNativeObject()));
+    }
+    
+    /**
+     * Extract index of sub-string starting at offset.
+     */
+    public IntExpr MkIndexOf(SeqExpr s, SeqExpr substr, ArithExpr offset)
+    {
+	checkContextMatch(s, substr, offset);
+	return new IntExpr(this, Native.mkSeqIndex(nCtx(), s.getNativeObject(), substr.getNativeObject(), offset.getNativeObject()));
+    }
+    
+    /**
+     * Replace the first occurrence of src by dst in s.
+     */
+    public SeqExpr MkReplace(SeqExpr s, SeqExpr src, SeqExpr dst)
+    {
+	checkContextMatch(s, src, dst);
+	return new SeqExpr(this, Native.mkSeqReplace(nCtx(), s.getNativeObject(), src.getNativeObject(), dst.getNativeObject()));
+    }
+    
+    /**
+     * Convert a regular expression that accepts sequence s.
+     */
+    public ReExpr MkToRe(SeqExpr s) 
+    {
+	checkContextMatch(s);
+	return new ReExpr(this, Native.mkSeqToRe(nCtx(), s.getNativeObject()));            
+    }
+    
+    
+    /**
+     * Check for regular expression membership.
+     */
+    public BoolExpr MkInRe(SeqExpr s, ReExpr re)
+    {
+	checkContextMatch(s, re);
+	return new BoolExpr(this, Native.mkSeqInRe(nCtx(), s.getNativeObject(), re.getNativeObject()));            
+    }
+    
+    /**
+     * Take the Kleene star of a regular expression.
+     */
+    public ReExpr MkStar(ReExpr re)
+    {
+	checkContextMatch(re);
+	return new ReExpr(this, Native.mkReStar(nCtx(), re.getNativeObject()));            
+    }
+    
+    /**
+     * Take the Kleene plus of a regular expression.
+     */
+    public ReExpr MPlus(ReExpr re)
+    {
+	checkContextMatch(re);
+	return new ReExpr(this, Native.mkRePlus(nCtx(), re.getNativeObject()));            
+    }
+    
+    /**
+     * Create the optional regular expression.
+     */
+    public ReExpr MOption(ReExpr re)
+    {
+	checkContextMatch(re);
+	return new ReExpr(this, Native.mkReOption(nCtx(), re.getNativeObject()));            
+    }
+    
+    /**
+     * Create the concatenation of regular languages.
+     */
+    public ReExpr MkConcat(ReExpr... t)
+    {
+	checkContextMatch(t);
+	return new ReExpr(this, Native.mkReConcat(nCtx(), (int)t.length, AST.arrayToNative(t)));
+    }
+    
+    /**
+     * Create the union of regular languages.
+     */
+    public ReExpr MkUnion(ReExpr... t)
+    {
+	checkContextMatch(t);
+	return new ReExpr(this, Native.mkReUnion(nCtx(), (int)t.length, AST.arrayToNative(t)));
+    }
+    
 
     /**
      * Create a Term of a given sort. 
@@ -2010,6 +2239,7 @@ public class Context extends IDisposable
 
     /**
      * Create a universal Quantifier.
+     *
      * @param sorts the sorts of the bound variables. 
      * @param names names of the bound variables 
      * @param body the body of the quantifier. 
@@ -2019,17 +2249,22 @@ public class Context extends IDisposable
      * @param quantifierID optional symbol to track quantifier. 
      * @param skolemID optional symbol to track skolem constants.
      * 
-     * Remarks:  Creates a forall formula, where
-     * {@code weight"/> is the weight, <paramref name="patterns} is
+     * @return Creates a forall formula, where
+     * {@code weight} is the weight, {@code patterns} is
      * an array of patterns, {@code sorts} is an array with the sorts
      * of the bound variables, {@code names} is an array with the
      * 'names' of the bound variables, and {@code body} is the body
      * of the quantifier. Quantifiers are associated with weights indicating the
      * importance of using the quantifier during instantiation.
+     * Note that the bound variables are de-Bruijn indices created using {@link mkBound}.
+     * Z3 applies the convention that the last element in {@code names} and 
+     * {@code sorts} refers to the variable with index 0, the second to last element 
+     * of {@code names} and {@code sorts} refers to the variable 
+     * with index 1, etc. 
      **/
     public Quantifier mkForall(Sort[] sorts, Symbol[] names, Expr body,
-            int weight, Pattern[] patterns, Expr[] noPatterns,
-            Symbol quantifierID, Symbol skolemID)
+                               int weight, Pattern[] patterns, Expr[] noPatterns,
+                               Symbol quantifierID, Symbol skolemID)
     {
 
         return new Quantifier(this, true, sorts, names, body, weight, patterns,
@@ -2037,11 +2272,12 @@ public class Context extends IDisposable
     }
 
     /**
-     * Create a universal Quantifier.
+     * Creates a universal quantifier using a list of constants that will form the set of bound variables. 
+     * @see #mkForall(Sort[],Symbol[],Expr,int,Pattern[],Expr[],Symbol,Symbol)
      **/
     public Quantifier mkForall(Expr[] boundConstants, Expr body, int weight,
-            Pattern[] patterns, Expr[] noPatterns, Symbol quantifierID,
-            Symbol skolemID)
+                               Pattern[] patterns, Expr[] noPatterns, Symbol quantifierID,
+                               Symbol skolemID)
     {
 
         return new Quantifier(this, true, boundConstants, body, weight,
@@ -2049,12 +2285,12 @@ public class Context extends IDisposable
     }
 
     /**
-     * Create an existential Quantifier. 
+     * Creates an existential quantifier using de-Brujin indexed variables. 
      * @see mkForall(Sort[],Symbol[],Expr,int,Pattern[],Expr[],Symbol,Symbol)
      **/
     public Quantifier mkExists(Sort[] sorts, Symbol[] names, Expr body,
-            int weight, Pattern[] patterns, Expr[] noPatterns,
-            Symbol quantifierID, Symbol skolemID)
+                               int weight, Pattern[] patterns, Expr[] noPatterns,
+                               Symbol quantifierID, Symbol skolemID)
     {
 
         return new Quantifier(this, false, sorts, names, body, weight,
@@ -2062,11 +2298,12 @@ public class Context extends IDisposable
     }
 
     /**
-     * Create an existential Quantifier.
+     * Creates an existential quantifier using a list of constants that will form the set of bound variables. 
+     * @see #mkForall(Sort[],Symbol[],Expr,int,Pattern[],Expr[],Symbol,Symbol)
      **/
     public Quantifier mkExists(Expr[] boundConstants, Expr body, int weight,
-            Pattern[] patterns, Expr[] noPatterns, Symbol quantifierID,
-            Symbol skolemID)
+                               Pattern[] patterns, Expr[] noPatterns, Symbol quantifierID,
+                               Symbol skolemID)
     {
 
         return new Quantifier(this, false, boundConstants, body, weight,
@@ -2075,11 +2312,12 @@ public class Context extends IDisposable
 
     /**
      * Create a Quantifier.
+     * @see #mkForall(Sort[],Symbol[],Expr,int,Pattern[],Expr[],Symbol,Symbol)
      **/
     public Quantifier mkQuantifier(boolean universal, Sort[] sorts,
-            Symbol[] names, Expr body, int weight, Pattern[] patterns,
-            Expr[] noPatterns, Symbol quantifierID, Symbol skolemID)
-           
+                                   Symbol[] names, Expr body, int weight, Pattern[] patterns,
+                                   Expr[] noPatterns, Symbol quantifierID, Symbol skolemID)
+        
     {
 
         if (universal)
@@ -2091,11 +2329,12 @@ public class Context extends IDisposable
     }
 
     /**
-     * Create a Quantifier.
+     * Create a Quantifier
+     * @see #mkForall(Sort[],Symbol[],Expr,int,Pattern[],Expr[],Symbol,Symbol)
      **/
     public Quantifier mkQuantifier(boolean universal, Expr[] boundConstants,
-            Expr body, int weight, Pattern[] patterns, Expr[] noPatterns,
-            Symbol quantifierID, Symbol skolemID)
+                                   Expr body, int weight, Pattern[] patterns, Expr[] noPatterns,
+                                   Symbol quantifierID, Symbol skolemID)
     {
 
         if (universal)
@@ -2559,7 +2798,7 @@ public class Context extends IDisposable
     }
 
     /**
-     * Create a tactic that applies the given tactics in parallel.
+     * Create a tactic that applies the given tactics in parallel until one of them succeeds (i.e., the first that doesn't fail).
      **/
     public Tactic parOr(Tactic... t)
     {
@@ -3638,7 +3877,8 @@ public class Context extends IDisposable
         Native.updateParamValue(nCtx(), id, value);
     }
 
-    long m_ctx = 0;
+    protected long m_ctx = 0;
+    protected static Object creation_lock = new Object();
 
     long nCtx()
     {
@@ -3655,6 +3895,19 @@ public class Context extends IDisposable
     {
         if (this != other.getContext())
             throw new Z3Exception("Context mismatch");
+    }
+
+    void checkContextMatch(Z3Object other1, Z3Object other2)
+    {
+	checkContextMatch(other1);
+	checkContextMatch(other2);
+    }
+
+    void checkContextMatch(Z3Object other1, Z3Object other2, Z3Object other3)
+    {
+	checkContextMatch(other1);
+	checkContextMatch(other2);
+	checkContextMatch(other3);
     }
 
     void checkContextMatch(Z3Object[] arr)
@@ -3761,29 +4014,23 @@ public class Context extends IDisposable
         return m_Optimize_DRQ;
     }
 
-    protected long m_refCount = 0;
+    protected AtomicInteger m_refCount = new AtomicInteger(0);
 
     /**
      * Finalizer.
+     * @throws Throwable 
      **/
-    protected void finalize()
+    protected void finalize() throws Throwable
     {
-        dispose();
-
-        if (m_refCount == 0)
-        {
-            try
-            {
-                Native.delContext(m_ctx);
-            } catch (Z3Exception e)
-            {
-                // OK.
-            }
-            m_ctx = 0;
-        } 
-        /*
-        else
-            CMW: re-queue the finalizer? */
+        try {            
+            dispose();
+        }
+        catch (Throwable t) {
+            throw t;
+        }
+        finally {
+            super.finalize();
+        }
     }
 
     /**
@@ -3802,6 +4049,7 @@ public class Context extends IDisposable
         m_Params_DRQ.clear(this);
         m_Probe_DRQ.clear(this);
         m_Solver_DRQ.clear(this);
+	m_Optimize_DRQ.clear(this);
         m_Statistics_DRQ.clear(this);
         m_Tactic_DRQ.clear(this);
         m_Fixedpoint_DRQ.clear(this);
@@ -3809,5 +4057,18 @@ public class Context extends IDisposable
         m_boolSort = null;
         m_intSort = null;
         m_realSort = null;
+        m_stringSort = null;
+
+        synchronized (creation_lock) {
+            if (m_refCount.get() == 0 && m_ctx != 0) {
+                try {
+                    Native.delContext(m_ctx);
+                } catch (Z3Exception e) {
+                    // OK?
+                    System.out.println("Context deletion failed; memory leak possible.");
+                }
+                m_ctx = 0;
+            }
+        }
     }
 }

@@ -362,6 +362,7 @@ MK_PARAMETRIC_UNARY_REDUCE(reduce_sign_extend, mk_sign_extend);
             return BR_FAILED;
         }
         
+
         if (m().is_ite(f)) {
             SASSERT(num == 3);
             if (butil().is_bv(args[1])) {
@@ -649,10 +650,6 @@ void bit_blaster_rewriter::updt_params(params_ref const& p) {
     m_imp->m_cfg.updt_params(p);
 }
 
-void bit_blaster_rewriter::set_cancel(bool f) {
-    m_imp->set_cancel(f);
-    m_imp->m_blaster.set_cancel(f);
-}
 
 void bit_blaster_rewriter::push() {
     m_imp->push();

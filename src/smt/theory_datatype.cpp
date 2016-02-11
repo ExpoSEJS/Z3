@@ -36,6 +36,11 @@ namespace smt {
         virtual theory_id get_from_theory() const { return null_theory_id; } 
     };
 
+
+    theory* theory_datatype::mk_fresh(context* new_ctx) { 
+        return alloc(theory_datatype, new_ctx->get_manager(), m_params); 
+    }
+
     /**
        \brief Assert the axiom (antecedent => lhs = rhs)
        antecedent may be null_literal
@@ -433,8 +438,8 @@ namespace smt {
             ctx.set_conflict(ctx.mk_justification(ext_theory_conflict_justification(get_id(), r, 0, 0, m_used_eqs.size(), m_used_eqs.c_ptr())));
             TRACE("occurs_check",
                   tout << "occurs_check: true\n";
-                  svector<enode_pair>::const_iterator it  = m_used_eqs.begin();
-                  svector<enode_pair>::const_iterator end = m_used_eqs.end();
+                  enode_pair_vector::const_iterator it  = m_used_eqs.begin();
+                  enode_pair_vector::const_iterator end = m_used_eqs.end();
                   for(; it != end; ++it) {
                       enode_pair const & p = *it;
                       tout << "eq: #" << p.first->get_owner_id() << " #" << p.second->get_owner_id() << "\n";
@@ -517,8 +522,9 @@ namespace smt {
     }
 
     void theory_datatype::display(std::ostream & out) const {
-        out << "Theory datatype:\n";
         unsigned num_vars = get_num_vars();
+        if (num_vars == 0) return;
+        out << "Theory datatype:\n";
         for (unsigned v = 0; v < num_vars; v++) 
             display_var(out, v);
     }
@@ -670,7 +676,7 @@ namespace smt {
         CTRACE("datatype", d->m_recognizers.empty(), ctx.display(tout););
         SASSERT(!d->m_recognizers.empty());
         literal_vector lits;
-        svector<enode_pair> eqs;
+        enode_pair_vector eqs;
         ptr_vector<enode>::const_iterator it  = d->m_recognizers.begin();
         ptr_vector<enode>::const_iterator end = d->m_recognizers.end();
         for (unsigned idx = 0; it != end; ++it, ++idx) {

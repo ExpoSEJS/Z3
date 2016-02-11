@@ -48,6 +48,7 @@ namespace smt {
 
     template<typename Ext>
     void theory_arith<Ext>::display(std::ostream & out) const {
+        if (get_num_vars() == 0) return;
         out << "Theory arithmetic:\n";
         display_vars(out);
         display_nl_monomials(out);
@@ -397,6 +398,18 @@ namespace smt {
         for (unsigned i = 0; i < indent; i++) out << "  ";
         b->display(*this, out);
         out << "\n";
+    }
+
+    template<typename Ext>
+    std::ostream& theory_arith<Ext>::antecedents_t::display(theory_arith& th, std::ostream & out) const {
+        th.get_context().display_literals_verbose(out, lits().size(), lits().c_ptr());
+        if (!lits().empty()) out << "\n";
+        ast_manager& m = th.get_manager();
+        for (unsigned i = 0; i < m_eqs.size(); ++i) {
+            out << mk_pp(m_eqs[i].first->get_owner(), m) << " ";
+            out << mk_pp(m_eqs[i].second->get_owner(), m) << "\n";            
+        }
+        return out;
     }
 
     template<typename Ext>

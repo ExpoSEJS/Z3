@@ -463,12 +463,6 @@ namespace datalog {
             }
     }
 
-    void relation_manager::set_cancel(bool f) {
-        for (unsigned i = 0; i < m_relation_plugins.size(); ++i) {
-            m_relation_plugins[i]->set_cancel(f);
-        }
-    }
-
     std::string relation_manager::to_nice_string(const relation_element & el) const {
         uint64 val;
         std::stringstream stm;
@@ -1021,12 +1015,6 @@ namespace datalog {
             res = alloc(default_table_join_fn, t1.get_signature(), t2.get_signature(), col_cnt, cols1, cols2);
         }
         return res;
-    }
-
-    table_min_fn * relation_manager::mk_min_fn(const table_base & t,
-        unsigned_vector & group_by_cols, const unsigned col)
-    {
-        return t.get_plugin().mk_min_fn(t, group_by_cols, col);
     }
 
     class relation_manager::auxiliary_table_transformer_fn {

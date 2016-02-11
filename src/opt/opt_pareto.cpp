@@ -34,10 +34,11 @@ namespace opt {
             {
                 solver::scoped_push _s(*m_solver.get());
                 while (is_sat == l_true) {
-                    if (m_cancel) {
+                    if (m.canceled()) {
                         return l_undef;
                     }
                     m_solver->get_model(m_model);
+                    m_solver->get_labels(m_labels);
                     IF_VERBOSE(1,
                                model_ref mdl(m_model);
                                cb.fix_model(mdl); 
@@ -91,11 +92,12 @@ namespace opt {
     lbool oia_pareto::operator()() {
         solver::scoped_push _s(*m_solver.get());
         lbool is_sat = m_solver->check_sat(0, 0);
-        if (m_cancel) {
+        if (m.canceled()) {
             is_sat = l_undef;
         }
         if (is_sat == l_true) {
             m_solver->get_model(m_model);
+            m_solver->get_labels(m_labels);
             mk_not_dominated_by();
         }
         return is_sat;

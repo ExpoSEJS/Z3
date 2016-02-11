@@ -516,7 +516,7 @@ inline unsigned ast_array_hash(T * const * array, unsigned size, unsigned init_v
         switch (size) {
         case 2:
             b += array[1]->hash();
-            __fallthrough;
+            Z3_fallthrough;
         case 1:
             c += array[0]->hash();
         }
@@ -1433,12 +1433,6 @@ ast_manager::~ast_manager() {
     }
 }
 
-void ast_manager::set_cancel(bool f) {
-    for (unsigned i = 0; i < m_plugins.size(); i++) {
-        m_plugins[i]->set_cancel(f);
-    }
-}
-
 void ast_manager::compact_memory() {
     m_alloc.consolidate();
     unsigned capacity = m_ast_table.capacity();
@@ -1662,6 +1656,7 @@ ast * ast_manager::register_node_core(ast * n) {
 
     n->m_id   = is_decl(n) ? m_decl_id_gen.mk() : m_expr_id_gen.mk();
 
+    
     TRACE("ast", tout << "Object " << n->m_id << " was created.\n";);
     TRACE("mk_var_bug", tout << "mk_ast: " << n->m_id << "\n";);
     // increment reference counters
@@ -2871,22 +2866,24 @@ proof * ast_manager::mk_unit_resolution(unsigned num_proofs, proof * const * pro
         svector<bool> found;
 #endif
         for (unsigned i = 0; i < num_args; i++) {
+            bool found_complement = false;
             expr * lit = cls->get_arg(i);
-            unsigned j = 1;
-            for (; j < num_proofs; j++) {
+            for (unsigned j = 1; j < num_proofs; j++) {
                 expr const * _fact = get_fact(proofs[j]);
                 if (is_complement(lit, _fact)) {
-                    DEBUG_CODE(found.setx(j, true, false););
+                    found_complement = true;
+                    DEBUG_CODE(found.setx(j, true, false); continue;);                    
                     break;
                 }
             }
-            if (j == num_proofs)
+            if (!found_complement)
                 new_lits.push_back(lit);
         }
         DEBUG_CODE({
             for (unsigned i = 1; m_proof_mode == PGM_FINE && i < num_proofs; i++) {
                 CTRACE("mk_unit_resolution_bug", !found.get(i, false), 
                        for (unsigned j = 0; j < num_proofs; j++) {
+                           if (j == i) tout << "Index " << i << " was not found:\n";                       
                            tout << mk_ll_pp(get_fact(proofs[j]), *this);
                        });
                 SASSERT(found.get(i, false));

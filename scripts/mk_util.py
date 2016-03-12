@@ -571,7 +571,7 @@ def check_eol():
 
 if os.name == 'nt':
     IS_WINDOWS=True
-    # Visual Studio already displays the files being compiled
+    # Visual Studio already displays the files being bin
     SHOW_CPPS=False
 elif os.name == 'posix':
     if os.uname()[0] == 'Darwin':
@@ -795,7 +795,7 @@ def get_z3py_dir():
     return Z3PY_SRC_DIR
 
 def get_z3js_dir():
-    return "../compiled/"
+    return "../bin/"
 
 # Return true if in verbose mode
 def is_verbose():

@@ -1620,7 +1620,7 @@ def generate_files(api_files,
                    java_output_dir=None,
                    java_package_name=None,
                    ml_output_dir=None,
-                   z3js_output_dir='../../bin/'):
+                   z3js_output_dir='../bin/'):
   """
     Scan the api files in ``api_files`` and emit the relevant API files into
     the output directories specified. If an output directory is set to ``None``
@@ -1645,7 +1645,7 @@ def generate_files(api_files,
     to determine the output directory paths.
   """
   # FIXME: These should not be global
-  global log_h, log_c, exe_c, core_py
+  global log_h, log_c, exe_c, core_py, core_flat, core_js
   assert isinstance(api_files, list)
 
   # Hack: Avoid emitting files when we don't want them

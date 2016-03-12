@@ -12,6 +12,7 @@ import re
 import getopt
 import shutil
 from mk_exception import *
+import mk_genfile_common
 from fnmatch import fnmatch
 import distutils.sysconfig
 import compileall
@@ -71,6 +72,7 @@ VERBOSE=True
 DEBUG_MODE=False
 SHOW_CPPS = True
 VS_X64 = False
+VS_ARM = False
 LINUX_X64 = True
 ONLY_MAKEFILES = False
 Z3PY_SRC_DIR=None
@@ -81,6 +83,7 @@ JAVA_ENABLED=False
 ML_ENABLED=False
 PYTHON_INSTALL_ENABLED=False
 STATIC_LIB=False
+STATIC_BIN=False
 VER_MAJOR=None
 VER_MINOR=None
 VER_BUILD=None
@@ -98,6 +101,7 @@ USE_OMP=True
 
 FPMATH="Default"
 FPMATH_FLAGS="-mfpmath=sse -msse -msse2"
+
 
 def check_output(cmd):
     out = subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()[0]
@@ -530,6 +534,9 @@ def get_version():
 def build_static_lib():
     return STATIC_LIB
 
+def build_static_bin():
+    return STATIC_BIN
+
 def is_cr_lf(fname):
     # Check whether text files use cr/lf
     f = open(fname, 'r')
@@ -614,6 +621,7 @@ def display_help(exit_code):
     print("  --ml                          generate OCaml bindings.")
     print("  --python                      generate Python bindings.")
     print("  --staticlib                   build Z3 static library.")
+    print("  --staticbin                   build a statically linked Z3 binary.")
     if not IS_WINDOWS:
         print("  -g, --gmp                     use GMP.")
         print("  --gprof                       enable gprof")
@@ -644,14 +652,14 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_ENABLED, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, PYTHON_INSTALL_ENABLED
+    global DOTNET_ENABLED, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, PYTHON_INSTALL_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, USE_OMP
     try:
         options, remainder = getopt.gnu_getopt(sys.argv[1:],
                                                'b:df:sxhmcvtnp:gj',
                                                ['build=', 'debug', 'silent', 'x64', 'help', 'makefiles', 'showcpp', 'vsproj',
                                                 'trace', 'dotnet', 'staticlib', 'prefix=', 'gmp', 'foci2=', 'java', 'parallel=', 'gprof',
-                                                'githash=', 'x86', 'ml', 'optimize', 'noomp', 'pypkgdir=', 'python'])
+                                                'githash=', 'x86', 'ml', 'optimize', 'noomp', 'pypkgdir=', 'python', 'staticbin'])
     except:
         print("ERROR: Invalid command line option")
         display_help(1)
@@ -686,6 +694,8 @@ def parse_options():
             DOTNET_ENABLED = True
         elif opt in ('--staticlib'):
             STATIC_LIB = True
+        elif opt in ('--staticbin'):
+            STATIC_BIN = True
         elif opt in ('--optimize'):
             SLOW_OPTIMIZE = True
         elif not IS_WINDOWS and opt in ('-p', '--prefix'):
@@ -1262,13 +1272,16 @@ class DLLComponent(Component):
             out.write(' /DEF:%s.def' % os.path.join(self.to_src_dir, self.name))
         out.write('\n')
         if self.static:
-            self.mk_static(out)
-            libfile = '%s$(LIB_EXT)' % self.dll_name
+            if IS_WINDOWS:
+                libfile = '%s-static$(LIB_EXT)' % self.dll_name
+            else:
+                libfile = '%s$(LIB_EXT)' % self.dll_name
+            self.mk_static(out, libfile)
             out.write('%s: %s %s\n\n' % (self.name, self.dll_file(), libfile))
         else:
             out.write('%s: %s\n\n' % (self.name, self.dll_file()))
 
-    def mk_static(self, out):
+    def mk_static(self, out, libfile):
         # generate rule for lib
         objs = []
         for cppfile in get_cpp_files(self.src_dir):
@@ -1280,7 +1293,6 @@ class DLLComponent(Component):
             for cppfile in get_cpp_files(dep.src_dir):
                 objfile = '%s$(OBJ_EXT)' % os.path.join(dep.build_dir, os.path.splitext(cppfile)[0])
                 objs.append(objfile)
-        libfile = '%s$(LIB_EXT)' % self.dll_name
         out.write('%s:' % libfile)
         for obj in objs:
             out.write(' ')
@@ -1560,6 +1572,8 @@ class DotNetDLLComponent(Component):
         if IS_WINDOWS:
             if VS_X64:
                 cscCmdLine.extend(['/platform:x64'])
+            elif VS_ARM:
+                cscCmdLine.extend(['/platform:arm'])
             else:
                 cscCmdLine.extend(['/platform:x86'])
         else:
@@ -2000,6 +2014,8 @@ class DotNetExampleComponent(ExampleComponent):
             out.write('\t%s /out:%s /reference:%s /debug:full /reference:System.Numerics.dll' % (CSC, exefile, dll))
             if VS_X64:
                 out.write(' /platform:x64')
+            elif VS_ARM:
+                out.write(' /platform:arm')                
             else:
                 out.write(' /platform:x86')
             for csfile in get_cs_files(self.ex_dir):
@@ -2184,46 +2200,58 @@ def mk_config():
             extra_opt = ' -D_NO_OMP_'
         if GIT_HASH:
             extra_opt = ' %s /D Z3GITHASH=%s' % (extra_opt, GIT_HASH)
+        if STATIC_BIN:
+            static_opt = '/MT'
+        else:
+            static_opt = '/MD'
         if DEBUG_MODE:
+            static_opt = static_opt + 'd'
             config.write(
                 'AR_FLAGS=/nologo\n'
-                'LINK_FLAGS=/nologo /MDd\n'
-                'SLINK_FLAGS=/nologo /LDd\n')
-            if not VS_X64:
+                'LINK_FLAGS=/nologo %s\n' 
+                'SLINK_FLAGS=/nologo /LDd\n' % static_opt)
+            if VS_X64:
                 config.write(
-                    'CXXFLAGS=/c /Zi /nologo /W3 /WX- /Od /Oy- /D WIN32 /D _DEBUG /D Z3DEBUG %s /D _CONSOLE /D _TRACE /D _WINDOWS /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- /arch:SSE2\n' % extra_opt)
-                config.write(
-                    'LINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X86 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE /NXCOMPAT\n'
-                    'SLINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO\n')
-            else:
-                config.write(
-                    'CXXFLAGS=/c /Zi /nologo /W3 /WX- /Od /Oy- /D WIN32 /D _AMD64_ /D _DEBUG /D Z3DEBUG %s /D _CONSOLE /D _TRACE /D _WINDOWS /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze-\n' % extra_opt)
+                    'CXXFLAGS=/c /Zi /nologo /W3 /WX- /Od /Oy- /D WIN32 /D _AMD64_ /D _DEBUG /D Z3DEBUG /D _CONSOLE /D _TRACE /D _WINDOWS /Gm- /EHsc /RTC1 /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- %s %s\n' % (extra_opt, static_opt))
                 config.write(
                     'LINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X64 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE /NXCOMPAT\n'
                     'SLINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X64 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO\n')
+            elif VS_ARM:
+                print("ARM on VS is unsupported")
+                exit(1)
+            else:
+                config.write(
+                    'CXXFLAGS=/c /Zi /nologo /W3 /WX- /Od /Oy- /D WIN32 /D _DEBUG /D Z3DEBUG /D _CONSOLE /D _TRACE /D _WINDOWS /Gm- /EHsc /RTC1 /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- /arch:SSE2 %s %s\n' % (extra_opt, static_opt))
+                config.write(
+                    'LINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X86 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE /NXCOMPAT\n'
+                    'SLINK_EXTRA_FLAGS=/link /DEBUG /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO\n')
         else:
             # Windows Release mode
             LTCG=' /LTCG' if SLOW_OPTIMIZE else ''
             GL = ' /GL' if SLOW_OPTIMIZE else ''
             config.write(
-                'AR_FLAGS=/nologo%s\n'
-                'LINK_FLAGS=/nologo /MD\n'
-                'SLINK_FLAGS=/nologo /LD\n'
-                % LTCG)
+                'AR_FLAGS=/nologo %s\n'
+                'LINK_FLAGS=/nologo %s\n'
+                'SLINK_FLAGS=/nologo /LD\n' % (LTCG, static_opt))
             if TRACE:
                 extra_opt = '%s /D _TRACE ' % extra_opt
-            if not VS_X64:
+            if VS_X64:
                 config.write(
-                    'CXXFLAGS=/nologo /c%s /Zi /W3 /WX- /O2 /Oy- /D _EXTERNAL_RELEASE /D WIN32 /D NDEBUG %s /D _CONSOLE /D _WINDOWS /D ASYNC_COMMANDS /Gm- /EHsc /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- /arch:SSE2\n' % (GL, extra_opt))
-                config.write(
-                    'LINK_EXTRA_FLAGS=/link%s /DEBUG /MACHINE:X86 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE /NXCOMPAT\n'
-                    'SLINK_EXTRA_FLAGS=/link%s /DEBUG /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO\n' % (LTCG, LTCG))
-            else:
-                config.write(
-                    'CXXFLAGS=/c%s /Zi /nologo /W3 /WX- /O2 /D _EXTERNAL_RELEASE /D WIN32 /D NDEBUG %s /D _LIB /D _WINDOWS /D _AMD64_ /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /TP\n' % (GL, extra_opt))
+                    'CXXFLAGS=/c%s /Zi /nologo /W3 /WX- /O2 /D _EXTERNAL_RELEASE /D WIN32 /D NDEBUG /D _LIB /D _WINDOWS /D _AMD64_ /D _UNICODE /D UNICODE /Gm- /EHsc /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /TP %s %s\n' % (GL, extra_opt, static_opt))
                 config.write(
                     'LINK_EXTRA_FLAGS=/link%s /MACHINE:X64 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608\n'
                     'SLINK_EXTRA_FLAGS=/link%s /MACHINE:X64 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608\n' % (LTCG, LTCG))
+            elif VS_ARM:
+                print("ARM on VS is unsupported")
+                exit(1)
+            else:
+                config.write(
+                    'CXXFLAGS=/nologo /c%s /Zi /W3 /WX- /O2 /Oy- /D _EXTERNAL_RELEASE /D WIN32 /D NDEBUG /D _CONSOLE /D _WINDOWS /D ASYNC_COMMANDS /Gm- /EHsc /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- /arch:SSE2 %s %s\n' % (GL, extra_opt, static_opt))
+                config.write(
+                    'LINK_EXTRA_FLAGS=/link%s /DEBUG /MACHINE:X86 /SUBSYSTEM:CONSOLE /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE /NXCOMPAT\n'
+                    'SLINK_EXTRA_FLAGS=/link%s /DEBUG /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO /STACK:8388608 /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO\n' % (LTCG, LTCG))
+
+                
 
         # End of Windows VS config.mk
         if is_verbose():
@@ -2327,7 +2355,9 @@ def mk_config():
             LDFLAGS      = '%s -m32' % LDFLAGS
             SLIBFLAGS    = '%s -m32' % SLIBFLAGS
         if DEBUG_MODE:
-            CPPFLAGS     = '%s -DZ3DEBUG' % CPPFLAGS
+            CPPFLAGS     = '%s -DZ3DEBUG -D_DEBUG' % CPPFLAGS
+        else:
+            CPPFLAGS     = '%s -DNDEBUG -D_EXTERNAL_RELEASE' % CPPFLAGS
         if TRACE or DEBUG_MODE:
             CPPFLAGS     = '%s -D_TRACE' % CPPFLAGS
         config.write('PREFIX=%s\n' % PREFIX)
@@ -2343,7 +2373,10 @@ def mk_config():
         config.write('AR_OUTFLAG=\n')
         config.write('EXE_EXT=\n')
         config.write('LINK=%s\n' % CXX)
-        config.write('LINK_FLAGS=\n')
+        if STATIC_BIN:
+            config.write('LINK_FLAGS=-static\n')
+        else:
+            config.write('LINK_FLAGS=\n')
         config.write('LINK_OUT_FLAG=-o \n')
         config.write('LINK_EXTRA_FLAGS=-lpthread %s\n' % LDFLAGS)
         config.write('SO_EXT=%s\n' % SO_EXT)
@@ -2449,6 +2482,9 @@ def mk_makefile():
             if VS_X64:
                 print("  platform: x64\n")
                 print("To build Z3, open a [Visual Studio x64 Command Prompt], then")
+            elif VS_ARM:
+                print("  platform: ARM\n")
+                print("To build Z3, open a [Visual Studio ARM Command Prompt], then")                
             else:
                 print("  platform: x86")
                 print("To build Z3, open a [Visual Studio Command Prompt], then")
@@ -2466,104 +2502,6 @@ def mk_auto_src():
         mk_all_mem_initializer_cpps()
         mk_all_gparams_register_modules()
 
-UINT   = 0
-BOOL   = 1
-DOUBLE = 2
-STRING = 3
-SYMBOL = 4
-UINT_MAX = 4294967295
-CURR_PYG = None
-
-def get_curr_pyg():
-    return CURR_PYG
-
-TYPE2CPK = { UINT : 'CPK_UINT', BOOL : 'CPK_BOOL',  DOUBLE : 'CPK_DOUBLE',  STRING : 'CPK_STRING',  SYMBOL : 'CPK_SYMBOL' }
-TYPE2CTYPE = { UINT : 'unsigned', BOOL : 'bool', DOUBLE : 'double', STRING : 'char const *', SYMBOL : 'symbol' }
-TYPE2GETTER = { UINT : 'get_uint', BOOL : 'get_bool', DOUBLE : 'get_double', STRING : 'get_str',  SYMBOL : 'get_sym' }
-
-def pyg_default(p):
-    if p[1] == BOOL:
-        if p[2]:
-            return "true"
-        else:
-            return "false"
-    return p[2]
-
-def pyg_default_as_c_literal(p):
-    if p[1] == BOOL:
-        if p[2]:
-            return "true"
-        else:
-            return "false"
-    elif p[1] == STRING:
-        return '"%s"' % p[2]
-    elif p[1] == SYMBOL:
-        return 'symbol("%s")' % p[2]
-    elif p[1] == UINT:
-        return '%su' % p[2]
-    else:
-        return p[2]
-
-def to_c_method(s):
-    return s.replace('.', '_')
-
-def def_module_params(module_name, export, params, class_name=None, description=None):
-    pyg = get_curr_pyg()
-    dirname = os.path.split(get_curr_pyg())[0]
-    if class_name is None:
-        class_name = '%s_params' % module_name
-    hpp = os.path.join(dirname, '%s.hpp' % class_name)
-    out = open(hpp, 'w')
-    out.write('// Automatically generated file\n')
-    out.write('#ifndef __%s_HPP_\n' % class_name.upper())
-    out.write('#define __%s_HPP_\n' % class_name.upper())
-    out.write('#include"params.h"\n')
-    if export:
-        out.write('#include"gparams.h"\n')
-    out.write('struct %s {\n' % class_name)
-    out.write('  params_ref const & p;\n')
-    if export:
-        out.write('  params_ref g;\n')
-    out.write('  %s(params_ref const & _p = params_ref::get_empty()):\n' % class_name)
-    out.write('     p(_p)')
-    if export:
-        out.write(', g(gparams::get_module("%s"))' % module_name)
-    out.write(' {}\n')
-    out.write('  static void collect_param_descrs(param_descrs & d) {\n')
-    for param in params:
-        out.write('    d.insert("%s", %s, "%s", "%s","%s");\n' % (param[0], TYPE2CPK[param[1]], param[3], pyg_default(param), module_name))
-    out.write('  }\n')
-    if export:
-        out.write('  /*\n')
-        out.write("     REG_MODULE_PARAMS('%s', '%s::collect_param_descrs')\n" % (module_name, class_name))
-        if description is not None:
-            out.write("     REG_MODULE_DESCRIPTION('%s', '%s')\n" % (module_name, description))
-        out.write('  */\n')
-    # Generated accessors
-    for param in params:
-        if export:
-            out.write('  %s %s() const { return p.%s("%s", g, %s); }\n' %
-                      (TYPE2CTYPE[param[1]], to_c_method(param[0]), TYPE2GETTER[param[1]], param[0], pyg_default_as_c_literal(param)))
-        else:
-            out.write('  %s %s() const { return p.%s("%s", %s); }\n' %
-                      (TYPE2CTYPE[param[1]], to_c_method(param[0]), TYPE2GETTER[param[1]], param[0], pyg_default_as_c_literal(param)))
-    out.write('};\n')
-    out.write('#endif\n')
-    out.close()
-    if is_verbose():
-        print("Generated '%s'" % hpp)
-
-def max_memory_param():
-    return ('max_memory', UINT, UINT_MAX, 'maximum amount of memory in megabytes')
-
-def max_steps_param():
-    return ('max_steps', UINT, UINT_MAX, 'maximum number of steps')
-
-PYG_GLOBALS = { 'UINT' : UINT, 'BOOL' : BOOL, 'DOUBLE' : DOUBLE, 'STRING' : STRING, 'SYMBOL' : SYMBOL,
-                'UINT_MAX' : UINT_MAX,
-                'max_memory_param' : max_memory_param,
-                'max_steps_param' : max_steps_param,
-                'def_module_params' : def_module_params }
 
 def _execfile(file, globals=globals(), locals=locals()):
     if sys.version < "2.7":
@@ -2574,28 +2512,23 @@ def _execfile(file, globals=globals(), locals=locals()):
 
 # Execute python auxiliary scripts that generate extra code for Z3.
 def exec_pyg_scripts():
-    global CURR_PYG
     for root, dirs, files in os.walk('src'):
         for f in files:
             if f.endswith('.pyg'):
                 script = os.path.join(root, f)
-                CURR_PYG = script
-                _execfile(script, PYG_GLOBALS)
+                generated_file = mk_genfile_common.mk_hpp_from_pyg(script, root)
+                if is_verbose():
+                    print("Generated '{}'".format(generated_file))
 
 # TODO: delete after src/ast/pattern/expr_pattern_match
 # database.smt ==> database.h
 def mk_pat_db():
     c = get_component(PATTERN_COMPONENT)
-    fin  = open(os.path.join(c.src_dir, 'database.smt2'), 'r')
-    fout = open(os.path.join(c.src_dir, 'database.h'), 'w')
-    fout.write('static char const g_pattern_database[] =\n')
-    for line in fin:
-        fout.write('"%s\\n"\n' % line.strip('\n'))
-    fout.write(';\n')
-    fin.close()
-    fout.close()
+    fin  = os.path.join(c.src_dir, 'database.smt2')
+    fout = os.path.join(c.src_dir, 'database.h')
+    mk_genfile_common.mk_pat_db_internal(fin, fout)
     if VERBOSE:
-        print("Generated '%s'" % os.path.join(c.src_dir, 'database.h'))
+        print("Generated '{}'".format(fout))
 
 # Update version numbers
 def update_version():
@@ -2613,15 +2546,20 @@ def update_version():
 # Update files with the version number
 def mk_version_dot_h(major, minor, build, revision):
     c = get_component(UTIL_COMPONENT)
-    fout = open(os.path.join(c.src_dir, 'version.h'), 'w')
-    fout.write('// automatically generated file.\n')
-    fout.write('#define Z3_MAJOR_VERSION   %s\n' % major)
-    fout.write('#define Z3_MINOR_VERSION   %s\n' % minor)
-    fout.write('#define Z3_BUILD_NUMBER    %s\n' % build)
-    fout.write('#define Z3_REVISION_NUMBER %s\n' % revision)
-    fout.close()
+    version_template = os.path.join(c.src_dir, 'version.h.in')
+    version_header_output = os.path.join(c.src_dir, 'version.h')
+    # Note the substitution names are what is used by the CMake
+    # builds system. If you change these you should change them
+    # in the CMake build too
+    configure_file(version_template, version_header_output,
+        { 'Z3_VERSION_MAJOR': str(major),
+          'Z3_VERSION_MINOR': str(minor),
+          'Z3_VERSION_PATCH': str(build),
+          'Z3_VERSION_TWEAK': str(revision),
+        }
+    )
     if VERBOSE:
-        print("Generated '%s'" % os.path.join(c.src_dir, 'version.h'))
+        print("Generated '%s'" % version_header_output)
 
 # Generate AssemblyInfo.cs files with the right version numbers by using ``AssemblyInfo.cs.in`` files as a template
 def mk_all_assembly_infos(major, minor, build, revision):
@@ -2641,76 +2579,14 @@ def mk_all_assembly_infos(major, minor, build, revision):
             else:
                 raise MKException("Failed to find assembly template info file '%s'" % assembly_info_template)
 
-ADD_TACTIC_DATA=[]
-ADD_PROBE_DATA=[]
-
-def ADD_TACTIC(name, descr, cmd):
-    global ADD_TACTIC_DATA
-    ADD_TACTIC_DATA.append((name, descr, cmd))
-
-def ADD_PROBE(name, descr, cmd):
-    global ADD_PROBE_DATA
-    ADD_PROBE_DATA.append((name, descr, cmd))
-
-# Generate an install_tactics.cpp at path.
-# This file implements the procedure
-#    void install_tactics(tactic_manager & ctx)
-# It installs all tactics in the given component (name) list cnames
-# The procedure looks for ADD_TACTIC commands in the .h files of these components.
 def mk_install_tactic_cpp(cnames, path):
-    global ADD_TACTIC_DATA, ADD_PROBE_DATA
-    ADD_TACTIC_DATA = []
-    ADD_PROBE_DATA = []
-    fullname = os.path.join(path, 'install_tactic.cpp')
-    fout  = open(fullname, 'w')
-    fout.write('// Automatically generated file.\n')
-    fout.write('#include"tactic.h"\n')
-    fout.write('#include"tactic_cmds.h"\n')
-    fout.write('#include"cmd_context.h"\n')
-    tactic_pat   = re.compile('[ \t]*ADD_TACTIC\(.*\)')
-    probe_pat    = re.compile('[ \t]*ADD_PROBE\(.*\)')
+    component_src_dirs = []
     for cname in cnames:
         c = get_component(cname)
-        h_files = filter(lambda f: f.endswith('.h') or f.endswith('.hpp'), os.listdir(c.src_dir))
-        for h_file in h_files:
-            added_include = False
-            fin = open(os.path.join(c.src_dir, h_file), 'r')
-            for line in fin:
-                if tactic_pat.match(line):
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    try:
-                        exec(line.strip('\n '), globals())
-                    except:
-                        raise MKException("Failed processing ADD_TACTIC command at '%s'\n%s" % (fullname, line))
-                if probe_pat.match(line):
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    try:
-                        exec(line.strip('\n '), globals())
-                    except:
-                        raise MKException("Failed processing ADD_PROBE command at '%s'\n%s" % (fullname, line))
-            fin.close()
-    # First pass will just generate the tactic factories
-    idx = 0
-    for data in ADD_TACTIC_DATA:
-        fout.write('MK_SIMPLE_TACTIC_FACTORY(__Z3_local_factory_%s, %s);\n' % (idx, data[2]))
-        idx = idx + 1
-    fout.write('#define ADD_TACTIC_CMD(NAME, DESCR, FACTORY) ctx.insert(alloc(tactic_cmd, symbol(NAME), DESCR, alloc(FACTORY)))\n')
-    fout.write('#define ADD_PROBE(NAME, DESCR, PROBE) ctx.insert(alloc(probe_info, symbol(NAME), DESCR, PROBE))\n')
-    fout.write('void install_tactics(tactic_manager & ctx) {\n')
-    idx = 0
-    for data in ADD_TACTIC_DATA:
-        fout.write('  ADD_TACTIC_CMD("%s", "%s", __Z3_local_factory_%s);\n' % (data[0], data[1], idx))
-        idx = idx + 1
-    for data in ADD_PROBE_DATA:
-        fout.write('  ADD_PROBE("%s", "%s", %s);\n' % data)
-    fout.write('}\n')
-    fout.close()
+        component_src_dirs.append(c.src_dir)
+    generated_file = mk_genfile_common.mk_install_tactic_cpp_internal(component_src_dirs, path)
     if VERBOSE:
-        print("Generated '%s'" % fullname)
+        print("Generated '{}'".format(generated_file))
 
 def mk_all_install_tactic_cpps():
     if not ONLY_MAKEFILES:
@@ -2721,61 +2597,14 @@ def mk_all_install_tactic_cpps():
                 cnames.append(c.name)
                 mk_install_tactic_cpp(cnames, c.src_dir)
 
-# Generate an mem_initializer.cpp at path.
-# This file implements the procedures
-#    void mem_initialize()
-#    void mem_finalize()
-# These procedures are invoked by the Z3 memory_manager
 def mk_mem_initializer_cpp(cnames, path):
-    initializer_cmds = []
-    finalizer_cmds   = []
-    fullname = os.path.join(path, 'mem_initializer.cpp')
-    fout  = open(fullname, 'w')
-    fout.write('// Automatically generated file.\n')
-    initializer_pat      = re.compile('[ \t]*ADD_INITIALIZER\(\'([^\']*)\'\)')
-    # ADD_INITIALIZER with priority
-    initializer_prio_pat = re.compile('[ \t]*ADD_INITIALIZER\(\'([^\']*)\',[ \t]*(-?[0-9]*)\)')
-    finalizer_pat        = re.compile('[ \t]*ADD_FINALIZER\(\'([^\']*)\'\)')
+    component_src_dirs = []
     for cname in cnames:
         c = get_component(cname)
-        h_files = filter(lambda f: f.endswith('.h') or f.endswith('.hpp'), os.listdir(c.src_dir))
-        for h_file in h_files:
-            added_include = False
-            fin = open(os.path.join(c.src_dir, h_file), 'r')
-            for line in fin:
-                m = initializer_pat.match(line)
-                if m:
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    initializer_cmds.append((m.group(1), 0))
-                m = initializer_prio_pat.match(line)
-                if m:
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    initializer_cmds.append((m.group(1), int(m.group(2))))
-                m = finalizer_pat.match(line)
-                if m:
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    finalizer_cmds.append(m.group(1))
-            fin.close()
-    initializer_cmds.sort(key=lambda tup: tup[1])
-    fout.write('void mem_initialize() {\n')
-    for (cmd, prio) in initializer_cmds:
-        fout.write(cmd)
-        fout.write('\n')
-    fout.write('}\n')
-    fout.write('void mem_finalize() {\n')
-    for cmd in finalizer_cmds:
-        fout.write(cmd)
-        fout.write('\n')
-    fout.write('}\n')
-    fout.close()
+        component_src_dirs.append(c.src_dir)
+    generated_file = mk_genfile_common.mk_mem_initializer_cpp_internal(component_src_dirs, path)
     if VERBOSE:
-        print("Generated '%s'" % fullname)
+        print("Generated '{}'".format(generated_file))
 
 def mk_all_mem_initializer_cpps():
     if not ONLY_MAKEFILES:
@@ -2786,55 +2615,14 @@ def mk_all_mem_initializer_cpps():
                 cnames.append(c.name)
                 mk_mem_initializer_cpp(cnames, c.src_dir)
 
-# Generate an mem_initializer.cpp at path.
-# This file implements the procedure
-#    void gparams_register_modules()
-# This procedure is invoked by gparams::init()
 def mk_gparams_register_modules(cnames, path):
-    cmds = []
-    mod_cmds = []
-    mod_descrs = []
-    fullname = os.path.join(path, 'gparams_register_modules.cpp')
-    fout  = open(fullname, 'w')
-    fout.write('// Automatically generated file.\n')
-    fout.write('#include"gparams.h"\n')
-    reg_pat = re.compile('[ \t]*REG_PARAMS\(\'([^\']*)\'\)')
-    reg_mod_pat = re.compile('[ \t]*REG_MODULE_PARAMS\(\'([^\']*)\', *\'([^\']*)\'\)')
-    reg_mod_descr_pat = re.compile('[ \t]*REG_MODULE_DESCRIPTION\(\'([^\']*)\', *\'([^\']*)\'\)')
+    component_src_dirs = []
     for cname in cnames:
         c = get_component(cname)
-        h_files = filter(lambda f: f.endswith('.h') or f.endswith('.hpp'), os.listdir(c.src_dir))
-        for h_file in h_files:
-            added_include = False
-            fin = open(os.path.join(c.src_dir, h_file), 'r')
-            for line in fin:
-                m = reg_pat.match(line)
-                if m:
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    cmds.append((m.group(1)))
-                m = reg_mod_pat.match(line)
-                if m:
-                    if not added_include:
-                        added_include = True
-                        fout.write('#include"%s"\n' % h_file)
-                    mod_cmds.append((m.group(1), m.group(2)))
-                m = reg_mod_descr_pat.match(line)
-                if m:
-                    mod_descrs.append((m.group(1), m.group(2)))
-            fin.close()
-    fout.write('void gparams_register_modules() {\n')
-    for code in cmds:
-        fout.write('{ param_descrs d; %s(d); gparams::register_global(d); }\n' % code)
-    for (mod, code) in mod_cmds:
-        fout.write('{ param_descrs * d = alloc(param_descrs); %s(*d); gparams::register_module("%s", d); }\n' % (code, mod))
-    for (mod, descr) in mod_descrs:
-        fout.write('gparams::register_module_descr("%s", "%s");\n' % (mod, descr))
-    fout.write('}\n')
-    fout.close()
+        component_src_dirs.append(c.src_dir)
+    generated_file = mk_genfile_common.mk_gparams_register_modules_internal(component_src_dirs, path)
     if VERBOSE:
-        print("Generated '%s'" % fullname)
+        print("Generated '{}'".format(generated_file))
 
 def mk_all_gparams_register_modules():
     if not ONLY_MAKEFILES:
@@ -2847,27 +2635,14 @@ def mk_all_gparams_register_modules():
 
 # Generate a .def based on the files at c.export_files slot.
 def mk_def_file(c):
-    pat1 = re.compile(".*Z3_API.*")
     defname = '%s.def' % os.path.join(c.src_dir, c.name)
-    fout = open(defname, 'w')
-    fout.write('LIBRARY "%s"\nEXPORTS\n' % c.dll_name)
-    num = 1
+    dll_name = c.dll_name
+    export_header_files = []
     for dot_h in c.export_files:
         dot_h_c = c.find_file(dot_h, c.name)
-        api = open(os.path.join(dot_h_c.src_dir, dot_h), 'r')
-        for line in api:
-            m = pat1.match(line)
-            if m:
-                words = re.split('\W+', line)
-                i = 0
-                for w in words:
-                    if w == 'Z3_API':
-                        f = words[i+1]
-                        fout.write('\t%s @%s\n' % (f, num))
-                    i = i + 1
-                num = num + 1
-        api.close()
-    fout.close()
+        api = os.path.join(dot_h_c.src_dir, dot_h)
+        export_header_files.append(api)
+    mk_genfile_common.mk_def_file_internal(defname, dll_name, export_header_files)
     if VERBOSE:
         print("Generated '%s'" % defname)
 
@@ -2920,7 +2695,28 @@ def mk_bindings(api_files):
         if is_java_enabled():
             check_java()
             mk_z3consts_java(api_files)
-        _execfile(os.path.join('scripts', 'update_api.py'), g) # HACK
+        # Generate some of the bindings and "api" module files
+        import update_api
+        dotnet_output_dir = None
+        if is_dotnet_enabled():
+          dotnet_output_dir = get_component('dotnet').src_dir
+        java_output_dir = None
+        java_package_name = None
+        if is_java_enabled():
+          java_output_dir = get_component('java').src_dir
+          java_package_name = get_component('java').package_name
+        ml_output_dir = None
+        if is_ml_enabled():
+          ml_output_dir = get_component('ml').src_dir
+        # Get the update_api module to do the work for us
+        update_api.generate_files(api_files=new_api_files,
+          api_output_dir=get_component('api').src_dir,
+          z3py_output_dir=get_z3py_dir(),
+          dotnet_output_dir=dotnet_output_dir,
+          java_output_dir=java_output_dir,
+          java_package_name=java_package_name,
+          ml_output_dir=ml_output_dir
+        )
         cp_z3py_to_build()
         if is_ml_enabled():
             check_ml()
@@ -2933,83 +2729,15 @@ def mk_bindings(api_files):
 def mk_z3consts_py(api_files):
     if Z3PY_SRC_DIR is None:
         raise MKException("You must invoke set_z3py_dir(path):")
-
-    blank_pat      = re.compile("^ *\r?$")
-    comment_pat    = re.compile("^ *//.*$")
-    typedef_pat    = re.compile("typedef enum *")
-    typedef2_pat   = re.compile("typedef enum { *")
-    openbrace_pat  = re.compile("{ *")
-    closebrace_pat = re.compile("}.*;")
-
-    z3consts  = open(os.path.join(Z3PY_SRC_DIR, 'z3consts.py'), 'w')
-    z3consts.write('# Automatically generated file\n\n')
-
+    full_path_api_files = []
     api_dll = get_component(Z3_DLL_COMPONENT)
-
     for api_file in api_files:
         api_file_c = api_dll.find_file(api_file, api_dll.name)
         api_file   = os.path.join(api_file_c.src_dir, api_file)
-        api = open(api_file, 'r')
-
-        SEARCHING  = 0
-        FOUND_ENUM = 1
-        IN_ENUM    = 2
-
-        mode    = SEARCHING
-        decls   = {}
-        idx     = 0
-
-        linenum = 1
-        for line in api:
-            m1 = blank_pat.match(line)
-            m2 = comment_pat.match(line)
-            if m1 or m2:
-                # skip blank lines and comments
-                linenum = linenum + 1
-            elif mode == SEARCHING:
-                m = typedef_pat.match(line)
-                if m:
-                    mode = FOUND_ENUM
-                m = typedef2_pat.match(line)
-                if m:
-                    mode = IN_ENUM
-                    decls = {}
-                    idx   = 0
-            elif mode == FOUND_ENUM:
-                m = openbrace_pat.match(line)
-                if m:
-                    mode  = IN_ENUM
-                    decls = {}
-                    idx   = 0
-                else:
-                    assert False, "Invalid %s, line: %s" % (api_file, linenum)
-            else:
-                assert mode == IN_ENUM
-                words = re.split('[^\-a-zA-Z0-9_]+', line)
-                m = closebrace_pat.match(line)
-                if m:
-                    name = words[1]
-                    z3consts.write('# enum %s\n' % name)
-                    for k in decls:
-                        i = decls[k]
-                        z3consts.write('%s = %s\n' % (k, i))
-                    z3consts.write('\n')
-                    mode = SEARCHING
-                elif len(words) <= 2:
-                    assert False, "Invalid %s, line: %s" % (api_file, linenum)
-                else:
-                    if words[2] != '':
-                        if len(words[2]) > 1 and words[2][1] == 'x':
-                            idx = int(words[2], 16)
-                        else:
-                            idx = int(words[2])
-                    decls[words[1]] = idx
-                    idx = idx + 1
-            linenum = linenum + 1
-        api.close()
-    z3consts.close()
+        full_path_api_files.append(api_file)
+    generated_file = mk_genfile_common.mk_z3consts_py_internal(full_path_api_files, Z3PY_SRC_DIR)
     if VERBOSE:
-        print("Generated '%s'" % os.path.join(Z3PY_SRC_DIR, 'z3consts.py'))
+        print("Generated '{}".format(generated_file))
 
 
 # Extract enumeration types from z3_api.h, and add .Net definitions
@@ -3441,7 +3169,7 @@ def mk_vs_proj_cl_compile(f, name, components, debug):
     if debug:
         f.write('      <PreprocessorDefinitions>WIN32;_DEBUG;Z3DEBUG;_TRACE;_MP_INTERNAL;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>\n')
     else:
-        f.write('      <PreprocessorDefinitions>WIN32;_NDEBUG;_MP_INTERNAL;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>\n')
+        f.write('      <PreprocessorDefinitions>WIN32;NDEBUG;_MP_INTERNAL;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>\n')
     if VS_PAR:
         f.write('      <MinimalRebuild>false</MinimalRebuild>\n')
         f.write('      <MultiProcessorCompilation>true</MultiProcessorCompilation>\n')

@@ -31,8 +31,9 @@ Revision History:
 #include"rewriter_def.h"
 #include"cooperate.h"
 
+
 struct evaluator_cfg : public default_rewriter_cfg {
-    model &                         m_model;
+    model_core &                    m_model;
     bool_rewriter                   m_b_rw;
     arith_rewriter                  m_a_rw;
     bv_rewriter                     m_bv_rw;
@@ -46,7 +47,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
     bool                            m_model_completion;
     bool                            m_cache;
 
-    evaluator_cfg(ast_manager & m, model & md, params_ref const & p):
+    evaluator_cfg(ast_manager & m, model_core & md, params_ref const & p):
         m_model(md),
         m_b_rw(m),
         // We must allow customers to set parameters for arithmetic rewriter/evaluator.
@@ -59,9 +60,10 @@ struct evaluator_cfg : public default_rewriter_cfg {
         m_pb_rw(m),
         m_f_rw(m),
         m_seq_rw(m) {
-        m_b_rw.set_flat(false);
-        m_a_rw.set_flat(false);
-        m_bv_rw.set_flat(false);
+        bool flat = true;
+        m_b_rw.set_flat(flat);
+        m_a_rw.set_flat(flat);
+        m_bv_rw.set_flat(flat);
         m_bv_rw.set_mkbv2num(true);
         updt_params(p);
     }
@@ -181,10 +183,12 @@ struct evaluator_cfg : public default_rewriter_cfg {
     }
 
     bool get_macro(func_decl * f, expr * & def, quantifier * & q, proof * & def_pr) {
-        TRACE("model_evaluator", tout << "get_macro for " << f->get_name() << " (model completion: " << m_model_completion << ")\n";);
+
+#define TRACE_MACRO TRACE("model_evaluator", tout << "get_macro for " << f->get_name() << " (model completion: " << m_model_completion << ")\n";);
 
         func_interp * fi = m_model.get_func_interp(f);
         if (fi != 0) {
+            TRACE_MACRO;
             if (fi->is_partial()) {
                 if (m_model_completion) {
                     sort * s   = f->get_range();
@@ -204,6 +208,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
             (f->get_family_id() == null_family_id ||
              m().get_plugin(f->get_family_id())->is_considered_uninterpreted(f)))
         {
+            TRACE_MACRO;
             sort * s   = f->get_range();
             expr * val = m_model.get_some_value(s);
             func_interp * new_fi = alloc(func_interp, m(), f->get_arity());
@@ -231,7 +236,7 @@ template class rewriter_tpl<evaluator_cfg>;
 
 struct model_evaluator::imp : public rewriter_tpl<evaluator_cfg> {
     evaluator_cfg m_cfg;
-    imp(model & md, params_ref const & p):
+    imp(model_core & md, params_ref const & p):
         rewriter_tpl<evaluator_cfg>(md.get_manager(),
                                     false, // no proofs for evaluator
                                     m_cfg),
@@ -239,7 +244,7 @@ struct model_evaluator::imp : public rewriter_tpl<evaluator_cfg> {
     }
 };
 
-model_evaluator::model_evaluator(model & md, params_ref const & p) {
+model_evaluator::model_evaluator(model_core & md, params_ref const & p) {
     m_imp = alloc(imp, md, p);
 }
 
@@ -269,7 +274,7 @@ unsigned model_evaluator::get_num_steps() const {
 
 
 void model_evaluator::cleanup(params_ref const & p) {
-    model & md = m_imp->cfg().m_model;
+    model_core & md = m_imp->cfg().m_model;
     #pragma omp critical (model_evaluator)
     {
         dealloc(m_imp);

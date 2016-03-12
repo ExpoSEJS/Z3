@@ -184,6 +184,10 @@ namespace smt {
             m_qi_queue.instantiate();
         }
         
+        bool check_quantifier(quantifier* q) {
+            return m_context.is_relevant(q) && m_context.get_assignment(q) == l_true; // TBD: && !m_context->get_manager().is_rec_fun_def(q);
+        }
+
         bool quick_check_quantifiers() {
             if (m_params.m_qi_quick_checker == MC_NO)
                 return true;
@@ -195,7 +199,7 @@ namespace smt {
             ptr_vector<quantifier>::const_iterator it  = m_quantifiers.begin();
             ptr_vector<quantifier>::const_iterator end = m_quantifiers.end();
             for (; it != end; ++it)
-                if (m_context.is_relevant(*it) && m_context.get_assignment(*it) == l_true && mc.instantiate_unsat(*it))
+                if (check_quantifier(*it) && mc.instantiate_unsat(*it))
                     result = false;
             if (m_params.m_qi_quick_checker == MC_UNSAT || !result) {
                 m_qi_queue.instantiate();
@@ -206,7 +210,7 @@ namespace smt {
             IF_VERBOSE(10, verbose_stream() << "quick checking quantifiers (not sat)...\n";);
             it  = m_quantifiers.begin();
             for (; it != end; ++it)
-                if (m_context.is_relevant(*it) && m_context.get_assignment(*it) == l_true && mc.instantiate_not_sat(*it))
+                if (check_quantifier(*it) && mc.instantiate_not_sat(*it))
                     result = false;
             m_qi_queue.instantiate();
             return result;

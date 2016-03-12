@@ -1619,6 +1619,7 @@ namespace smt {
         m_found_underspecified_op(false),
         m_arith_eq_adapter(*this, params, m_util),
         m_asserted_qhead(0),
+        m_row_vars_top(0),
         m_to_patch(1024),
         m_blands_rule(false),
         m_random(params.m_arith_random_seed),
@@ -1631,7 +1632,6 @@ namespace smt {
         m_liberal_final_check(true),
         m_changed_assignment(false),
         m_assume_eq_head(0),
-        m_row_vars_top(0),
         m_nl_rounds(0),
         m_nl_gb_exhausted(false),
         m_nl_new_exprs(m),
@@ -2872,7 +2872,7 @@ namespace smt {
         if (dump_lemmas()) {
             TRACE("arith", ante.display(tout) << " --> "; ctx.display_detailed_literal(tout, l); tout << "\n";);
             ctx.display_lemma_as_smt_problem(ante.lits().size(), ante.lits().c_ptr(), 
-                                             ante.eqs().size(), ante.eqs().c_ptr(), l, 0);
+                                             ante.eqs().size(), ante.eqs().c_ptr(), l);
         }
     }
 
@@ -2881,7 +2881,7 @@ namespace smt {
         context & ctx = get_context();
         if (dump_lemmas()) {
             ctx.display_lemma_as_smt_problem(ante.lits().size(), ante.lits().c_ptr(), 
-                                             ante.eqs().size(), ante.eqs().c_ptr(), l, 0);
+                                             ante.eqs().size(), ante.eqs().c_ptr(), l);
         }
     }
 

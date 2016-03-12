@@ -28,15 +28,16 @@ Notes:
 #include"bv_size_reduction_tactic.h"
 #include"aig_tactic.h"
 #include"sat_tactic.h"
+#include"ackermannize_bv_tactic.h"
 
 #define MEMLIMIT 300
 
 tactic * mk_qfbv_preamble(ast_manager& m, params_ref const& p) {
 
     params_ref solve_eq_p;
-    // conservative guassian elimination. 
-    solve_eq_p.set_uint("solve_eqs_max_occs", 2); 
-    
+    // conservative guassian elimination.
+    solve_eq_p.set_uint("solve_eqs_max_occs", 2);
+
     params_ref simp2_p = p;
     simp2_p.set_bool("som", true);
     simp2_p.set_bool("pull_cheap_ite", true);
@@ -45,7 +46,6 @@ tactic * mk_qfbv_preamble(ast_manager& m, params_ref const& p) {
     simp2_p.set_uint("local_ctx_limit", 10000000);
     simp2_p.set_bool("flat", true); // required by som
     simp2_p.set_bool("hoist_mul", false); // required by som
-
 
     params_ref hoist_p;
     hoist_p.set_bool("hoist_mul", true);
@@ -61,12 +61,14 @@ tactic * mk_qfbv_preamble(ast_manager& m, params_ref const& p) {
             using_params(mk_simplify_tactic(m), simp2_p),
             //
             // Z3 can solve a couple of extra benchmarks by using hoist_mul
-            // but the timeout in SMT-COMP is too small. 
+            // but the timeout in SMT-COMP is too small.
             // Moreover, it impacted negatively some easy benchmarks.
             // We should decide later, if we keep it or not.
             //
             using_params(mk_simplify_tactic(m), hoist_p),
-            mk_max_bv_sharing_tactic(m));
+            mk_max_bv_sharing_tactic(m),
+            if_no_proofs(if_no_unsat_cores(mk_ackermannize_bv_tactic(m,p)))
+            );
 }
 
 static tactic * main_p(tactic* t) {
@@ -78,14 +80,14 @@ static tactic * main_p(tactic* t) {
 }
 
 
-tactic * mk_qfbv_tactic(ast_manager& m, params_ref const & p, tactic* sat, tactic* smt) {    
+tactic * mk_qfbv_tactic(ast_manager& m, params_ref const & p, tactic* sat, tactic* smt) {
 
     params_ref local_ctx_p = p;
     local_ctx_p.set_bool("local_ctx", true);
 
     params_ref solver_p;
     solver_p.set_bool("preprocess", false); // preprocessor of smt::context is not needed.
-    
+
     params_ref no_flat_p;
     no_flat_p.set_bool("flat", false);
 
@@ -96,16 +98,16 @@ tactic * mk_qfbv_tactic(ast_manager& m, params_ref const & p, tactic* sat, tacti
 
     params_ref big_aig_p;
     big_aig_p.set_bool("aig_per_assertion", false);
-    
+
     tactic* preamble_st = mk_qfbv_preamble(m, p);
-    
     tactic * st = main_p(and_then(preamble_st,
                                   // If the user sets HI_DIV0=false, then the formula may contain uninterpreted function
-                                  // symbols. In this case, we should not use 
-                                  cond(mk_is_qfbv_probe(),
-                                       cond(mk_is_qfbv_eq_probe(),
-                                            and_then(mk_bv1_blaster_tactic(m),
-                                                     using_params(smt, solver_p)),
+                                  // symbols. In this case, we should not use the `sat', but instead `smt'. Alternatively,
+								  // the UFs can be eliminated by eager ackermannization in the preamble.
+                                  cond(mk_is_qfbv_eq_probe(),
+                                       and_then(mk_bv1_blaster_tactic(m),
+                                                using_params(smt, solver_p)),
+                                       cond(mk_is_qfbv_probe(),
                                             and_then(mk_bit_blaster_tactic(m),
                                                      when(mk_lt(mk_memory_probe(), mk_const_probe(MEMLIMIT)),
                                                           and_then(using_params(and_then(mk_simplify_tactic(m),
@@ -115,12 +117,12 @@ tactic * mk_qfbv_tactic(ast_manager& m, params_ref const & p, tactic* sat, tacti
                                                                                      mk_aig_tactic(),
                                                                                      using_params(mk_aig_tactic(),
                                                                                                   big_aig_p))))),
-                                                     sat)),
-                                       smt)));
-    
+                                                     sat),
+                                            smt))));
+
     st->updt_params(p);
     return st;
-    
+
 }
 
 
@@ -129,9 +131,7 @@ tactic * mk_qfbv_tactic(ast_manager & m, params_ref const & p) {
     tactic * new_sat = cond(mk_produce_proofs_probe(),
                             and_then(mk_simplify_tactic(m), mk_smt_tactic()),
                             mk_sat_tactic(m));
-    
+
     return mk_qfbv_tactic(m, p, new_sat, mk_smt_tactic());
 
 }
-
-

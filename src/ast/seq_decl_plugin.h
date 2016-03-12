@@ -54,6 +54,7 @@ enum seq_op_kind {
     OP_RE_UNION,
     OP_RE_INTERSECT,
     OP_RE_LOOP,
+    OP_RE_COMPLEMENT,
     OP_RE_EMPTY_SET,
     OP_RE_FULL_SET,
     OP_RE_OF_PRED,
@@ -221,16 +222,16 @@ public:
         str(seq_util& u): u(u), m(u.m), m_fid(u.m_fid) {}
 
         sort* mk_seq(sort* s) { parameter param(s); return m.mk_sort(m_fid, SEQ_SORT, 1, &param); }
-        sort* mk_string_sort() { return m.mk_sort(m_fid, _STRING_SORT, 0, 0); }
-        app* mk_empty(sort* s) { return m.mk_const(m.mk_func_decl(m_fid, OP_SEQ_EMPTY, 0, 0, 0, (expr*const*)0, s)); }
+        sort* mk_string_sort() const { return m.mk_sort(m_fid, _STRING_SORT, 0, 0); }
+        app* mk_empty(sort* s) const { return m.mk_const(m.mk_func_decl(m_fid, OP_SEQ_EMPTY, 0, 0, 0, (expr*const*)0, s)); }
         app* mk_string(zstring const& s);
         app* mk_string(symbol const& s) { return u.seq.mk_string(s); }
         app* mk_char(char ch);
-        app* mk_concat(expr* a, expr* b) { expr* es[2] = { a, b }; return m.mk_app(m_fid, OP_SEQ_CONCAT, 2, es); }
+        app* mk_concat(expr* a, expr* b) const { expr* es[2] = { a, b }; return m.mk_app(m_fid, OP_SEQ_CONCAT, 2, es); }
         app* mk_concat(expr* a, expr* b, expr* c) { return mk_concat(a, mk_concat(b, c)); }
-        expr* mk_concat(unsigned n, expr* const* es) { if (n == 1) return es[0]; SASSERT(n > 1); return m.mk_app(m_fid, OP_SEQ_CONCAT, n, es); }
-        expr* mk_concat(expr_ref_vector const& es) { return mk_concat(es.size(), es.c_ptr()); }
-        app* mk_length(expr* a) { return m.mk_app(m_fid, OP_SEQ_LENGTH, 1, &a); }
+        expr* mk_concat(unsigned n, expr* const* es) const { if (n == 1) return es[0]; SASSERT(n > 1); return m.mk_app(m_fid, OP_SEQ_CONCAT, n, es); }
+        expr* mk_concat(expr_ref_vector const& es) const { return mk_concat(es.size(), es.c_ptr()); }
+        app* mk_length(expr* a) const { return m.mk_app(m_fid, OP_SEQ_LENGTH, 1, &a); }
         app* mk_substr(expr* a, expr* b, expr* c) { expr* es[3] = { a, b, c }; return m.mk_app(m_fid, OP_SEQ_EXTRACT, 3, es); }
         app* mk_contains(expr* a, expr* b) { expr* es[2] = { a, b }; return m.mk_app(m_fid, OP_SEQ_CONTAINS, 2, es); }
         app* mk_prefix(expr* a, expr* b) { expr* es[2] = { a, b }; return m.mk_app(m_fid, OP_SEQ_PREFIX, 2, es); }
@@ -299,16 +300,20 @@ public:
         app* mk_concat(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_CONCAT, r1, r2); }
         app* mk_union(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_UNION, r1, r2); }
         app* mk_inter(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_INTERSECT, r1, r2); }
+        app* mk_complement(expr* r) { return m.mk_app(m_fid, OP_RE_COMPLEMENT, r); }
         app* mk_star(expr* r) { return m.mk_app(m_fid, OP_RE_STAR, r); }
         app* mk_plus(expr* r) { return m.mk_app(m_fid, OP_RE_PLUS, r); }
         app* mk_opt(expr* r) { return m.mk_app(m_fid, OP_RE_OPTION, r); }
         app* mk_loop(expr* r, unsigned lo);
         app* mk_loop(expr* r, unsigned lo, unsigned hi);
+        app* mk_full(sort* s);
+        app* mk_empty(sort* s);
 
         bool is_to_re(expr const* n)    const { return is_app_of(n, m_fid, OP_SEQ_TO_RE); }
         bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_CONCAT); }
         bool is_union(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_UNION); }
         bool is_intersection(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_INTERSECT); }
+        bool is_complement(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_COMPLEMENT); }
         bool is_star(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_STAR); }
         bool is_plus(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_PLUS); }
         bool is_opt(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_OPTION); }
@@ -321,6 +326,7 @@ public:
         MATCH_BINARY(is_union);
         MATCH_BINARY(is_intersection);
         MATCH_BINARY(is_range);
+        MATCH_UNARY(is_complement);
         MATCH_UNARY(is_star);
         MATCH_UNARY(is_plus);
         MATCH_UNARY(is_opt);

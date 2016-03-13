@@ -1619,8 +1619,7 @@ def generate_files(api_files,
                    dotnet_output_dir=None,
                    java_output_dir=None,
                    java_package_name=None,
-                   ml_output_dir=None,
-                   z3js_output_dir='../bin/'):
+                   ml_output_dir=None):
   """
     Scan the api files in ``api_files`` and emit the relevant API files into
     the output directories specified. If an output directory is set to ``None``
@@ -1666,8 +1665,8 @@ def generate_files(api_files,
     with mk_file_or_temp(api_output_dir, 'api_log_macros.cpp') as log_c:
       with mk_file_or_temp(api_output_dir, 'api_commands.cpp') as exe_c:
         with mk_file_or_temp(z3py_output_dir, 'z3core.py') as core_py:
-          with mk_file_or_temp(z3js_output_dir, 'z3_bindings_stripped.js') as core_js:
-            with mk_file_or_temp(z3js_output_dir, 'z3_bindings_flat') as core_flat:
+          with mk_file_or_temp(z3py_output_dir, 'z3_bindings_stripped.js') as core_js:
+            with mk_file_or_temp(z3py_output_dir, 'z3_bindings_flat') as core_flat:
                # Write preambles
                write_log_h_preamble(log_h)
                write_log_c_preamble(log_c)
@@ -1685,6 +1684,7 @@ def generate_files(api_files,
                  print("Generated '{}'".format(log_c.name))
                  print("Generated '{}'".format(exe_c.name))
                  print("Generated '{}'".format(core_py.name))
+                 print("Generated '{}'".format(core_js.name))
 
   if dotnet_output_dir:
     with open(os.path.join(dotnet_output_dir, 'Native.cs'), 'w') as dotnet_file:
@@ -1742,6 +1742,7 @@ def main(args):
   generate_files(api_files=pargs.api_files,
                  api_output_dir=pargs.api_output_dir,
                  z3py_output_dir=pargs.z3py_output_dir,
+                 z3js_output_dir=pargs.z3py_output_dir,
                  dotnet_output_dir=pargs.dotnet_output_dir,
                  java_output_dir=pargs.java_output_dir,
                  java_package_name=pargs.java_package_name,

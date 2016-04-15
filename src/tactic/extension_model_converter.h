@@ -27,14 +27,14 @@ Notes:
 class extension_model_converter : public model_converter {
     func_decl_ref_vector  m_vars;
     expr_ref_vector       m_defs;
-public:    
+public:
     extension_model_converter(ast_manager & m):m_vars(m), m_defs(m) {
     }
-    
+
     virtual ~extension_model_converter();
-    
+
     ast_manager & m() const { return m_vars.get_manager(); }
-    
+
     virtual void operator()(model_ref & md, unsigned goal_idx);
 
     virtual void display(std::ostream & out);

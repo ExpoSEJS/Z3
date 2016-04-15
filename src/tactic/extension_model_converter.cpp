@@ -86,10 +86,10 @@ void extension_model_converter::display(std::ostream & out) {
 }
 
 model_converter * extension_model_converter::translate(ast_translation & translator) {
-    extension_model_converter * res = alloc(extension_model_converter, translator.to());    
+    extension_model_converter * res = alloc(extension_model_converter, translator.to());
     for (unsigned i = 0; i < m_vars.size(); i++)
         res->m_vars.push_back(translator(m_vars[i].get()));
     for (unsigned i = 0; i < m_defs.size(); i++)
-        res->m_defs.push_back(translator(m_defs[i].get()));    
+        res->m_defs.push_back(translator(m_defs[i].get()));
     return res;
 }

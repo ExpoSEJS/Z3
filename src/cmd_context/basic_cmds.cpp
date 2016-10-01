@@ -28,6 +28,8 @@ Notes:
 #include"eval_cmd.h"
 #include"gparams.h"
 #include"env_params.h"
+#include"well_sorted.h"
+#include"pp_params.hpp"
 
 class help_cmd : public cmd {
     svector<symbol> m_cmds;
@@ -156,13 +158,23 @@ ATOMIC_CMD(get_proof_cmd, "get-proof", "retrieve proof", {
     pr = ctx.get_check_sat_result()->get_proof();
     if (pr == 0)
         throw cmd_exception("proof is not available");
-    // TODO: reimplement a new SMT2 pretty printer 
-    ast_smt_pp pp(ctx.m());
-    cmd_is_declared isd(ctx);
-    pp.set_is_declared(&isd);
-    pp.set_logic(ctx.get_logic());
-    pp.display_smt2(ctx.regular_stream(), pr);
-    ctx.regular_stream() << std::endl;
+    if (ctx.well_sorted_check_enabled() && !is_well_sorted(ctx.m(), pr)) {
+        throw cmd_exception("proof is not well sorted");
+    }
+    
+    pp_params params;
+    if (params.pretty_proof()) {
+        ctx.regular_stream() << mk_pp(pr, ctx.m()) << std::endl;
+    }
+    else {
+        // TODO: reimplement a new SMT2 pretty printer 
+        ast_smt_pp pp(ctx.m());
+        cmd_is_declared isd(ctx);
+        pp.set_is_declared(&isd);
+        pp.set_logic(ctx.get_logic());
+        pp.display_smt2(ctx.regular_stream(), pr);
+        ctx.regular_stream() << std::endl;
+    }
 });
 
 #define PRINT_CORE()                                            \
@@ -619,7 +631,7 @@ public:
             ctx.regular_stream() << "(:status " << ctx.get_status() << ")" << std::endl;
         }
         else if (opt == m_reason_unknown) {
-            ctx.regular_stream() << "(:reason-unknown " << ctx.reason_unknown() << ")" << std::endl;
+            ctx.regular_stream() << "(:reason-unknown \"" << ctx.reason_unknown() << "\")" << std::endl;
         }
         else if (opt == m_all_statistics) {
             ctx.display_statistics();
@@ -747,6 +759,42 @@ public:
     }
 };
 
+class get_consequences_cmd : public cmd {
+    ptr_vector<expr> m_assumptions;
+    ptr_vector<expr> m_variables;
+    unsigned         m_count;
+public:
+    get_consequences_cmd(): cmd("get-consequences"), m_count(0) {}
+    virtual char const * get_usage() const { return "(<boolean-variable>*) (<variable>*)"; }
+    virtual char const * get_descr(cmd_context & ctx) const { return "retrieve consequences that fix values for supplied variables"; }
+    virtual unsigned get_arity() const { return 2; }
+    virtual cmd_arg_kind next_arg_kind(cmd_context & ctx) const { return CPK_EXPR_LIST; }
+    virtual void set_next_arg(cmd_context & ctx, unsigned num, expr * const * tlist) { 
+        if (m_count == 0) {
+            m_assumptions.append(num, tlist);
+            ++m_count;
+        }
+        else {
+            m_variables.append(num, tlist);
+        }
+    }
+    virtual void failure_cleanup(cmd_context & ctx) {}
+    virtual void execute(cmd_context & ctx) {
+        ast_manager& m = ctx.m();
+        expr_ref_vector assumptions(m), variables(m), consequences(m);
+        assumptions.append(m_assumptions.size(), m_assumptions.c_ptr());
+        variables.append(m_variables.size(), m_variables.c_ptr());
+        ctx.get_consequences(assumptions, variables, consequences);
+        ctx.regular_stream() << consequences << "\n";
+    }
+    virtual void prepare(cmd_context & ctx) { reset(ctx); }
+
+    virtual void reset(cmd_context& ctx) {
+        m_assumptions.reset(); m_variables.reset(); m_count = 0;
+    }
+    virtual void finalize(cmd_context & ctx) {}
+};
+
 // provides "help" for builtin cmds
 class builtin_cmd : public cmd {
     char const * m_usage;
@@ -770,6 +818,7 @@ void install_basic_cmds(cmd_context & ctx) {
     ctx.insert(alloc(get_option_cmd));
     ctx.insert(alloc(get_info_cmd));
     ctx.insert(alloc(set_info_cmd));
+    ctx.insert(alloc(get_consequences_cmd));
     ctx.insert(alloc(builtin_cmd, "assert", "<term>", "assert term."));
     ctx.insert(alloc(builtin_cmd, "check-sat", "<boolean-constants>*", "check if the current context is satisfiable. If a list of boolean constants B is provided, then check if the current context is consistent with assigning every constant in B to true."));
     ctx.insert(alloc(builtin_cmd, "push", "<number>?", "push 1 (or <number>) scopes."));

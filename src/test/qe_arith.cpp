@@ -280,12 +280,318 @@ static void test2(char const *ex) {
     ctx.assert_expr(pr1);
     ctx.assert_expr(npr2);
     VERIFY(l_false == ctx.check());
-    ctx.pop(1);
-    
-    
+    ctx.pop(1);       
 }
 
+typedef opt::model_based_opt::var var_t;
+
+static void mk_var(unsigned x, app_ref& v) {
+    ast_manager& m = v.get_manager();
+    arith_util a(m);
+    std::ostringstream strm;
+    strm << "v" << x;
+    v = m.mk_const(symbol(strm.str().c_str()), a.mk_real());
+}
+
+static void mk_term(vector<var_t> const& vars, rational const& coeff, app_ref& term) {
+    ast_manager& m = term.get_manager();
+    expr_ref_vector ts(m);
+    arith_util a(m);
+
+    for (unsigned i = 0; i < vars.size(); ++i) {
+        app_ref var(m);
+        mk_var(vars[i].m_id, var);
+        rational coeff = vars[i].m_coeff;
+        ts.push_back(a.mk_mul(a.mk_numeral(coeff, false), var));
+    }
+    ts.push_back(a.mk_numeral(coeff, a.mk_real()));
+    term = a.mk_add(ts.size(), ts.c_ptr());    
+}
+
+static void add_random_ineq(
+    expr_ref_vector& fmls, 
+    opt::model_based_opt& mbo,
+    random_gen& r,
+    svector<int>  const& values,
+    unsigned max_vars,
+    unsigned max_coeff) 
+{
+    ast_manager& m = fmls.get_manager();
+    arith_util a(m);
+
+    unsigned num_vars = values.size();
+    uint_set used_vars;
+    vector<var_t> vars;
+    int value = 0;
+    for (unsigned i = 0; i < max_vars; ++i) {
+        unsigned x = r(num_vars);
+        if (used_vars.contains(x)) {
+            continue;
+        }
+        used_vars.insert(x);
+        int coeff = r(max_coeff + 1);
+        if (coeff == 0) {
+            continue;
+        }
+        unsigned sign = r(2);
+        coeff = sign == 0 ? coeff : -coeff;
+        vars.push_back(var_t(x, rational(coeff)));
+        value += coeff*values[x];
+    }
+    unsigned abs_value = value < 0 ? - value : value;
+    // value + k <= 0
+    // k <= - value
+    // range for k is 2*|value|
+    // k <= - value - range
+    opt::ineq_type rel = opt::t_le;
+
+    int coeff = 0;
+    if (r(4) == 0) {
+        rel = opt::t_eq;
+        coeff = -value;
+    }
+    else {
+        if (abs_value > 0) {
+            coeff = -value - r(2*abs_value);
+        }
+        else {
+            coeff = 0;
+        }
+        if (coeff != -value && r(3) == 0) {
+            rel = opt::t_lt;
+        }   
+    }
+    expr_ref fml(m);
+    app_ref t1(m);
+    app_ref t2(a.mk_numeral(rational(0), a.mk_real()), m);
+    mk_term(vars, rational(coeff), t1);
+    switch (rel) {
+    case opt::t_eq:
+        fml = m.mk_eq(t1, t2);
+        break;
+    case opt::t_lt:
+        fml = a.mk_lt(t1, t2);
+        break;
+    case opt::t_le:
+        fml = a.mk_le(t1, t2);
+        break;
+    }
+    fmls.push_back(fml);
+    mbo.add_constraint(vars, rational(coeff), rel);
+}
+
+static void test_maximize(opt::model_based_opt& mbo, ast_manager& m, unsigned num_vars, expr_ref_vector const& fmls, app* t) {
+    qe::arith_project_plugin plugin(m);
+    model mdl(m);    
+    arith_util a(m);
+    for (unsigned i = 0; i < num_vars; ++i) {
+        app_ref var(m);
+        mk_var(i, var);
+        rational val = mbo.get_value(i);
+        mdl.register_decl(var->get_decl(), a.mk_numeral(val, false));
+    }
+    expr_ref ge(m), gt(m);
+    opt::inf_eps value1 = plugin.maximize(fmls, mdl, t, ge, gt);
+    opt::inf_eps value2 = mbo.maximize();    
+    std::cout << "optimal: " << value1 << " " << value2 << "\n";
+    mbo.display(std::cout);
+}
+                        
+static void check_random_ineqs(random_gen& r, ast_manager& m, unsigned num_vars, unsigned max_value, unsigned num_ineqs, unsigned max_vars, unsigned max_coeff) {
+    opt::model_based_opt mbo;
+    expr_ref_vector fmls(m);
+
+    svector<int> values;
+    for (unsigned i = 0; i < num_vars; ++i) {
+        values.push_back(r(max_value + 1));
+        mbo.add_var(rational(values.back()));
+    }
+    for (unsigned i = 0; i < num_ineqs; ++i) {
+        add_random_ineq(fmls, mbo, r, values, max_vars, max_coeff);
+    }
+
+    vector<var_t> vars;
+    vars.reset();
+    vars.push_back(var_t(0, rational(2)));
+    vars.push_back(var_t(1, rational(-2)));
+    mbo.set_objective(vars, rational(0));
+       
+
+    mbo.display(std::cout);
+    app_ref t(m);
+    mk_term(vars, rational(0), t);
+    
+    test_maximize(mbo, m, num_vars, fmls, t);
+    
+    for (unsigned i = 0; i < values.size(); ++i) {
+        std::cout << i << ": " << values[i] << " -> " << mbo.get_value(i) << "\n";
+    }
+}
+
+static void check_random_ineqs() {
+    random_gen r(1);
+    ast_manager m;
+    reg_decl_plugins(m);    
+
+    for (unsigned i = 0; i < 100; ++i) {
+        check_random_ineqs(r, m, 4, 5, 5, 3, 6);
+    }
+}
+
+static void test_project() {
+    ast_manager m;
+    reg_decl_plugins(m);    
+    qe::arith_project_plugin plugin(m);    
+    arith_util a(m);
+    app_ref_vector vars(m);
+    expr_ref_vector lits(m), ds(m);
+    model mdl(m);    
+    app_ref x(m), y(m), z(m), u(m);
+    x = m.mk_const(symbol("x"), a.mk_int());
+    y = m.mk_const(symbol("y"), a.mk_int());
+    z = m.mk_const(symbol("z"), a.mk_int());
+    u = m.mk_const(symbol("u"), a.mk_int());
+    func_decl_ref f(m);
+    sort* int_sort = a.mk_int();
+    f = m.mk_func_decl(symbol("f"), 1, &int_sort, int_sort);
+
+    // test non-projection
+    mdl.register_decl(x->get_decl(), a.mk_int(0));
+    mdl.register_decl(y->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(2));
+    mdl.register_decl(u->get_decl(), a.mk_int(3));
+    func_interp* fi = alloc(func_interp, m, 1);
+    expr_ref_vector nums(m);
+    nums.push_back(a.mk_int(0));
+    nums.push_back(a.mk_int(1));
+    nums.push_back(a.mk_int(2));
+    fi->insert_new_entry(nums.c_ptr(),   a.mk_int(1));
+    fi->insert_new_entry(nums.c_ptr()+1, a.mk_int(2));
+    fi->insert_new_entry(nums.c_ptr()+2, a.mk_int(3));
+    fi->set_else(a.mk_int(10));
+    mdl.register_decl(f, fi);
+    vars.reset();
+    lits.reset();
+    vars.push_back(x);
+    lits.push_back(x <= app_ref(m.mk_app(f, (expr*)x), m));
+    lits.push_back(x < y);
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // test not-equals
+    vars.reset();
+    lits.reset();
+    vars.push_back(x);
+    lits.push_back(m.mk_not(m.mk_eq(x, y)));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // test negation of distinct using bound variables
+    mdl.register_decl(x->get_decl(), a.mk_int(0));
+    mdl.register_decl(y->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(0));
+    mdl.register_decl(u->get_decl(), a.mk_int(6));
+    vars.reset();
+    lits.reset();
+    ds.reset();
+    vars.push_back(x);
+    vars.push_back(y);
+    ds.push_back(x);
+    ds.push_back(y);
+    ds.push_back(z + 2);
+    ds.push_back(u);
+    ds.push_back(z);
+    lits.push_back(m.mk_not(m.mk_distinct(ds.size(), ds.c_ptr())));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // test negation of distinct, not using bound variables
+    mdl.register_decl(x->get_decl(), a.mk_int(0));
+    mdl.register_decl(y->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(0));
+    mdl.register_decl(u->get_decl(), a.mk_int(6));
+    vars.reset();
+    lits.reset();
+    ds.reset();
+    vars.push_back(x);
+    vars.push_back(y);
+    ds.push_back(x);
+    ds.push_back(y);
+    ds.push_back(z + 2);
+    ds.push_back(u);
+    ds.push_back(z + 10);
+    ds.push_back(u + 4);
+    lits.push_back(m.mk_not(m.mk_distinct(ds.size(), ds.c_ptr())));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+
+    // test distinct
+    mdl.register_decl(x->get_decl(), a.mk_int(0));
+    mdl.register_decl(y->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(0));
+    mdl.register_decl(u->get_decl(), a.mk_int(6));
+    vars.reset();
+    lits.reset();
+    ds.reset();
+    vars.push_back(x);
+    vars.push_back(y);
+    ds.push_back(x);
+    ds.push_back(y);
+    ds.push_back(z + 2);
+    ds.push_back(u);
+    lits.push_back(m.mk_distinct(ds.size(), ds.c_ptr()));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // equality over modulus
+    mdl.register_decl(y->get_decl(), a.mk_int(4));
+    mdl.register_decl(z->get_decl(), a.mk_int(8));
+    lits.reset();
+    vars.reset();
+    vars.push_back(y);
+    lits.push_back(m.mk_eq(a.mk_mod(y, a.mk_int(3)), a.mk_int(1)));
+    lits.push_back(m.mk_eq(2*y, z));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // inequality test
+    mdl.register_decl(x->get_decl(), a.mk_int(0));
+    mdl.register_decl(y->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(0));
+    mdl.register_decl(u->get_decl(), a.mk_int(6));
+    vars.reset();
+    lits.reset();
+    vars.push_back(x);
+    vars.push_back(y);
+    lits.push_back(z <= (x + (2*y)));
+    lits.push_back(2*x < u + 3);
+    lits.push_back(2*y <= u);
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+    // non-unit equalities
+    mdl.register_decl(x->get_decl(), a.mk_int(1));
+    mdl.register_decl(z->get_decl(), a.mk_int(2));
+    mdl.register_decl(u->get_decl(), a.mk_int(3));
+    mdl.register_decl(y->get_decl(), a.mk_int(4));
+    lits.reset();
+    vars.reset();
+    vars.push_back(x);
+    lits.push_back(m.mk_eq(2*x, z));
+    lits.push_back(m.mk_eq(3*x, u));
+    plugin(mdl, vars, lits);
+    std::cout << lits << "\n";
+
+
+}
+
+
 void tst_qe_arith() {
+    test_project();
+    return;
+    check_random_ineqs();
+    return;
 //    enable_trace("qe");
     testI(example8);    
     testR(example7);

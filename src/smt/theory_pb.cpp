@@ -787,8 +787,7 @@ namespace smt {
             }
 
             for (unsigned i = 0; i < ineqs->size(); ++i) {
-                ineq* c = (*ineqs)[i]; 
-                SASSERT(c->is_ge());
+                SASSERT((*ineqs)[i]->is_ge());
                 if (assign_watch_ge(v, is_true, *ineqs, i)) {
                     // i was removed from watch list.
                     --i;
@@ -1064,7 +1063,7 @@ namespace smt {
         }
 #endif
         else {
-            IF_VERBOSE(3, display(verbose_stream() << "no propagation ", c, true););
+            IF_VERBOSE(14, display(verbose_stream() << "no propagation ", c, true););
         }
     }
 
@@ -1638,7 +1637,7 @@ namespace smt {
                 // same order as the assignment stack.
                 // It is not a correctness bug but causes to miss lemmas.
                 //
-                IF_VERBOSE(2, display_resolved_lemma(verbose_stream()););
+                IF_VERBOSE(12, display_resolved_lemma(verbose_stream()););
                 TRACE("pb", display_resolved_lemma(tout););
                 return false;
             }
@@ -1736,12 +1735,12 @@ namespace smt {
         // 3x + 3y + z + u >= 4
         // ~x /\ ~y => z + u >= 
 
-        IF_VERBOSE(4, display(verbose_stream() << "lemma1: ", m_lemma););
+        IF_VERBOSE(14, display(verbose_stream() << "lemma1: ", m_lemma););
         hoist_maximal_values();
         lbool is_true = m_lemma.normalize(false);
         m_lemma.prune(false);
 
-        IF_VERBOSE(4, display(verbose_stream() << "lemma2: ", m_lemma););
+        IF_VERBOSE(14, display(verbose_stream() << "lemma2: ", m_lemma););
         //unsigned l_size = m_ineq_literals.size() + ((is_true==l_false)?0:m_lemma.size());
         //if (s_min_l_size >= l_size) {
         //    verbose_stream() << "(pb.conflict min size: " << l_size << ")\n";
@@ -1834,13 +1833,12 @@ namespace smt {
 
     void theory_pb::validate_assign(ineq const& c, literal_vector const& lits, literal l) const {
         uint_set nlits;
-        context& ctx = get_context();
         for (unsigned i = 0; i < lits.size(); ++i) {
-            SASSERT(ctx.get_assignment(lits[i]) == l_true);
+            SASSERT(get_context().get_assignment(lits[i]) == l_true);
             nlits.insert((~lits[i]).index());
         }
-        SASSERT(ctx.get_assignment(l) == l_undef);
-        SASSERT(ctx.get_assignment(c.lit()) == l_true);
+        SASSERT(get_context().get_assignment(l) == l_undef);
+        SASSERT(get_context().get_assignment(c.lit()) == l_true);
         nlits.insert(l.index());
         numeral sum = numeral::zero();
         for (unsigned i = 0; i < c.size(); ++i) {

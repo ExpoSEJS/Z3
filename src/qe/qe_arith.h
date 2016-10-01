@@ -22,19 +22,21 @@ namespace qe {
 
     class arith_project_plugin : public project_plugin {
         struct imp;
-        imp* m_imp;
+        imp* m_imp;        
     public:
         arith_project_plugin(ast_manager& m);
         virtual ~arith_project_plugin();
         virtual bool operator()(model& model, app* var, app_ref_vector& vars, expr_ref_vector& lits);
         virtual bool solve(model& model, app_ref_vector& vars, expr_ref_vector& lits);
         virtual family_id get_family_id();
+        virtual void operator()(model& model, app_ref_vector& vars, expr_ref_vector& lits);
+
+
+        opt::inf_eps maximize(expr_ref_vector const& fmls, model& mdl, app* t, expr_ref& ge, expr_ref& gt);
     };
 
     bool arith_project(model& model, app* var, expr_ref_vector& lits);
 
-    // match e := t mod k = 0.
-    bool is_divides(arith_util& a, expr* e, rational& k, expr_ref& t);
 
 };
 

@@ -945,6 +945,8 @@ typedef enum
 
       - Z3_OP_FPA_TO_IEEE_BV: Floating-point conversion to IEEE-754 bit-vector
 
+      - Z3_OP_INTERNAL: internal (often interpreted) symbol, but no additional information is exposed. Tools may use the string representation of the function declaration to obtain more information.
+
       - Z3_OP_UNINTERPRETED: kind used for uninterpreted symbols.
 */
 typedef enum {
@@ -1059,6 +1061,15 @@ typedef enum {
     Z3_OP_BV2INT,
     Z3_OP_CARRY,
     Z3_OP_XOR3,
+
+    Z3_OP_BSMUL_NO_OVFL,
+    Z3_OP_BUMUL_NO_OVFL,
+    Z3_OP_BSMUL_NO_UDFL,
+    Z3_OP_BSDIV_I,
+    Z3_OP_BUDIV_I,
+    Z3_OP_BSREM_I,
+    Z3_OP_BUREM_I,
+    Z3_OP_BSMOD_I,
 
     // Proofs
     Z3_OP_PR_UNDEF = 0x500,
@@ -1204,6 +1215,11 @@ typedef enum {
     Z3_OP_FPA_TO_REAL,
 
     Z3_OP_FPA_TO_IEEE_BV,
+
+    Z3_OP_FPA_MIN_I,
+    Z3_OP_FPA_MAX_I,
+
+    Z3_OP_INTERNAL,
 
     Z3_OP_UNINTERPRETED
 } Z3_decl_kind;
@@ -3056,7 +3072,8 @@ extern "C" {
        \brief Create a numeral of a given sort.
 
        \param c logical context.
-       \param numeral A string representing the numeral value in decimal notation. If the given sort is a real, then the numeral can be a rational, that is, a string of the form \ccode{[num]* / [num]*}.
+       \param numeral A string representing the numeral value in decimal notation. The string may be of the form \code{[num]*[.[num]*][E[+|-][num]+]}.
+                      If the given sort is a real, then the numeral can be a rational, that is, a string of the form \ccode{[num]* / [num]*}.                      
        \param ty The sort of the numeral. In the current implementation, the given sort can be an int, real, finite-domain, or bit-vectors of arbitrary size.
 
        \sa Z3_mk_int
@@ -5105,6 +5122,13 @@ extern "C" {
     Z3_string Z3_API Z3_get_error_msg(Z3_context c, Z3_error_code err);
     /*@}*/
 
+    /**
+       \brief Return a string describing the given error code. 
+       Retained function name for backwards compatibility within v4.1
+    */
+    Z3_string Z3_API Z3_get_error_msg_ex(Z3_context c, Z3_error_code err);
+    /*@}*/
+
     /** @name Miscellaneous */
     /*@{*/
 
@@ -5114,6 +5138,13 @@ extern "C" {
        def_API('Z3_get_version', VOID, (_out(UINT), _out(UINT), _out(UINT), _out(UINT)))
     */
     void Z3_API Z3_get_version(unsigned * major, unsigned * minor, unsigned * build_number, unsigned * revision_number);
+
+    /**
+        \brief Return a string that fully describes the version of Z3 in use.
+
+        def_API('Z3_get_full_version', STRING, ())
+    */
+    Z3_string Z3_API Z3_get_full_version(void);
 
     /**
        \brief Enable tracing messages tagged as \c tag when Z3 is compiled in debug mode.
@@ -5863,6 +5894,17 @@ extern "C" {
                                               Z3_ast const terms[],
                                               unsigned class_ids[]);
 
+    /**
+       \brief retrieve consequences from solver that determine values of the supplied function symbols.
+       
+       def_API('Z3_solver_get_consequences', INT, (_in(CONTEXT), _in(SOLVER), _in(AST_VECTOR), _in(AST_VECTOR), _in(AST_VECTOR)))
+     */
+
+    Z3_lbool Z3_API Z3_solver_get_consequences(Z3_context c, 
+                                               Z3_solver s,
+                                               Z3_ast_vector assumptions,
+                                               Z3_ast_vector variables,
+                                               Z3_ast_vector consequences);
     /**
        \brief Retrieve the model for the last #Z3_solver_check or #Z3_solver_check_assumptions
 

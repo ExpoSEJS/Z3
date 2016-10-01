@@ -363,12 +363,11 @@ namespace smt {
               << ", scope_level: " << m_context.get_scope_level() << "\n";);
         if (m_params.m_qi_conservative_final_check) {
             bool  init = false;
-            float min_cost;
+            float min_cost = 0.0;
             unsigned sz = m_delayed_entries.size();
             for (unsigned i = 0; i < sz; i++) {
                 entry & e       = m_delayed_entries[i];
-                fingerprint * f = e.m_qb;
-                TRACE("qi_queue", tout << f << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
+                TRACE("qi_queue", tout << e.m_qb << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
                 if (!e.m_instantiated && e.m_cost <= m_params.m_qi_lazy_threshold && (!init || e.m_cost < min_cost)) {
                     init = true;
                     min_cost = e.m_cost;
@@ -378,12 +377,10 @@ namespace smt {
             bool result = true;
             for (unsigned i = 0; i < sz; i++) {
                 entry & e       = m_delayed_entries[i];
-                fingerprint * f = e.m_qb;
-                quantifier * qa = static_cast<quantifier*>(f->get_data());
-                TRACE("qi_queue", tout << f << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
+                TRACE("qi_queue", tout << e.m_qb << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
                 if (!e.m_instantiated && e.m_cost <= min_cost) {
                     TRACE("qi_queue", 
-                          tout << "lazy quantifier instantiation...\n" << mk_pp(qa, m_manager) << "\ncost: " << e.m_cost << "\n";);
+                          tout << "lazy quantifier instantiation...\n" << mk_pp(static_cast<quantifier*>(e.m_qb->get_data()), m_manager) << "\ncost: " << e.m_cost << "\n";);
                     result             = false;
                     m_instantiated_trail.push_back(i);
                     m_stats.m_num_lazy_instances++;
@@ -396,12 +393,10 @@ namespace smt {
         bool result = true;
         for (unsigned i = 0; i < m_delayed_entries.size(); i++) {
             entry & e       = m_delayed_entries[i];
-            fingerprint * f = e.m_qb;
-            quantifier * qa = static_cast<quantifier*>(f->get_data());
-            TRACE("qi_queue", tout << f << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
+            TRACE("qi_queue", tout << e.m_qb << ", cost: " << e.m_cost << ", instantiated: " << e.m_instantiated << "\n";);
             if (!e.m_instantiated && e.m_cost <= m_params.m_qi_lazy_threshold)  {
                 TRACE("qi_queue", 
-                      tout << "lazy quantifier instantiation...\n" << mk_pp(qa, m_manager) << "\ncost: " << e.m_cost << "\n";);
+                      tout << "lazy quantifier instantiation...\n" << mk_pp(static_cast<quantifier*>(e.m_qb->get_data()), m_manager) << "\ncost: " << e.m_cost << "\n";);
                 result             = false;
                 m_instantiated_trail.push_back(i);
                 m_stats.m_num_lazy_instances++;

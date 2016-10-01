@@ -80,8 +80,7 @@ namespace sat {
                 SASSERT(!src.was_eliminated(v));
                 bool ext  = src.m_external[v] != 0;
                 bool dvar = src.m_decision[v] != 0;
-                bool_var new_v = mk_var(ext, dvar);
-                SASSERT(v == new_v);
+                VERIFY(v == mk_var(ext, dvar));
             }
         }
         {
@@ -407,9 +406,8 @@ namespace sat {
         unsigned num_lits = cls.size();
         for (unsigned i = 1; i < num_lits; i++) {
             literal l    = cls[i];
-            lbool val    = value(l);
-            CTRACE("sat", val != l_false, tout << l << ":=" << val;);
-            SASSERT(val == l_false);
+            CTRACE("sat", value(l) != l_false, tout << l << ":=" << value(l););
+            SASSERT(value(l) == l_false);
             if (max_false_idx == UINT_MAX || lvl(l) > lvl(cls[max_false_idx]))
                 max_false_idx = i;
         }
@@ -939,7 +937,7 @@ namespace sat {
 
 
     bool solver::init_weighted_assumptions(unsigned num_lits, literal const* lits, double const* weights, double max_weight) {
-        flet<bool> _min1(m_config.m_minimize_core, false);
+        flet<bool> _min1(m_config.m_core_minimize, false);
         m_weight = 0;
         m_blocker.reset();
         svector<lbool> values;
@@ -2017,7 +2015,7 @@ namespace sat {
             idx--;
         }        
         reset_unmark(old_size);
-        if (m_config.m_minimize_core) {
+        if (m_config.m_core_minimize) {
             if (m_min_core_valid && m_min_core.size() < m_core.size()) {
                 IF_VERBOSE(1, verbose_stream() << "(sat.updating core " << m_min_core.size() << " " << m_core.size() << ")\n";);
                 m_core.reset();

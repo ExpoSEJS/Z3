@@ -36,6 +36,27 @@ Revision History:
 
 namespace qe {
 
+
+    static bool is_divides(arith_util& a, expr* e1, expr* e2, rational& k, expr_ref& p) {  
+        expr* t1, *t2;
+        if (a.is_mod(e2, t1, t2) && 
+            a.is_numeral(e1, k) && 
+            k.is_zero() &&
+            a.is_numeral(t2, k)) {
+            p = t1;
+            return true;
+        }
+        return false;
+    }
+
+    static bool is_divides(arith_util& a, expr* e, rational& k, expr_ref& t) {
+        expr* e1, *e2;
+        if (!a.get_manager().is_eq(e, e1, e2)) {
+            return false;
+        }
+        return is_divides(a, e1, e2, k, t) || is_divides(a, e2, e1, k, t);
+    }
+
     class bound {        
         rational   m_coeff;
         expr_ref  m_term;
@@ -1153,21 +1174,20 @@ namespace qe {
         
 
         bool get_bound(contains_app& contains_x, app* a) {
-            ast_manager& m = m_util.get_manager();
-            app* x = contains_x.x();
-            if (m_mark.is_marked(a) ||
+            bool has_bound = 
+                m_mark.is_marked(a) ||
                 get_le_bound(contains_x, a) ||
                 get_lt_bound(contains_x, a) ||
                 get_divides(contains_x, a) ||
-                get_nested_divs(contains_x, a)) {
-                TRACE("qe_verbose", tout << "Bound for " << mk_pp(x, m) << " within " << mk_pp(a, m) << "\n";);
+                get_nested_divs(contains_x, a);
+            if (has_bound) {
                 m_mark.mark(a, true);
-                return true;
             }
-            else {
-                TRACE("qe", tout << "No bound for " << mk_pp(x, m) << " within " << mk_pp(a, m) << "\n";);
-                return false;
-            }
+            TRACE("qe_verbose", 
+                  ast_manager& m = m_util.get_manager();
+                  app* x = contains_x.x();
+                  tout << has_bound << " bound for " << mk_pp(x, m) << " within " << mk_pp(a, m) << "\n";);
+            return has_bound;
         }
 
         unsigned lt_size() { return m_lt_terms.size(); }
@@ -2323,7 +2343,6 @@ public:
             unsigned sz = bounds.size(is_strict, !is_lower);
             bool is_strict_real = !is_eq_ctx && m_util.is_real(x) && !is_strict_ctx;                   
             bool strict_resolve = is_strict || is_strict_ctx || is_strict_real;
-            app* atm = bounds.atoms(is_strict_ctx, is_lower)[index];    
 
             for (unsigned i = 0; i < sz; ++i) {
                 app* e = bounds.atoms(is_strict, !is_lower)[i];
@@ -2341,6 +2360,7 @@ public:
                 m_ctx.add_constraint(true, mk_not(e), tmp);
 
                 TRACE("qe_verbose", 
+                      app* atm = bounds.atoms(is_strict_ctx, is_lower)[index];    
                       tout << mk_pp(atm, m) << " ";
                       tout << mk_pp(e, m) << " ==>\n";
                       tout << mk_pp(tmp, m) << "\n";
@@ -2446,7 +2466,7 @@ public:
         }
                 
         virtual void assign(contains_app& x, expr* fml, rational const& vl) {
-            nlarith::branch_conditions *brs;
+            nlarith::branch_conditions *brs = 0;
             VERIFY (m_cache.find(x.x(), fml, brs));
             SASSERT(vl.is_unsigned());
             SASSERT(vl.get_unsigned() < brs->size());

@@ -219,9 +219,17 @@ public:
 
     virtual void set_next_arg(cmd_context & ctx, func_decl* t) {
         m_target = t;
+        if (t->get_family_id() != null_family_id) {
+            throw cmd_exception("Invalid query argument, expected uinterpreted function name, but argument is interpreted");
+        }
+        datalog::context& dlctx = m_dl_ctx->dlctx();
+        if (!dlctx.get_predicates().contains(t)) {
+            throw cmd_exception("Invalid query argument, expected a predicate registered as a relation");
+        }
     }
 
     virtual void prepare(cmd_context & ctx) { 
+        ctx.m(); // ensure manager is initialized.
         parametric_cmd::prepare(ctx);
         m_target   = 0; 
     }
@@ -292,6 +300,7 @@ public:
                 break;
 
             case datalog::OK: 
+                (void)query_exn;
                 SASSERT(query_exn);
                 break;
 
@@ -383,6 +392,7 @@ public:
     virtual unsigned get_arity() const { return VAR_ARITY; }
 
     virtual void prepare(cmd_context & ctx) {
+        ctx.m(); // ensure manager is initialized.
         m_arg_idx = 0; 
         m_query_arg_idx = 0; 
         m_domain = 0;
@@ -443,6 +453,7 @@ public:
     virtual unsigned get_arity() const { return 2; }
 
     virtual void prepare(cmd_context & ctx) {
+        ctx.m(); // ensure manager is initialized.
         m_arg_idx = 0; 
     }
     virtual cmd_arg_kind next_arg_kind(cmd_context & ctx) const { 
@@ -516,13 +527,8 @@ static void install_dl_cmds_aux(cmd_context& ctx, dl_collected_cmds* collected_c
     ctx.insert(alloc(dl_query_cmd, dl_ctx));
     ctx.insert(alloc(dl_declare_rel_cmd, dl_ctx));
     ctx.insert(alloc(dl_declare_var_cmd, dl_ctx));
-    // #ifndef _EXTERNAL_RELEASE
-    // TODO: we need these!
-#if 1
-    ctx.insert(alloc(dl_push_cmd, dl_ctx)); // not exposed to keep command-extensions simple.
+    ctx.insert(alloc(dl_push_cmd, dl_ctx)); 
     ctx.insert(alloc(dl_pop_cmd, dl_ctx));
-#endif
-    // #endif
 }
 
 void install_dl_cmds(cmd_context & ctx) {

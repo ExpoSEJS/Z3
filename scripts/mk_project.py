@@ -9,7 +9,7 @@ from mk_util import *
 
 # Z3 Project definition
 def init_project_def():
-    set_version(4, 4, 2, 0)
+    set_version(4, 4, 2, 1)
     add_lib('util', [])
     add_lib('polynomial', ['util'], 'math/polynomial')
     add_lib('sat', ['util'])
@@ -87,8 +87,9 @@ def init_project_def():
                               reexports=['api'],
                               dll_name='libz3',
                               static=build_static_lib(),
-                              export_files=API_files)
-    add_dot_net_dll('dotnet', ['api_dll'], 'api/dotnet', dll_name='Microsoft.Z3', assembly_info_dir='Properties')
+                              export_files=API_files,
+                              staging_link='python')
+    add_dot_net_dll('dotnet', ['api_dll'], 'api/dotnet', dll_name='Microsoft.Z3', assembly_info_dir='Properties', default_key_file='src/api/dotnet/Microsoft.Z3.snk')
     add_java_dll('java', ['api_dll'], 'api/java', dll_name='libz3java', package_name="com.microsoft.z3", manifest_file='manifest')
     add_ml_lib('ml', ['api_dll'], 'api/ml', lib_name='libz3ml')
     add_hlib('cpp', 'api/c++', includes2install=['z3++.h'])

@@ -156,6 +156,7 @@ class fm_tactic : public tactic {
                     r = c;
                 }
             }
+            (void)found;
             SASSERT(found);
             return is_lower ? LOWER : UPPER;
         }
@@ -992,7 +993,7 @@ class fm_tactic : public tactic {
             sbuffer<var>     xs;
             buffer<rational> as;
             rational         c;
-            bool             strict;
+            bool             strict = false;
             unsigned         num;
             expr * const *   args;
             if (m.is_or(f)) {

@@ -5,9 +5,9 @@
 #
 # Author: Leonardo de Moura (leonardo)
 ############################################
-from z3 import *
-from z3core import *
-from z3printer import *
+from .z3 import *
+from .z3core import *
+from .z3printer import *
 from fractions import Fraction
 
 def _to_numeral(num, ctx=None):
@@ -572,9 +572,4 @@ def isolate_roots(p, vs=[]):
         _vs[i] = vs[i].ast
     _roots = AstVector(Z3_algebraic_roots(p.ctx_ref(), p.as_ast(), num, _vs), p.ctx)
     return [ Numeral(r) for r in _roots ]
-        
-if __name__ == "__main__":
-    import doctest
-    if doctest.testmod().failed:
-        exit(1)
 

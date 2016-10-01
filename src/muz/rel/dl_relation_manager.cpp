@@ -277,7 +277,7 @@ namespace datalog {
     relation_plugin & relation_manager::get_relation_plugin(family_id kind) {
         SASSERT(kind>=0);
         SASSERT(kind<m_next_relation_fid);
-        relation_plugin * res;
+        relation_plugin * res = 0;
         VERIFY(m_kind2plugin.find(kind, res));
         return *res;
     }
@@ -488,7 +488,9 @@ namespace datalog {
     }
 
     std::string relation_manager::to_nice_string(const relation_sort & s) const {
-        return std::string(s->get_name().bare_str());
+        std::ostringstream strm;
+        strm << mk_pp(s, get_context().get_manager());
+        return strm.str();
     }
 
     std::string relation_manager::to_nice_string(const relation_signature & s) const {

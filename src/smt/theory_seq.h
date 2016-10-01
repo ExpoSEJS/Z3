@@ -287,10 +287,14 @@ namespace smt {
             unsigned m_extensionality;
             unsigned m_fixed_length;
             unsigned m_propagate_contains;
+            unsigned m_int_string;
         };
+        typedef hashtable<rational, rational::hash_proc, rational::eq_proc> rational_set;
+
         ast_manager&               m;
         dependency_manager         m_dm;
         solution_map               m_rep;        // unification representative.
+        bool                       m_reset_cache; // invalidate cache.
         scoped_vector<eq>          m_eqs;        // set of current equations.
         scoped_vector<ne>          m_nqs;        // set of current disequalities.
         scoped_vector<nc>          m_ncs;        // set of non-contains constraints.
@@ -303,6 +307,9 @@ namespace smt {
         obj_hashtable<expr>        m_axiom_set;
         unsigned                   m_axioms_head; // index of first axiom to add.
         bool            m_incomplete;             // is the solver (clearly) incomplete for the fragment.
+        expr_ref_vector     m_int_string;
+        rational_set        m_itos_axioms;
+        rational_set        m_stoi_axioms;
         obj_hashtable<expr> m_length;             // is length applied
         scoped_ptr_vector<apply> m_replay;        // set of actions to replay
         model_generator* m_mg;
@@ -442,10 +449,12 @@ namespace smt {
         bool is_var(expr* b);
         bool add_solution(expr* l, expr* r, dependency* dep);
         bool is_nth(expr* a) const;
+        bool is_nth(expr* a, expr*& e1, expr*& e2) const;
         bool is_tail(expr* a, expr*& s, unsigned& idx) const;
         bool is_eq(expr* e, expr*& a, expr*& b) const; 
         bool is_pre(expr* e, expr*& s, expr*& i);
         bool is_post(expr* e, expr*& s, expr*& i);
+        expr_ref mk_sk_ite(expr* c, expr* t, expr* f);
         expr_ref mk_nth(expr* s, expr* idx);
         expr_ref mk_last(expr* e);
         expr_ref mk_first(expr* e);
@@ -481,9 +490,16 @@ namespace smt {
         bool enforce_length(expr_ref_vector const& es, vector<rational>& len);
         void enforce_length_coherence(enode* n1, enode* n2);
 
+        // model-check the functions that convert integers to strings and the other way.
+        void add_int_string(expr* e);
+        bool check_int_string();
+
         void add_elim_string_axiom(expr* n);
         void add_at_axiom(expr* n);
         void add_in_re_axiom(expr* n);
+        bool add_stoi_axiom(expr* n);
+        bool add_itos_axiom(expr* n);
+        void add_itos_length_axiom(expr* n);
         literal mk_literal(expr* n);
         literal mk_eq_empty(expr* n, bool phase = true);
         literal mk_seq_eq(expr* a, expr* b);
@@ -496,6 +512,7 @@ namespace smt {
 
 
         // arithmetic integration
+        bool get_value(expr* s, rational& val) const;
         bool lower_bound(expr* s, rational& lo) const;
         bool upper_bound(expr* s, rational& hi) const;
         bool get_length(expr* s, rational& val) const;

@@ -35,7 +35,8 @@ theory_wmaxsat::theory_wmaxsat(ast_manager& m, filter_model_converter& mc):
     m_zmin_cost(m_mpz),
     m_found_optimal(false),
     m_propagate(false),
-    m_normalize(false)
+    m_normalize(false),
+    m_den(1)
 {}
 
 theory_wmaxsat::~theory_wmaxsat() { 
@@ -260,7 +261,6 @@ void theory_wmaxsat::block() {
         return;
     }
     ++m_stats.m_num_blocks;
-    ast_manager& m = get_manager();
     context& ctx = get_context();
     literal_vector lits;
     compare_cost compare_cost(*this);
@@ -274,6 +274,7 @@ void theory_wmaxsat::block() {
         lits.push_back(~literal(m_var2bool[costs[i]]));
     }
     TRACE("opt",
+          ast_manager& m = get_manager();
           tout << "block: ";
           for (unsigned i = 0; i < lits.size(); ++i) {
               expr_ref tmp(m);

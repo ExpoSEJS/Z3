@@ -78,6 +78,9 @@ namespace opt {
     }
     
     void opt_solver::assert_expr(expr * t) {
+        if (has_quantifiers(t)) {
+            m_params.m_relevancy_lvl = 2;
+        }
         m_context.assert_expr(t);
     }
     
@@ -316,8 +319,9 @@ namespace opt {
         return m_context.get_formulas()[idx];
     }
     
-    void opt_solver::display(std::ostream & out) const {
+    std::ostream& opt_solver::display(std::ostream & out) const {
         m_context.display(out);
+        return out;
     }
     
     smt::theory_var opt_solver::add_objective(app* term) {
@@ -344,6 +348,9 @@ namespace opt {
     }
     
     expr_ref opt_solver::mk_ge(unsigned var, inf_eps const& val) {
+        if (!val.is_finite()) {
+            return expr_ref(val.is_pos() ? m.mk_false() : m.mk_true(), m);
+        }
         smt::theory_opt& opt = get_optimizer();
         smt::theory_var v = m_objective_vars[var];
 

@@ -335,7 +335,7 @@ extern "C" {
     Z3_bool Z3_API Z3_is_app(Z3_context c, Z3_ast a) {
         LOG_Z3_is_app(c, a);
         RESET_ERROR_CODE();
-        return is_app(reinterpret_cast<ast*>(a));
+        return a != 0 && is_app(reinterpret_cast<ast*>(a));
     }
 
     Z3_app Z3_API Z3_to_app(Z3_context c, Z3_ast a) {
@@ -721,7 +721,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_simplify_get_param_descrs(c);
         RESET_ERROR_CODE();
-        Z3_param_descrs_ref * d = alloc(Z3_param_descrs_ref);
+        Z3_param_descrs_ref * d = alloc(Z3_param_descrs_ref, *mk_c(c));
         mk_c(c)->save_object(d);
         th_rewriter::get_param_descrs(d->m_descrs);
         Z3_param_descrs r = of_param_descrs(d);
@@ -964,8 +964,7 @@ extern "C" {
             case PR_TH_LEMMA: return Z3_OP_PR_TH_LEMMA;
             case PR_HYPER_RESOLVE: return Z3_OP_PR_HYPER_RESOLVE;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
         if (mk_c(c)->get_arith_fid() == _d->get_family_id()) {
@@ -989,8 +988,7 @@ extern "C" {
             case OP_TO_INT: return Z3_OP_TO_INT;
             case OP_IS_INT: return Z3_OP_IS_INT;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
         if (mk_c(c)->get_array_fid() == _d->get_family_id()) {
@@ -1008,8 +1006,7 @@ extern "C" {
             case OP_AS_ARRAY: return Z3_OP_AS_ARRAY;
             case OP_ARRAY_EXT: return Z3_OP_ARRAY_EXT;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
 
@@ -1066,18 +1063,16 @@ extern "C" {
             case OP_BV2INT:    return Z3_OP_BV2INT;
             case OP_CARRY:     return Z3_OP_CARRY;
             case OP_XOR3:      return Z3_OP_XOR3;
-            case OP_BSMUL_NO_OVFL:
-            case OP_BUMUL_NO_OVFL:
-            case OP_BSMUL_NO_UDFL:
-            case OP_BSDIV_I:
-            case OP_BUDIV_I:
-            case OP_BSREM_I:
-            case OP_BUREM_I:
-            case OP_BSMOD_I:
-                return Z3_OP_UNINTERPRETED;
+            case OP_BSMUL_NO_OVFL: return Z3_OP_BSMUL_NO_OVFL;
+            case OP_BUMUL_NO_OVFL: return Z3_OP_BUMUL_NO_OVFL;
+            case OP_BSMUL_NO_UDFL: return Z3_OP_BSMUL_NO_UDFL;
+            case OP_BSDIV_I: return Z3_OP_BSDIV_I;
+            case OP_BUDIV_I: return Z3_OP_BUDIV_I;
+            case OP_BSREM_I: return Z3_OP_BSREM_I;
+            case OP_BUREM_I: return Z3_OP_BUREM_I;
+            case OP_BSMOD_I: return Z3_OP_BSMOD_I;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
         if (mk_c(c)->get_dt_fid() == _d->get_family_id()) {
@@ -1087,8 +1082,7 @@ extern "C" {
             case OP_DT_ACCESSOR:     return Z3_OP_DT_ACCESSOR;
             case OP_DT_UPDATE_FIELD: return Z3_OP_DT_UPDATE_FIELD;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
         if (mk_c(c)->get_datalog_fid() == _d->get_family_id()) {
@@ -1109,8 +1103,7 @@ extern "C" {
             case datalog::OP_DL_CONSTANT: return Z3_OP_FD_CONSTANT;
             case datalog::OP_DL_LT: return Z3_OP_FD_LT;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
 
@@ -1136,7 +1129,7 @@ extern "C" {
             case Z3_OP_RE_CONCAT: return Z3_OP_RE_CONCAT;
             case Z3_OP_RE_UNION: return Z3_OP_RE_UNION;
             default:
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
 
@@ -1184,10 +1177,10 @@ extern "C" {
             case OP_FPA_TO_SBV: return Z3_OP_FPA_TO_SBV;
             case OP_FPA_TO_REAL: return Z3_OP_FPA_TO_REAL;
             case OP_FPA_TO_IEEE_BV: return Z3_OP_FPA_TO_IEEE_BV;
+            case OP_FPA_INTERNAL_MIN_I: return Z3_OP_FPA_MIN_I;
+            case OP_FPA_INTERNAL_MAX_I: return Z3_OP_FPA_MAX_I;
+            case OP_FPA_INTERNAL_BV2RM:
             case OP_FPA_INTERNAL_BVWRAP:
-            case OP_FPA_INTERNAL_BVUNWRAP:
-            case OP_FPA_INTERNAL_MIN_I:
-            case OP_FPA_INTERNAL_MAX_I:
             case OP_FPA_INTERNAL_MIN_UNSPECIFIED:
             case OP_FPA_INTERNAL_MAX_UNSPECIFIED:
             case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED:
@@ -1196,8 +1189,7 @@ extern "C" {
             case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED:
                 return Z3_OP_UNINTERPRETED;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
 
@@ -1206,8 +1198,7 @@ extern "C" {
             case OP_LABEL: return Z3_OP_LABEL;
             case OP_LABEL_LIT: return Z3_OP_LABEL_LIT;
             default:
-                UNREACHABLE();
-                return Z3_OP_UNINTERPRETED;
+                return Z3_OP_INTERNAL;
             }
         }
 
@@ -1216,7 +1207,7 @@ extern "C" {
             case OP_PB_LE: return Z3_OP_PB_LE;
             case OP_PB_GE: return Z3_OP_PB_GE;
             case OP_AT_MOST_K: return Z3_OP_PB_AT_MOST;
-            default: UNREACHABLE();
+            default: return Z3_OP_INTERNAL;
             }
         }
 

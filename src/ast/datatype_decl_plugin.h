@@ -109,7 +109,7 @@ public:
          parameters[o]            - (int) m - number of constructors
          parameters[o+1]          - (int) k_1 - offset for constructor definition
          ...
-         parameters[o+m]          - (int) k_m - offset ofr constructor definition
+         parameters[o+m]          - (int) k_m - offset for constructor definition
       
          for each offset k_i at parameters[o+s] for some s in 0..m-1
          parameters[k_i]          - (symbol) name of the constructor
@@ -173,9 +173,11 @@ class datatype_util {
     obj_map<func_decl, func_decl *>             m_recognizer2constructor;
     obj_map<func_decl, func_decl *>             m_accessor2constructor;
     obj_map<sort, bool>                         m_is_recursive;
+    obj_map<sort, bool>                         m_is_enum;
     ast_ref_vector                              m_asts;
     ptr_vector<ptr_vector<func_decl> >          m_vectors;
-    
+    unsigned                                    m_start;
+
     func_decl * get_non_rec_constructor_core(sort * ty, ptr_vector<sort> & forbidden_set);
     func_decl * get_constructor(sort * ty, unsigned c_id);
 
@@ -184,6 +186,8 @@ public:
     ~datatype_util();
     ast_manager & get_manager() const { return m_manager; }
     bool is_datatype(sort * s) const { return is_sort_of(s, m_family_id, DATATYPE_SORT); }
+    bool is_enum_sort(sort* s);
+
     bool is_recursive(sort * ty);
     bool is_constructor(func_decl * f) const { return is_decl_of(f, m_family_id, OP_DT_CONSTRUCTOR); }
     bool is_recognizer(func_decl * f) const { return is_decl_of(f, m_family_id, OP_DT_RECOGNISER); }

@@ -28,10 +28,26 @@ Revision History:
 #include "th_rewriter.h"
 #include "model_v2_pp.h"
 #include "expr_functors.h"
+#include "for_each_expr.h"
 
 
 using namespace qe;
 
+struct noop_op_proc {
+    void operator()(expr*) {}
+};
+
+
+void project_plugin::mark_rec(expr_mark& visited, expr* e) {
+    for_each_expr_proc<noop_op_proc> fe;    
+    for_each_expr(fe, visited, e);
+}
+
+void project_plugin::mark_rec(expr_mark& visited, expr_ref_vector const& es) {
+    for (unsigned i = 0; i < es.size(); ++i) {
+        mark_rec(visited, es[i]);
+    }
+}
 
 /**
    \brief return two terms that are equal in the model.
@@ -106,6 +122,7 @@ void project_plugin::push_back(expr_ref_vector& lits, expr* e) {
 
 class mbp::impl {
     ast_manager& m;
+    th_rewriter m_rw;
     ptr_vector<project_plugin> m_plugins;
     expr_mark m_visited;
 
@@ -130,7 +147,6 @@ class mbp::impl {
             is_var.mark(vars[i].get());
         }
         expr_ref tmp(m), t(m), v(m);            
-        th_rewriter rw(m);
         for (unsigned i = 0; i < lits.size(); ++i) {
             expr* e = lits[i].get(), *l, *r;
             if (m.is_eq(e, l, r) && reduce_eq(is_var, l, r, v, t)) {
@@ -141,7 +157,7 @@ class mbp::impl {
                 is_rem.mark(v);
                 for (unsigned j = 0; j < lits.size(); ++j) {
                     sub(lits[j].get(), tmp);
-                    rw(tmp);
+                    m_rw(tmp);
                     lits[j] = tmp;
                 }
             }
@@ -174,6 +190,26 @@ class mbp::impl {
             }
         }
         return false;
+    }
+
+
+    void filter_variables(model& model, app_ref_vector& vars, expr_ref_vector& lits, expr_ref_vector& unused_lits) {
+        expr_mark lit_visited;
+        project_plugin::mark_rec(lit_visited, lits);
+
+        unsigned j = 0;
+        for (unsigned i = 0; i < vars.size(); ++i) {
+            app* var = vars[i].get();
+            if (lit_visited.is_marked(var)) {
+                if (i != j) {
+                    vars[j] = vars[i].get();
+                }
+                ++j;
+            }
+        }
+        if (vars.size() != j) {
+            vars.resize(j);
+        }
     }
 
 
@@ -210,8 +246,51 @@ class mbp::impl {
         }
     }
 
+    void project_bools(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
+        expr_safe_replace sub(m);
+        expr_ref val(m);
+        unsigned j = 0;
+        for (unsigned i = 0; i < vars.size(); ++i) {
+            app* var = vars[i].get();
+            if (m.is_bool(var)) {
+                VERIFY(model.eval(var, val));
+                sub.insert(var, val);
+            }
+            else {
+                if (j != i) {
+                    vars[j] = vars[i].get();
+                }
+                ++j;
+            }
+        }
+        if (j != vars.size()) {
+            vars.resize(j);
+            j = 0;
+            for (unsigned i = 0; i < fmls.size(); ++i) {
+                sub(fmls[i].get(), val);
+                m_rw(val);
+                if (!m.is_true(val)) {
+                    TRACE("qe", tout << mk_pp(fmls[i].get(), m) << " -> " << val << "\n";);
+                    fmls[i] = val;
+                    if (j != i) {
+                        fmls[j] = fmls[i].get();
+                    }
+                    ++j;
+                }
+            }
+            if (j != fmls.size()) {
+                fmls.resize(j);
+            }
+        }
+    }
+
 public:
 
+
+    opt::inf_eps maximize(expr_ref_vector const& fmls, model& mdl, app* t, expr_ref& ge, expr_ref& gt) {
+        arith_project_plugin arith(m);
+        return arith.maximize(fmls, mdl, t, ge, gt);
+    }
 
     void extract_literals(model& model, expr_ref_vector& fmls) {
         expr_ref val(m);
@@ -328,7 +407,7 @@ public:
         m_visited.reset();
     }
 
-    impl(ast_manager& m):m(m) {
+    impl(ast_manager& m):m(m), m_rw(m) {
         add_plugin(alloc(arith_project_plugin, m));
         add_plugin(alloc(datatype_project_plugin, m));
         add_plugin(alloc(array_project_plugin, m));
@@ -351,17 +430,33 @@ public:
         }        
     }
 
+    bool validate_model(model& model, expr_ref_vector const& fmls) {
+        expr_ref val(m);
+        for (unsigned i = 0; i < fmls.size(); ++i) { 
+            VERIFY(model.eval(fmls[i], val) && m.is_true(val)); 
+        }
+        return true;
+    }
+
     void operator()(bool force_elim, app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
+        SASSERT(validate_model(model, fmls));
         expr_ref val(m), tmp(m);
         app_ref var(m);
-        th_rewriter rw(m);
+        expr_ref_vector unused_fmls(m);
         bool progress = true;
-        TRACE("qe", tout << vars << " " << fmls << "\n";);
-        while (progress && !vars.empty()) {
-            preprocess_solve(model, vars, fmls);
+        preprocess_solve(model, vars, fmls);
+        filter_variables(model, vars, fmls, unused_fmls);
+        project_bools(model, vars, fmls);
+        while (progress && !vars.empty() && !fmls.empty()) {
             app_ref_vector new_vars(m);
             progress = false;
-            while (!vars.empty()) {
+            for (unsigned i = 0; i < m_plugins.size(); ++i) {
+                project_plugin* p = m_plugins[i];
+                if (p) {
+                    (*p)(model, vars, fmls);
+                }
+            }
+            while (!vars.empty() && !fmls.empty()) {                
                 var = vars.back();
                 vars.pop_back();
                 project_plugin* p = get_plugin(var);
@@ -372,7 +467,7 @@ public:
                     new_vars.push_back(var);
                 }
             }
-            if (!progress && !new_vars.empty() && force_elim) {
+            if (!progress && !new_vars.empty() && !fmls.empty() && force_elim) {
                 var = new_vars.back();
                 new_vars.pop_back();
                 expr_safe_replace sub(m);
@@ -380,7 +475,7 @@ public:
                 sub.insert(var, val);
                 for (unsigned i = 0; i < fmls.size(); ++i) {
                     sub(fmls[i].get(), tmp);
-                    rw(tmp);
+                    m_rw(tmp);
                     if (m.is_true(tmp)) {
                         project_plugin::erase(fmls, i);
                     }
@@ -391,9 +486,18 @@ public:
                 progress = true;
             }
             vars.append(new_vars);
+            if (progress) {
+                preprocess_solve(model, vars, fmls);
+            }
         }
+        if (fmls.empty()) {
+            vars.reset();
+        }
+        fmls.append(unused_fmls);
+        SASSERT(validate_model(model, fmls));
         TRACE("qe", tout << vars << " " << fmls << "\n";);
     }
+    
 };
     
 mbp::mbp(ast_manager& m) {
@@ -414,4 +518,8 @@ void mbp::solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
         
 void mbp::extract_literals(model& model, expr_ref_vector& lits) {
     m_impl->extract_literals(model, lits);
+}
+
+opt::inf_eps mbp::maximize(expr_ref_vector const& fmls, model& mdl, app* t, expr_ref& ge, expr_ref& gt) {
+    return m_impl->maximize(fmls, mdl, t, ge, gt);
 }

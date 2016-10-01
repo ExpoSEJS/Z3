@@ -83,9 +83,14 @@ private:
         solver *        m_solver;
         volatile bool   m_canceled;
         aux_timeout_eh(solver * s):m_solver(s), m_canceled(false) {}
+        ~aux_timeout_eh() {
+            if (m_canceled) {                
+                m_solver->get_manager().limit().dec_cancel();
+            }
+        }
         virtual void operator()() {
-            m_solver->get_manager().limit().cancel();
             m_canceled = true;
+            m_solver->get_manager().limit().inc_cancel();
         }
     };
 
@@ -96,7 +101,7 @@ private:
         m_inc_unknown_behavior = static_cast<inc_unknown_behavior>(p.solver2_unknown());
     }
 
-    virtual ast_manager& get_manager() { return m_solver1->get_manager(); }
+    virtual ast_manager& get_manager() const { return m_solver1->get_manager(); }
 
     bool has_quantifiers() const {
         unsigned sz = get_num_assertions();
@@ -189,6 +194,11 @@ public:
         return m_solver1->get_scope_level();
     }
 
+    virtual lbool get_consequences(expr_ref_vector const& asms, expr_ref_vector const& vars, expr_ref_vector& consequences) {
+        switch_inc_mode();
+        return m_solver2->get_consequences(asms, vars, consequences);
+    }
+
     virtual lbool check_sat(unsigned num_assumptions, expr * const * assumptions) {
         m_check_sat_executed  = true;        
         m_use_solver1_results = false;
@@ -225,9 +235,6 @@ public:
                 if ((r != l_undef || !use_solver1_when_undef()) && !eh.m_canceled) {
                     return r;
                 }
-                if (eh.m_canceled) {
-                    m_solver1->get_manager().limit().reset_cancel();
-                }
             }
             IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"solver 2 failed, trying solver1\")\n";);
         }
@@ -260,8 +267,8 @@ public:
         return m_solver2->get_assumption(idx - c1);
     }
 
-    virtual void display(std::ostream & out) const {
-        m_solver1->display(out);
+    virtual std::ostream& display(std::ostream & out) const {
+        return m_solver1->display(out);
     }
 
     virtual void collect_statistics(statistics & st) const {

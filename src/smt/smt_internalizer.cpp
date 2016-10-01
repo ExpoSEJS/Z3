@@ -321,10 +321,10 @@ namespace smt {
     void context::internalize(expr * n, bool gate_ctx) {
         TRACE("internalize", tout << "internalizing:\n" << mk_pp(n, m_manager) << "\n";);
         TRACE("internalize_bug", tout << "internalizing:\n" << mk_bounded_pp(n, m_manager) << "\n";);
+        if (is_var(n)) {
+            throw default_exception("Formulas should not contain unbound variables");
+        }
         if (m_manager.is_bool(n)) {
-            if (is_var(n)) {
-                throw default_exception("Formulas should not contain unbound variables");
-            }
             SASSERT(is_quantifier(n) || is_app(n));
             internalize_formula(n, gate_ctx);
         }
@@ -656,10 +656,10 @@ namespace smt {
     /**
        \brief Enable the flag m_merge_tf in the given enode.  When the
        flag m_merge_tf is enabled, the enode n will be merged with the
-       true_enode (false_enode) whenever the boolean variable v is
+       true_enode (false_enode) whenever the Boolean variable v is
        assigned to true (false).
 
-       If is_new_var is true, then trail is not created for the flag uodate.
+       If is_new_var is true, then trail is not created for the flag update.
     */
     void context::set_merge_tf(enode * n, bool_var v, bool is_new_var) {
         SASSERT(bool_var2enode(v) == n);
@@ -674,8 +674,8 @@ namespace smt {
     }
 
     /**
-       \brief Trail object to disable the m_enode flag of a boolean
-       variable. The flag m_enode is true for a boolean variable v,
+       \brief Trail object to disable the m_enode flag of a Boolean
+       variable. The flag m_enode is true for a Boolean variable v,
        if there is an enode n associated with it.
     */
     class set_enode_flag_trail : public trail<context> {
@@ -1045,15 +1045,13 @@ namespace smt {
     bool context::simplify_aux_clause_literals(unsigned & num_lits, literal * lits, literal_buffer & simp_lits) {
         std::sort(lits, lits + num_lits);
         literal prev = null_literal;
-        unsigned i = 0;
         unsigned j = 0;
-        for (; i < num_lits; i++) {
+        for (unsigned i = 0; i < num_lits; i++) {
             literal curr = lits[i];
             lbool   val  = get_assignment(curr);
-            if (val == l_false)
-                simp_lits.push_back(~curr);
             switch(val) {
             case l_false:
+                simp_lits.push_back(~curr);
                 break; // ignore literal
             case l_undef:
                 if (curr == ~prev)
@@ -1286,7 +1284,6 @@ namespace smt {
         TRACE("mk_clause", tout << "creating clause:\n"; display_literals(tout, num_lits, lits); tout << "\n";);
         switch (k) {
         case CLS_AUX: {
-            unsigned old_num_lits = num_lits;
             literal_buffer simp_lits;
             if (!simplify_aux_clause_literals(num_lits, lits, simp_lits))
                 return 0; // clause is equivalent to true;
@@ -1295,8 +1292,9 @@ namespace smt {
                     SASSERT(get_assignment(simp_lits[i]) == l_true);
                 }
             });
-            if (old_num_lits != num_lits) 
+            if (!simp_lits.empty()) {
                 j = mk_justification(unit_resolution_justification(m_region, j, simp_lits.size(), simp_lits.c_ptr()));
+            }
             break;
         }
         case CLS_AUX_LEMMA: {

@@ -119,7 +119,7 @@ public:
         maxsmt_solver_base(c, ws, soft),
         m_index(index), 
         m_B(m), m_asms(m), m_defs(m),
-        m_mus(c.get_solver(), m),
+        m_mus(c.get_solver()),
         m_mss(c.get_solver(), m),
         m_trail(m),
         m_st(st),
@@ -544,17 +544,10 @@ public:
             return l_true;
         }
         m_mus.reset();
-        for (unsigned i = 0; i < core.size(); ++i) {
-            m_mus.add_soft(core[i]);
-        }
-        unsigned_vector mus_idx;
-        lbool is_sat = m_mus.get_mus(mus_idx);
+        m_mus.add_soft(core.size(), core.c_ptr());
+        lbool is_sat = m_mus.get_mus(m_new_core);
         if (is_sat != l_true) {
             return is_sat;
-        }
-        m_new_core.reset();
-        for (unsigned i = 0; i < mus_idx.size(); ++i) {
-            m_new_core.push_back(core[mus_idx[i]]);
         }
         core.reset();
         core.append(m_new_core);
@@ -832,12 +825,8 @@ public:
                   tout << m_defs;
                   tout << m_asms;
                   );
-            for (unsigned i = 0; i < m_defs.size(); ++i) {
-                s().assert_expr(m_defs[i].get());
-            }
-            for (unsigned i = 0; i < m_asms.size(); ++i) {
-                s().assert_expr(m_asms[i].get());
-            }
+            s().assert_expr(m_defs);
+            s().assert_expr(m_asms);
         }
         // else: there is only a single assignment to these soft constraints.
     }
@@ -848,9 +837,7 @@ public:
         for (unsigned i = 0; i < s().get_num_assertions(); ++i) {
             smt_solver->assert_expr(s().get_assertion(i));
         }
-        for (unsigned i = 0; i < core.size(); ++i) {
-            smt_solver->assert_expr(core[i]);
-        }
+        smt_solver->assert_expr(core);
         lbool is_sat = smt_solver->check_sat(0, 0);
         if (is_sat == l_true) {
             IF_VERBOSE(0, verbose_stream() << "not a core\n";);

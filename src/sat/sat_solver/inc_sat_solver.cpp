@@ -135,7 +135,6 @@ public:
         lbool r = internalize_formulas();
         if (r != l_true) return r;
         r = internalize_assumptions(sz, assumptions, dep2asm);
-        SASSERT(sz == m_asms.size());
         if (r != l_true) return r;
 
         r = m_solver.check(m_asms.size(), m_asms.c_ptr(), m_weights.c_ptr(), max_weight);
@@ -147,7 +146,7 @@ public:
             break;
         case l_false:
             // TBD: expr_dependency core is not accounted for.
-            if (sz > 0) {
+            if (!m_asms.empty()) {
                 extract_core(dep2asm);
             }
             break;
@@ -197,7 +196,7 @@ public:
             assert_expr(t);
         }
     }
-    virtual ast_manager& get_manager() { return m; }
+    virtual ast_manager& get_manager() const { return m; }
     virtual void assert_expr(expr * t) {
         TRACE("sat", tout << mk_pp(t, m) << "\n";);
         m_fmls.push_back(t);
@@ -314,13 +313,16 @@ private:
     }
 
     lbool internalize_assumptions(unsigned sz, expr* const* asms, dep2asm_t& dep2asm) {
-        if (sz == 0) {
+        if (sz == 0 && get_num_assumptions() == 0) {
             m_asms.shrink(0);
             return l_true;
         }
         goal_ref g = alloc(goal, m, true, true); // models and cores are enabled.
         for (unsigned i = 0; i < sz; ++i) {
             g->assert_expr(asms[i], m.mk_leaf(asms[i]));
+        }
+        for (unsigned i = 0; i < get_num_assumptions(); ++i) {
+            g->assert_expr(get_assumption(i), m.mk_leaf(get_assumption(i)));
         }
         lbool res = internalize_goal(g, dep2asm);
         if (res == l_true) {
@@ -355,6 +357,13 @@ private:
                 ++j;
             }
         }
+        for (unsigned i = 0; i < get_num_assumptions(); ++i) {
+            if (dep2asm.find(get_assumption(i), lit)) {
+                SASSERT(lit.var() <= m_solver.num_vars());
+                m_asms.push_back(lit);
+            }
+        }
+
         SASSERT(dep2asm.size() == m_asms.size());
     }
 
@@ -381,7 +390,7 @@ private:
 
         m_core.reset();
         for (unsigned i = 0; i < core.size(); ++i) {
-            expr* e;
+            expr* e = 0;
             VERIFY(asm2dep.find(core[i].index(), e));
             m_core.push_back(e);
         }
@@ -465,6 +474,9 @@ lbool inc_sat_check_sat(solver& _s, unsigned sz, expr*const* soft, rational cons
     for (unsigned i = 0; _weights && i < sz; ++i) {
         weights.push_back(_weights[i].get_double());
     }
+    params_ref p;
+    p.set_bool("minimize_core", false);
+    s.updt_params(p);
     return s.check_sat(sz, soft, weights.c_ptr(), max_weight.get_double());
 }
 
@@ -477,6 +489,6 @@ void inc_sat_display(std::ostream& out, solver& _s, unsigned sz, expr*const* sof
         }
         weights.push_back(_weights[i].get_unsigned());
     }
-    return s.display_weighted(out, sz, soft, weights.c_ptr());
+    s.display_weighted(out, sz, soft, weights.c_ptr());
 }
 

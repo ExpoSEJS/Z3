@@ -813,7 +813,7 @@ namespace smt {
                 continue;
             if (proofs_enabled()) {
                 new_bound.push_lit(l, ante.lit_coeffs()[i]);
-            }			
+            }
             else {
                 new_bound.push_lit(l, numeral::zero());
                 lits.insert(l.index());
@@ -1342,6 +1342,7 @@ namespace smt {
               tout << "v" << x_i << " ";
               tout << (has_shared?"shared":"not shared") << "\n";);
 
+        (void) empty_column;
         SASSERT(!safe_gain(min_gain, max_gain) ||
                 empty_column ||
                 (unbounded_gain(max_gain) == (x_i == null_theory_var)));
@@ -1784,7 +1785,7 @@ namespace smt {
     template<typename Ext>
    typename theory_arith<Ext>::max_min_t theory_arith<Ext>::max_min(theory_var v, bool max, bool maintain_integrality, bool& has_shared) {
         expr* e = get_enode(v)->get_owner();
-
+        (void)e;
         SASSERT(!maintain_integrality || valid_assignment());
         SASSERT(satisfy_bounds());
         SASSERT(!is_quasi_base(v));

@@ -176,7 +176,7 @@ bool macro_util::is_macro_head(expr * n, unsigned num_decls) const {
    def  will contain t
 
 */
-bool macro_util::is_left_simple_macro(expr * n, unsigned num_decls, app * & head, expr * & def) const {
+bool macro_util::is_left_simple_macro(expr * n, unsigned num_decls, app_ref & head, expr_ref & def) const {
     if (m_manager.is_eq(n) || m_manager.is_iff(n)) {
         expr * lhs = to_app(n)->get_arg(0);
         expr * rhs = to_app(n)->get_arg(1);
@@ -188,6 +188,7 @@ bool macro_util::is_left_simple_macro(expr * n, unsigned num_decls, app * & head
     }
     return false;
 }
+
 
 /**
    \brief Return true if n is of the form
@@ -206,7 +207,7 @@ bool macro_util::is_left_simple_macro(expr * n, unsigned num_decls, app * & head
    def  will contain t
 
 */
-bool macro_util::is_right_simple_macro(expr * n, unsigned num_decls, app * & head, expr * & def) const {
+bool macro_util::is_right_simple_macro(expr * n, unsigned num_decls, app_ref & head, expr_ref & def) const {
     if (m_manager.is_eq(n) || m_manager.is_iff(n)) {
         expr * lhs = to_app(n)->get_arg(0);
         expr * rhs = to_app(n)->get_arg(1);
@@ -302,7 +303,7 @@ bool macro_util::is_arith_macro(expr * n, unsigned num_decls, app_ref & head, ex
 /**
    \brief Auxiliary function for is_pseudo_predicate_macro. It detects the pattern (= (f X) t)
 */
-bool macro_util::is_pseudo_head(expr * n, unsigned num_decls, app * & head, app * & t) {
+bool macro_util::is_pseudo_head(expr * n, unsigned num_decls, app_ref & head, app_ref & t) {
     if (!m_manager.is_eq(n)) 
         return false;
     expr * lhs = to_app(n)->get_arg(0);
@@ -332,7 +333,7 @@ bool macro_util::is_pseudo_head(expr * n, unsigned num_decls, app * & head, app 
    \brief Returns true if n if of the form (forall (X) (iff (= (f X) t) def[X]))
    where t is a ground term, (f X) is the head. 
 */
-bool macro_util::is_pseudo_predicate_macro(expr * n, app * & head, app * & t, expr * & def) {
+bool macro_util::is_pseudo_predicate_macro(expr * n, app_ref & head, app_ref & t, expr_ref & def) {
     if (!is_quantifier(n) || !to_quantifier(n)->is_forall())
         return false;
     TRACE("macro_util", tout << "processing: " << mk_pp(n, m_manager) << "\n";);
@@ -457,36 +458,41 @@ void macro_util::normalize_expr(app * head, expr * t, expr_ref & norm_t) const {
     expr_ref_buffer  var_mapping(m_manager);
     bool changed = false;
     unsigned num_args = head->get_num_args();
-    unsigned max      = num_args;
+    unsigned max_var_idx = 0;
     for (unsigned i = 0; i < num_args; i++) {
-        var * v     = to_var(head->get_arg(i));
-        if (v->get_idx() >= max)
-            max = v->get_idx() + 1;
+        var const * v = to_var(head->get_arg(i));
+        if (v->get_idx() > max_var_idx)
+            max_var_idx = v->get_idx();
     }
     TRACE("normalize_expr_bug",
           tout << "head: " << mk_pp(head, m_manager) << "\n";
           tout << "applying substitution to:\n" << mk_bounded_pp(t, m_manager) << "\n";);
     for (unsigned i = 0; i < num_args; i++) {
-        var * v     = to_var(head->get_arg(i));
+        var * v = to_var(head->get_arg(i));
         if (v->get_idx() != i) {
             changed = true;
-            var * new_var = m_manager.mk_var(i, v->get_sort());
-            CTRACE("normalize_expr_bug", v->get_idx() >= num_args, tout << mk_pp(v, m_manager) << ", num_args: " << num_args << "\n";);
-            SASSERT(v->get_idx() < max);
-            var_mapping.setx(max - v->get_idx() - 1, new_var);
+            var_ref new_var(m_manager.mk_var(i, v->get_sort()), m_manager);
+            var_mapping.setx(max_var_idx - v->get_idx(), new_var);
         }
-        else {
-            var_mapping.setx(max - i - 1, v);
-        }
+        else
+            var_mapping.setx(max_var_idx - i, v);
     }
+    
+    for (unsigned i = num_args; i <= max_var_idx; i++)
+        // CMW: Won't be used, but dictates a larger binding size, 
+        // so that the indexes between here and in the rewriter match.
+        // It's possible that we don't see the true max idx of all vars here.
+        var_mapping.setx(max_var_idx - i, 0); 
+
     if (changed) {
         // REMARK: t may have nested quantifiers... So, I must use the std order for variable substitution.
-        var_subst subst(m_manager); 
+        var_subst subst(m_manager, true); 
         TRACE("macro_util_bug",
               tout << "head: " << mk_pp(head, m_manager) << "\n";
-              tout << "applying substitution to:\n" << mk_ll_pp(t, m_manager) << "\nsubstitituion:\n";
+              tout << "applying substitution to:\n" << mk_ll_pp(t, m_manager) << "\nsubstitution:\n";
               for (unsigned i = 0; i < var_mapping.size(); i++) {
-                  tout << "#" << i << " -> " << mk_pp(var_mapping[i], m_manager) << "\n";
+                  if (var_mapping[i] != 0)
+                    tout << "#" << i << " -> " << mk_ll_pp(var_mapping[i], m_manager);
               });
         subst(t, var_mapping.size(), var_mapping.c_ptr(), norm_t);
     }
@@ -870,9 +876,8 @@ void macro_util::collect_arith_macro_candidates(expr * atom, unsigned num_decls,
             THEN M'(atom) = true
 */
 void macro_util::collect_macro_candidates_core(expr * atom, unsigned num_decls, macro_candidates & r) {
-    if (m_manager.is_eq(atom) || m_manager.is_iff(atom)) {
-        expr * lhs = to_app(atom)->get_arg(0);
-        expr * rhs = to_app(atom)->get_arg(1);
+    expr* lhs, *rhs;
+    if (m_manager.is_eq(atom, lhs, rhs) || m_manager.is_iff(atom, lhs, rhs)) {
         if (is_quasi_macro_head(lhs, num_decls) && 
             !is_forbidden(to_app(lhs)->get_decl()) && 
             !occurs(to_app(lhs)->get_decl(), rhs) &&
@@ -884,7 +889,6 @@ void macro_util::collect_macro_candidates_core(expr * atom, unsigned num_decls, 
         else if (is_hint_atom(lhs, rhs)) {
             insert_quasi_macro(to_app(lhs), num_decls, rhs, 0, false, true, true, r);
         }
-
         
         if (is_quasi_macro_head(rhs, num_decls) && 
             !is_forbidden(to_app(rhs)->get_decl()) && 

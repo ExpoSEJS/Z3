@@ -98,17 +98,14 @@ br_status fpa_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
     case OP_FPA_INTERNAL_MIN_UNSPECIFIED:
     case OP_FPA_INTERNAL_MAX_UNSPECIFIED:
         SASSERT(num_args == 2); st = BR_FAILED; break;
+    
+    case OP_FPA_INTERNAL_BVWRAP: SASSERT(num_args == 1); st = mk_bvwrap(args[0], result); break;
+    case OP_FPA_INTERNAL_BV2RM: SASSERT(num_args == 1); st = mk_bv2rm(args[0], result); break;
 
-    case OP_FPA_INTERNAL_RM:
-        SASSERT(num_args == 1); st = mk_rm(args[0], result); break;
     case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED:
     case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED:
     case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED:
     case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED:
-        st = BR_FAILED;
-
-    case OP_FPA_INTERNAL_BVWRAP:
-    case OP_FPA_INTERNAL_BVUNWRAP:
         st = BR_FAILED;
         break;
 
@@ -722,7 +719,7 @@ br_status fpa_rewriter::mk_eq_core(expr * arg1, expr * arg2, expr_ref & result) 
     return BR_FAILED;
 }
 
-br_status fpa_rewriter::mk_rm(expr * arg, expr_ref & result) {
+br_status fpa_rewriter::mk_bv2rm(expr * arg, expr_ref & result) {
     bv_util bu(m());
     rational bv_val;
     unsigned sz = 0;
@@ -888,6 +885,37 @@ br_status fpa_rewriter::mk_to_real(expr * arg, expr_ref & result) {
             result = m_util.au().mk_numeral(r.get(), false);
         }
         return BR_DONE;
+    }
+
+    return BR_FAILED;
+}
+
+br_status fpa_rewriter::mk_bvwrap(expr * arg, expr_ref & result) {
+    if (is_app_of(arg, m_util.get_family_id(), OP_FPA_FP)) {
+        bv_util bu(m());
+        SASSERT(to_app(arg)->get_num_args() == 3);
+        sort_ref fpsrt(m());
+        fpsrt = to_app(arg)->get_decl()->get_range();
+        expr_ref a0(m()), a1(m()), a2(m());
+        a0 = to_app(arg)->get_arg(0);
+        a1 = to_app(arg)->get_arg(1);
+        a2 = to_app(arg)->get_arg(2);
+        if (bu.is_extract(a0) && bu.is_extract(a1) && bu.is_extract(a2)) {
+            unsigned w0 = bu.get_extract_high(a0) - bu.get_extract_low(a0) + 1;
+            unsigned w1 = bu.get_extract_high(a1) - bu.get_extract_low(a1) + 1;
+            unsigned w2 = bu.get_extract_high(a2) - bu.get_extract_low(a2) + 1;
+            unsigned cw = w0 + w1 + w2;
+            if (cw == m_util.get_ebits(fpsrt) + m_util.get_sbits(fpsrt)) {
+                expr_ref aa0(m()), aa1(m()), aa2(m());
+                aa0 = to_app(a0)->get_arg(0);
+                aa1 = to_app(a1)->get_arg(0);
+                aa2 = to_app(a2)->get_arg(0);
+                if (aa0 == aa1 && aa1 == aa2 && bu.get_bv_size(aa0) == cw) {
+                    result = aa0;
+                    return BR_DONE;
+                }
+            }
+        }
     }
 
     return BR_FAILED;

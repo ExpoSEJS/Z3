@@ -61,18 +61,26 @@ namespace opt {
         void    get_model(model_ref& mdl, svector<symbol>& labels);
         model*  get_model(unsigned index) const { return m_models[index]; }
 
+
         void update_lower(unsigned idx, inf_eps const& r);
+
         void update_upper(unsigned idx, inf_eps const& r);
 
         void reset();
         
     private:
+
+        bool get_max_delta(vector<inf_eps> const& lower, unsigned& idx);
         
         lbool basic_opt();
+
+        lbool geometric_opt();
 
         lbool symba_opt();
 
         lbool basic_lex(unsigned idx, bool is_maximize);
+
+        lbool geometric_lex(unsigned idx, bool is_maximize);
 
         lbool farkas_opt();
 
@@ -80,7 +88,11 @@ namespace opt {
 
         expr_ref update_lower();
 
+        void update_lower_lex(unsigned idx, inf_eps const& r, bool is_maximize);
+
+
         lbool update_upper();
+
 
     };
 

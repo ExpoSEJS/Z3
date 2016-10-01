@@ -144,6 +144,9 @@ zstring zstring::replace(zstring const& src, zstring const& dst) const {
     if (length() < src.length()) {
         return zstring(*this);
     }
+    if (src.length() == 0) {
+        return zstring(*this);
+    }
     bool found = false;
     for (unsigned i = 0; i < length(); ++i) {
         bool eq = !found && i + src.length() <= length();
@@ -277,13 +280,12 @@ bool seq_decl_plugin::is_sort_param(sort* s, unsigned& idx) {
 }
 
 bool seq_decl_plugin::match(ptr_vector<sort>& binding, sort* s, sort* sP) {
-    ast_manager& m = *m_manager;
     if (s == sP) return true;
     unsigned i;
     if (is_sort_param(sP, i)) {
         if (binding.size() <= i) binding.resize(i+1);
         if (binding[i] && (binding[i] != s)) return false;
-        TRACE("seq_verbose", tout << "setting binding @ " << i << " to " << mk_pp(s, m) << "\n";);
+        TRACE("seq_verbose", tout << "setting binding @ " << i << " to " << mk_pp(s, *m_manager) << "\n";);
         binding[i] = s;
         return true;
     }
@@ -302,7 +304,7 @@ bool seq_decl_plugin::match(ptr_vector<sort>& binding, sort* s, sort* sP) {
         return true;
     }
     else {
-        TRACE("seq", tout << "Could not match " << mk_pp(s, m) << " and " << mk_pp(sP, m) << "\n";);
+        TRACE("seq", tout << "Could not match " << mk_pp(s, *m_manager) << " and " << mk_pp(sP, *m_manager) << "\n";);
         return false;
     }
 }
@@ -821,16 +823,6 @@ app*  seq_util::str::mk_char(zstring const& s, unsigned idx) {
 app*  seq_util::str::mk_char(char ch) {
     zstring s(ch, zstring::ascii);
     return mk_char(s, 0);
-}
-
-bool seq_util::str::is_char(expr* n, zstring& c) const {
-    if (u.is_char(n)) {
-        c = zstring(to_app(n)->get_decl()->get_parameter(0).get_symbol().bare_str());
-        return true;
-    }
-    else {
-        return false;
-    }
 }
 
 bool seq_util::str::is_string(expr const* n, zstring& s) const {

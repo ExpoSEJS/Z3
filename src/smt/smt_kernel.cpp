@@ -55,6 +55,18 @@ namespace smt {
         void set_progress_callback(progress_callback * callback) {
             return m_kernel.set_progress_callback(callback);
         }
+
+        void display(std::ostream & out) const {
+            // m_kernel.display(out); <<< for external users it is just junk
+            // TODO: it will be replaced with assertion_stack.display
+            unsigned num = m_kernel.get_num_asserted_formulas();
+            expr * const * fms = m_kernel.get_asserted_formulas();
+            out << "(kernel";
+            for (unsigned i = 0; i < num; i++) {
+                out << "\n  " << mk_ismt2_pp(fms[i], m(), 2);
+            }
+            out << ")";
+        }
         
         void assert_expr(expr * e) {
             TRACE("smt_kernel", tout << "assert:\n" << mk_ismt2_pp(e, m()) << "\n";);
@@ -97,6 +109,10 @@ namespace smt {
         
         lbool check(unsigned num_assumptions, expr * const * assumptions) {
             return m_kernel.check(num_assumptions, assumptions);
+        }
+
+        lbool get_consequences(expr_ref_vector const& assumptions, expr_ref_vector const& vars, expr_ref_vector& conseq, expr_ref_vector& unfixed) {
+            return m_kernel.get_consequences2(assumptions, vars, conseq, unfixed);
         }
         
         void get_model(model_ref & m) const {
@@ -145,18 +161,6 @@ namespace smt {
         
         void get_guessed_literals(expr_ref_vector & result) {
             m_kernel.get_guessed_literals(result);
-        }
-
-        void display(std::ostream & out) const {
-            // m_kernel.display(out); <<< for external users it is just junk
-            // TODO: it will be replaced with assertion_stack.display
-            unsigned num = m_kernel.get_num_asserted_formulas();
-            expr * const * fms = m_kernel.get_asserted_formulas();
-            out << "(kernel";
-            for (unsigned i = 0; i < num; i++) {
-                out << "\n  " << mk_ismt2_pp(fms[i], m(), 2);
-            }
-            out << ")";
         }
         
         void collect_statistics(::statistics & st) const {
@@ -262,6 +266,10 @@ namespace smt {
         lbool r = m_imp->check(num_assumptions, assumptions);
         TRACE("smt_kernel", tout << "check result: " << r << "\n";);
         return r;
+    }
+
+    lbool kernel::get_consequences(expr_ref_vector const& assumptions, expr_ref_vector const& vars, expr_ref_vector& conseq, expr_ref_vector& unfixed) {
+        return m_imp->get_consequences(assumptions, vars, conseq, unfixed);
     }
 
     void kernel::get_model(model_ref & m) const {

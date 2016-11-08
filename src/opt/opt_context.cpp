@@ -42,7 +42,6 @@ Notes:
 #include "ast_smt_pp.h"
 #include "filter_model_converter.h"
 #include "ast_pp_util.h"
-#include "inc_sat_solver.h"
 #include "qsat.h"
 
 namespace opt {
@@ -90,9 +89,6 @@ namespace opt {
     }
 
     unsigned context::scoped_state::add(expr* f, rational const& w, symbol const& id) {
-        if (w.is_neg()) {
-            throw default_exception("Negative weight supplied. Weight should be non-negative");
-        }
         if (!m.is_bool(f)) {
             throw default_exception("Soft constraint should be Boolean");
         }
@@ -102,7 +98,7 @@ namespace opt {
         }
         SASSERT(m_indices.contains(id));        
         unsigned idx = m_indices[id];
-        if (w.is_pos()) {
+        if (!w.is_zero()) {
             m_objectives[idx].m_terms.push_back(f);
             m_objectives[idx].m_weights.push_back(w);
             m_objectives_term_trail.push_back(idx);
@@ -183,6 +179,43 @@ namespace opt {
         m_scoped_state.add(f);
         clear_state();
     }
+
+    void context::get_hard_constraints(expr_ref_vector& hard) {
+        hard.append(m_scoped_state.m_hard);
+    }
+
+    expr_ref context::get_objective(unsigned i) {
+        SASSERT(i < num_objectives());
+        objective const& o = m_scoped_state.m_objectives[i];
+        expr_ref result(m), zero(m);
+        expr_ref_vector args(m);
+        switch (o.m_type) {
+        case O_MAXSMT:
+            zero = m_arith.mk_numeral(rational(0), false);
+            for (unsigned i = 0; i < o.m_terms.size(); ++i) {
+                args.push_back(m.mk_ite(o.m_terms[i], zero, m_arith.mk_numeral(o.m_weights[i], false)));
+            }
+            result = m_arith.mk_add(args.size(), args.c_ptr());
+            break;
+        case O_MAXIMIZE:
+            result = o.m_term;
+            if (m_arith.is_arith_expr(result)) {
+                result = m_arith.mk_uminus(result);
+            }
+            else if (m_bv.is_bv(result)) {
+                result = m_bv.mk_bv_neg(result);
+            }
+            else {
+                UNREACHABLE();
+            }
+            break;
+        case O_MINIMIZE:
+            result = o.m_term;
+            break;
+        }
+        return result;
+    }
+
 
     unsigned context::add_soft_constraint(expr* f, rational const& w, symbol const& id) { 
         clear_state();
@@ -561,6 +594,9 @@ namespace opt {
         if (opt_params(m_params).priority() == symbol("pareto")) {
             return;
         }
+        if (m.proofs_enabled()) {
+            return;
+        }
         m_params.set_bool("minimize_core_partial", true);
         m_params.set_bool("minimize_core", true);
         m_sat_solver = mk_inc_sat_solver(m, m_params);
@@ -743,16 +779,22 @@ namespace opt {
         app* a = to_app(fml);
         if (m_objective_fns.find(a->get_decl(), index) && m_objectives[index].m_type == O_MAXSMT) {
             for (unsigned i = 0; i < a->get_num_args(); ++i) {
-                expr* arg = a->get_arg(i);
-                if (m.is_true(arg)) {
+                expr_ref arg(a->get_arg(i), m);
+                rational weight = m_objectives[index].m_weights[i];
+                if (weight.is_neg()) {
+                    weight.neg();
+                    arg = mk_not(m, arg);
+                    offset -= weight;
+                }
+                if (m.is_true(arg) || weight.is_zero()) {
                     // skip
                 }
                 else if (m.is_false(arg)) {
-                    offset += m_objectives[index].m_weights[i];
+                    offset += weight;
                 }
                 else {
                     terms.push_back(arg);
-                    weights.push_back(m_objectives[index].m_weights[i]);
+                    weights.push_back(weight);
                 }
             } 
             id = m_objectives[index].m_id;
@@ -1325,14 +1367,21 @@ namespace opt {
     }
 
     std::string context::to_string() const {
+        return to_string(m_scoped_state.m_hard, m_scoped_state.m_objectives);
+    }
+
+    std::string context::to_string_internal() const {
+        return to_string(m_hard_constraints, m_objectives);
+    }
+
+    std::string context::to_string(expr_ref_vector const& hard, vector<objective> const& objectives) const {
         smt2_pp_environment_dbg env(m);
         ast_pp_util visitor(m);
         std::ostringstream out;
-#define PP(_e_) ast_smt2_pp(out, _e_, env);
-        visitor.collect(m_scoped_state.m_hard);
+        visitor.collect(hard);
                 
-        for (unsigned i = 0; i < m_scoped_state.m_objectives.size(); ++i) {
-            objective const& obj = m_scoped_state.m_objectives[i];
+        for (unsigned i = 0; i < objectives.size(); ++i) {
+            objective const& obj = objectives[i];
             switch(obj.m_type) {
             case O_MAXIMIZE: 
             case O_MINIMIZE:
@@ -1348,33 +1397,34 @@ namespace opt {
         }
 
         visitor.display_decls(out);
-        visitor.display_asserts(out, m_scoped_state.m_hard, m_pp_neat);
-        for (unsigned i = 0; i < m_scoped_state.m_objectives.size(); ++i) {
-            objective const& obj = m_scoped_state.m_objectives[i];
+        visitor.display_asserts(out, hard, m_pp_neat);
+        for (unsigned i = 0; i < objectives.size(); ++i) {
+            objective const& obj = objectives[i];
             switch(obj.m_type) {
             case O_MAXIMIZE: 
                 out << "(maximize ";
-                PP(obj.m_term);
+                ast_smt2_pp(out, obj.m_term, env);
                 out << ")\n";
                 break;
             case O_MINIMIZE:
                 out << "(minimize ";
-                PP(obj.m_term);
+                ast_smt2_pp(out, obj.m_term, env);
                 out << ")\n";
                 break;
             case O_MAXSMT: 
                 for (unsigned j = 0; j < obj.m_terms.size(); ++j) {
                     out << "(assert-soft ";
-                    PP(obj.m_terms[j]);
+                    ast_smt2_pp(out, obj.m_terms[j], env);
                     rational w = obj.m_weights[j];
-                    if (w.is_int()) {
-                        out << " :weight " << w;
-                    }
-                    else {
-                        out << " :dweight " << w;
-                    }
+                    
+                    w.display_decimal(out << " :weight ", 3, true);
                     if (obj.m_id != symbol::null) {
-                        out << " :id " << obj.m_id;
+                        if (is_smt2_quoted_symbol(obj.m_id)) {
+                            out << " :id " << mk_smt2_quoted_symbol(obj.m_id);
+                        }
+                        else {
+                            out << " :id " << obj.m_id;
+                        }
                     }
                     out << ")\n";
                 }

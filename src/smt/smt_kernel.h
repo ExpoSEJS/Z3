@@ -70,7 +70,8 @@ namespace smt {
            This method uses the "asserted" proof as a justification for e.
         */
         void assert_expr(expr * e);
-        
+
+        void assert_expr(expr_ref_vector const& es);
         /**
            \brief Assert the given assertion with the given proof as a justification.
         */
@@ -131,6 +132,11 @@ namespace smt {
         */
         lbool get_consequences(expr_ref_vector const& assumptions, expr_ref_vector const& vars, 
                                expr_ref_vector& conseq, expr_ref_vector& unfixed);
+
+        /*
+          \brief find mutually exclusive variables.
+         */
+        lbool find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes);
 
         /**
            \brief Return the model associated with the last check command.

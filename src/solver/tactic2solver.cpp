@@ -137,7 +137,9 @@ lbool tactic2solver::check_sat_core(unsigned num_assumptions, expr * const * ass
         g->assert_expr(m_assertions.get(i));
     }
     for (unsigned i = 0; i < num_assumptions; i++) {
-        g->assert_expr(assumptions[i], m.mk_asserted(assumptions[i]), m.mk_leaf(assumptions[i]));
+        proof_ref pr(m.mk_asserted(assumptions[i]), m);
+        expr_dependency_ref ans(m.mk_leaf(assumptions[i]), m);    
+        g->assert_expr(assumptions[i], pr, ans);
     }
 
     model_ref           md;
@@ -160,6 +162,7 @@ lbool tactic2solver::check_sat_core(unsigned num_assumptions, expr * const * ass
         }
     }
     catch (z3_error & ex) {
+        TRACE("tactic2solver", tout << "exception: " << ex.msg() << "\n";);
         throw ex;
     }
     catch (z3_exception & ex) {

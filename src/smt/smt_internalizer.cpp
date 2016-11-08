@@ -840,7 +840,7 @@ namespace smt {
         }
 #endif
         TRACE("mk_bool_var", tout << "creating boolean variable: " << v << " for:\n" << mk_pp(n, m_manager) << "\n";);
-        TRACE("mk_var_bug", tout << "mk_bool: " << v << "\n";);        
+        TRACE("mk_var_bug", tout << "mk_bool: " << v << "\n";);                
         set_bool_var(id, v);
         m_bdata.reserve(v+1);
         m_activity.reserve(v+1);
@@ -1281,7 +1281,7 @@ namespace smt {
        The deletion event handler is ignored if binary clause optimization is applicable.
     */
     clause * context::mk_clause(unsigned num_lits, literal * lits, justification * j, clause_kind k, clause_del_eh * del_eh) {
-        TRACE("mk_clause", tout << "creating clause:\n"; display_literals(tout, num_lits, lits); tout << "\n";);
+        TRACE("mk_clause", tout << "creating clause:\n"; display_literals_verbose(tout, num_lits, lits); tout << "\n";);
         switch (k) {
         case CLS_AUX: {
             literal_buffer simp_lits;

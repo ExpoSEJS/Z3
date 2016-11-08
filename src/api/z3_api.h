@@ -861,6 +861,9 @@ typedef enum
       - Z3_OP_PB_GE: Generalized Pseudo-Boolean cardinality constraint.
               Example  2*x + 3*y + 2*z >= 4
 
+      - Z3_OP_PB_EQ: Generalized Pseudo-Boolean equality constraint.
+              Example  2*x + 1*y + 2*z + 1*u = 4
+
       - Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN: Floating-point rounding mode RNE
 
       - Z3_OP_FPA_RM_NEAREST_TIES_TO_AWAY: Floating-point rounding mode RNA
@@ -1166,6 +1169,7 @@ typedef enum {
     Z3_OP_PB_AT_MOST=0x900,
     Z3_OP_PB_LE,
     Z3_OP_PB_GE,
+    Z3_OP_PB_EQ,
 
     // Floating-Point Arithmetic
     Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN,
@@ -1803,7 +1807,7 @@ extern "C" {
 
        def_API('Z3_mk_finite_domain_sort', SORT, (_in(CONTEXT), _in(SYMBOL), _in(UINT64)))
     */
-    Z3_sort Z3_API Z3_mk_finite_domain_sort(Z3_context c, Z3_symbol name, unsigned __int64 size);
+    Z3_sort Z3_API Z3_mk_finite_domain_sort(Z3_context c, Z3_symbol name, __uint64 size);
 
     /**
        \brief Create an array type.
@@ -1997,9 +2001,9 @@ extern "C" {
        \param c logical context.
        \param constr constructor container. The container must have been passed in to a #Z3_mk_datatype call.
        \param num_fields number of accessor fields in the constructor.
-       \param constructor constructor function declaration.
-       \param tester constructor test function declaration.
-       \param accessors array of accessor function declarations.
+       \param constructor constructor function declaration, allocated by user.
+       \param tester constructor test function declaration, allocated by user.
+       \param accessors array of accessor function declarations allocated by user. The array must contain num_fields elements.
 
        def_API('Z3_query_constructor', VOID, (_in(CONTEXT), _in(CONSTRUCTOR), _in(UINT), _out(FUNC_DECL), _out(FUNC_DECL), _out_array(2, FUNC_DECL)))
     */
@@ -3139,14 +3143,14 @@ extern "C" {
     /**
        \brief Create a numeral of a int, bit-vector, or finite-domain sort.
 
-       This function can be use to create numerals that fit in a machine unsigned __int64 integer.
+       This function can be use to create numerals that fit in a machine __uint64 integer.
        It is slightly faster than #Z3_mk_numeral since it is not necessary to parse a string.
 
        \sa Z3_mk_numeral
 
        def_API('Z3_mk_unsigned_int64', AST, (_in(CONTEXT), _in(UINT64), _in(SORT)))
     */
-    Z3_ast Z3_API Z3_mk_unsigned_int64(Z3_context c, unsigned __int64 v, Z3_sort ty);
+    Z3_ast Z3_API Z3_mk_unsigned_int64(Z3_context c, __uint64 v, Z3_sort ty);
 
     /*@}*/
 
@@ -3718,7 +3722,7 @@ extern "C" {
 
         def_API('Z3_get_finite_domain_sort_size', BOOL, (_in(CONTEXT), _in(SORT), _out(UINT64)))
     */
-    Z3_bool_opt Z3_API Z3_get_finite_domain_sort_size(Z3_context c, Z3_sort s, unsigned __int64* r);
+    Z3_bool_opt Z3_API Z3_get_finite_domain_sort_size(Z3_context c, Z3_sort s, __uint64* r);
 
     /**
        \brief Return the domain of the given array sort.
@@ -3910,6 +3914,18 @@ extern "C" {
     */
 
     Z3_ast Z3_API Z3_mk_pble(Z3_context c, unsigned num_args,
+                             Z3_ast const args[], int coeffs[],
+                             int k);
+
+    /**
+       \brief Pseudo-Boolean relations.
+
+       Encode k1*p1 + k2*p2 + ... + kn*pn = k
+
+       def_API('Z3_mk_pbeq', AST, (_in(CONTEXT), _in(UINT), _in_array(1,AST), _in_array(1,INT), _in(INT)))
+    */
+
+    Z3_ast Z3_API Z3_mk_pbeq(Z3_context c, unsigned num_args,
                              Z3_ast const args[], int coeffs[],
                              int k);
 
@@ -4272,7 +4288,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit in a machine unsigned __int64 int. Return Z3_TRUE if the call succeeded.
+       the value can fit in a machine __uint64 int. Return Z3_TRUE if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4280,7 +4296,7 @@ extern "C" {
 
        def_API('Z3_get_numeral_uint64', BOOL, (_in(CONTEXT), _in(AST), _out(UINT64)))
     */
-    Z3_bool Z3_API Z3_get_numeral_uint64(Z3_context c, Z3_ast v, unsigned __int64* u);
+    Z3_bool Z3_API Z3_get_numeral_uint64(Z3_context c, Z3_ast v, __uint64* u);
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
@@ -5832,7 +5848,7 @@ extern "C" {
     void Z3_API Z3_solver_assert_and_track(Z3_context c, Z3_solver s, Z3_ast a, Z3_ast p);
 
     /**
-       \brief Return the set of asserted formulas as a goal object.
+       \brief Return the set of asserted formulas on the solver.
 
        def_API('Z3_solver_get_assertions', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
     */

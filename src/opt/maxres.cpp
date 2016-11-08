@@ -155,7 +155,7 @@ public:
     
 
     void add_soft(expr* e, rational const& w) {
-        TRACE("opt", tout << mk_pp(e, m) << "\n";);
+        TRACE("opt", tout << mk_pp(e, m) << " |-> " << w << "\n";);
         expr_ref asum(m), fml(m);
         app_ref cls(m);
         rational weight(0);
@@ -194,7 +194,10 @@ public:
         if (!init()) return l_undef;
         init_local();
         trace();
+        is_sat = process_mutex();
+        if (is_sat != l_true) return is_sat;
         while (m_lower < m_upper) {
+            if (m_lower >= m_upper) break;
             TRACE("opt", 
                   display_vec(tout, m_asms);
                   s().display(tout);
@@ -233,8 +236,10 @@ public:
         init_local();
         trace();
         exprs cs;
+        lbool is_sat = process_mutex();
+        if (is_sat != l_true) return is_sat;
         while (m_lower < m_upper) {
-            lbool is_sat = check_sat_hill_climb(m_asms);
+            is_sat = check_sat_hill_climb(m_asms);
             if (m.canceled()) {
                 return l_undef;
             }
@@ -269,6 +274,53 @@ public:
         return l_true;
     }
 
+    lbool process_mutex() {
+        vector<expr_ref_vector> mutexes;
+        lbool is_sat = s().find_mutexes(m_asms, mutexes);
+        if (is_sat != l_true) {
+            return is_sat;
+        }
+        for (unsigned i = 0; i < mutexes.size(); ++i) {
+            process_mutex(mutexes[i]);
+        }
+        if (!mutexes.empty()) {
+            trace();
+        }
+        return l_true;
+    }
+
+    void process_mutex(expr_ref_vector& mutex) {
+        TRACE("opt", 
+              for (unsigned i = 0; i < mutex.size(); ++i) {
+                  tout << mk_pp(mutex[i].get(), m) << " |-> " << get_weight(mutex[i].get()) << "\n";
+              });
+        if (mutex.size() <= 1) {
+            return;
+        }
+        sort_assumptions(mutex);
+        ptr_vector<expr> core(mutex.size(), mutex.c_ptr());
+        remove_soft(core, m_asms);
+        rational weight(0), sum1(0), sum2(0);
+        vector<rational> weights;
+        for (unsigned i = 0; i < mutex.size(); ++i) {
+            rational w = get_weight(mutex[i].get());
+            weights.push_back(w);
+            sum1 += w;
+            m_asm2weight.remove(mutex[i].get());
+        }
+        for (unsigned i = mutex.size(); i > 0; ) {
+            --i;
+            expr_ref soft(m.mk_or(i+1, mutex.c_ptr()), m);
+            rational w = weights[i];
+            weight = w - weight;
+            m_lower += weight*rational(i);
+            sum2 += weight*rational(i+1);
+            add_soft(soft, weight);
+            for (; i > 0 && weights[i-1] == w; --i) {} 
+            weight = w;
+        }        
+        SASSERT(sum1 == sum2);
+    }
 
     lbool check_sat_hill_climb(expr_ref_vector& asms1) {
         expr_ref_vector asms(asms1);
@@ -356,7 +408,7 @@ public:
         while (is_sat == l_false) {
             core.reset();
             s().get_unsat_core(core);
-            //verify_core(core);
+            // verify_core(core);
             model_ref mdl;
             get_mus_model(mdl);
             is_sat = minimize_core(core);
@@ -730,8 +782,6 @@ public:
         for (unsigned i = 0; i < m_soft.size(); ++i) {
             m_assignment[i] = is_true(m_soft[i]);
         }
-
-
        
         DEBUG_CODE(verify_assignment(););
 

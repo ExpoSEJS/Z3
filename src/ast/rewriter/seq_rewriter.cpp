@@ -243,9 +243,9 @@ eautomaton* re2automaton::re2aut(expr* e) {
             TRACE("seq", tout << "Range expression is not handled: " << mk_pp(e, m) << "\n";);
         }
     }
-	else if (u.re.is_complement(e, e0) && (a = re2aut(e0)) && m_sa) {
-		return m_sa->mk_complement(*a);
-	}
+    else if (u.re.is_complement(e, e0) && (a = re2aut(e0)) && m_sa) {
+        return m_sa->mk_complement(*a);
+    }
     else if (u.re.is_loop(e, e1, lo, hi) && (a = re2aut(e1))) {
         scoped_ptr<eautomaton> eps = eautomaton::mk_epsilon(sm);
         b = eautomaton::mk_epsilon(sm);
@@ -335,6 +335,9 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
         SASSERT(num_args == 1);
         return mk_re_opt(args[0], result);
     case OP_RE_CONCAT:
+        if (num_args == 1) {
+            result = args[0]; return BR_DONE;
+        }
         SASSERT(num_args == 2);
         return mk_re_concat(args[0], args[1], result);
     case OP_RE_UNION:

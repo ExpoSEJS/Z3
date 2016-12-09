@@ -20,6 +20,8 @@ Revision History:
 #include "ast_util.h"
 #include "datatype_decl_plugin.h"
 #include "model_pp.h"
+#include "max_cliques.h"
+#include "stopwatch.h"
 
 namespace smt {
 
@@ -54,36 +56,7 @@ namespace smt {
             s.insert(lit.var());
         }
         else {
-            b_justification js = get_justification(lit.var());
-            switch (js.get_kind()) {
-            case b_justification::CLAUSE: {
-                clause * cls = js.get_clause();
-                if (!cls) break;
-                unsigned num_lits = cls->get_num_literals();
-                for (unsigned j = 0; j < num_lits; ++j) {
-                    literal lit2 = cls->get_literal(j);
-                    if (lit2.var() != lit.var()) {
-                        s |= m_antecedents.find(lit2.var());
-                    }
-                }
-                break;
-            }
-            case b_justification::BIN_CLAUSE: {
-                s |= m_antecedents.find(js.get_literal().var());
-                break;
-            }
-            case b_justification::AXIOM: {
-                break;
-            }
-            case b_justification::JUSTIFICATION: {
-                literal_vector literals;
-                m_conflict_resolution->justification2literals(js.get_justification(), literals);
-                for (unsigned j = 0; j < literals.size(); ++j) {
-                    s |= m_antecedents.find(literals[j].var());
-                }
-                break;
-            }
-            }
+            justify(lit, s);
         }
         m_antecedents.insert(lit.var(), s);
         TRACE("context", display_literal_verbose(tout, lit); 
@@ -118,6 +91,39 @@ namespace smt {
             fml = m.mk_implies(antecedent2fml(s), fml);
             conseq.push_back(fml);
         }
+    }
+
+    void context::justify(literal lit, index_set& s) {
+        b_justification js = get_justification(lit.var());
+        switch (js.get_kind()) {
+        case b_justification::CLAUSE: {
+            clause * cls = js.get_clause();
+            if (!cls) break;
+            unsigned num_lits = cls->get_num_literals();
+            for (unsigned j = 0; j < num_lits; ++j) {
+                literal lit2 = cls->get_literal(j);
+                if (lit2.var() != lit.var()) {
+                    s |= m_antecedents.find(lit2.var());
+                }
+            }
+            break;
+        }
+        case b_justification::BIN_CLAUSE: {
+            s |= m_antecedents.find(js.get_literal().var());
+            break;
+            }
+        case b_justification::AXIOM: {
+            break;
+        }
+        case b_justification::JUSTIFICATION: {
+            literal_vector literals;
+            m_conflict_resolution->justification2literals(js.get_justification(), literals);
+            for (unsigned j = 0; j < literals.size(); ++j) {
+                s |= m_antecedents.find(literals[j].var());
+            }
+            break;
+        }
+        }        
     }
 
     void context::extract_fixed_consequences(unsigned& start, obj_map<expr, expr*>& vars, index_set const& assumptions, expr_ref_vector& conseq) {
@@ -367,64 +373,180 @@ namespace smt {
              << ")\n";
     }  
 
+    void context::extract_cores(expr_ref_vector const& asms, vector<expr_ref_vector>& cores, unsigned& min_core_size) {
+        index_set _asms, _nasms;
+        u_map<expr*> var2expr;
+        for (unsigned i = 0; i < asms.size(); ++i) {
+            literal lit = get_literal(asms[i]);
+            _asms.insert(lit.index());
+            _nasms.insert((~lit).index());
+            var2expr.insert(lit.var(), asms[i]);
+        }
+
+        m_antecedents.reset();
+        literal_vector const& lits = assigned_literals();
+        for (unsigned i = 0; i < lits.size(); ++i) {
+            literal lit = lits[i];
+            index_set s;
+            if (_asms.contains(lit.index())) {
+                s.insert(lit.var());
+            }
+            else {
+                justify(lit, s);
+            }
+            m_antecedents.insert(lit.var(), s);
+            if (_nasms.contains(lit.index())) {
+                expr_ref_vector core(m_manager);
+                index_set::iterator it = s.begin(), end = s.end();
+                for (; it != end; ++it) {
+                    core.push_back(var2expr[*it]);
+                }
+                core.push_back(var2expr[lit.var()]);
+                cores.push_back(core);
+                min_core_size = std::min(min_core_size, core.size());
+            }
+        }
+    }
+
+    void context::preferred_sat(literal_vector& lits) {
+        bool retry = true;
+        while (retry) {
+            retry = false;
+            for (unsigned i = 0; i < lits.size(); ++i) {
+                literal lit = lits[i];
+                if (lit == null_literal || get_assignment(lit) != l_undef) {
+                    continue;
+                }
+                push_scope();
+                assign(lit, b_justification::mk_axiom(), true);
+                while (!propagate()) {
+                    lits[i] = null_literal;
+                    retry = true;
+                    if (!resolve_conflict() || inconsistent()) {
+                        SASSERT(inconsistent());
+                        return;
+                    }
+                }      
+            }
+        }
+    }
+
+    void context::display_partial_assignment(std::ostream& out, expr_ref_vector const& asms, unsigned min_core_size) {
+        unsigned num_true = 0, num_false = 0, num_undef = 0;
+        for (unsigned i = 0; i < asms.size(); ++i) {
+            literal lit = get_literal(asms[i]);
+            if (get_assignment(lit) == l_false) {
+                ++num_false;
+            }
+            if (get_assignment(lit) == l_true) {
+                ++num_true;
+            }
+            if (get_assignment(lit) == l_undef) {
+                ++num_undef;
+            }
+        }
+        out << "(smt.preferred-sat true: " << num_true << " false: " << num_false << " undef: " << num_undef << " min core: " << min_core_size << ")\n"; 
+    }
+
+    lbool context::preferred_sat(expr_ref_vector const& asms, vector<expr_ref_vector>& cores) {        
+        pop_to_base_lvl();
+        cores.reset();
+        setup_context(false);
+        internalize_assertions();
+        if (m_asserted_formulas.inconsistent() || inconsistent()) {
+            return l_false;
+        }
+        scoped_mk_model smk(*this);
+        init_search();
+        flet<bool> l(m_searching, true);
+        unsigned level = m_scope_lvl;
+        unsigned min_core_size = UINT_MAX;
+        lbool is_sat = l_true;
+        unsigned num_restarts = 0;
+
+        while (true) {
+            if (m_manager.canceled()) {
+                is_sat = l_undef;
+                break;
+            }
+            literal_vector lits;
+            for (unsigned i = 0; i < asms.size(); ++i) {
+                lits.push_back(get_literal(asms[i]));
+            }
+            preferred_sat(lits);
+            if (inconsistent()) {
+                SASSERT(m_scope_lvl == level);
+                is_sat = l_false;
+                break;
+            }
+            extract_cores(asms, cores, min_core_size); 
+            IF_VERBOSE(1, display_partial_assignment(verbose_stream(), asms, min_core_size););
+            
+            if (min_core_size <= 10) {
+                is_sat = l_undef;
+                break;
+            }
+            
+            is_sat = bounded_search();
+            if (!restart(is_sat, level)) {
+                break;
+            }
+            ++num_restarts;
+            if (num_restarts >= min_core_size) {
+                is_sat = l_undef;
+                while (num_restarts <= 10*min_core_size) {
+                    is_sat = bounded_search();
+                    if (!restart(is_sat, level)) {
+                        break;
+                    }
+                    ++num_restarts;
+                }
+                break;
+            }            
+        }
+        end_search();
+
+        return check_finalize(is_sat);
+    }
+
+    struct neg_literal {
+        unsigned negate(unsigned i) {
+            return (~to_literal(i)).index();
+        }
+    };
 
     lbool context::find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes) {
-        index_set lits;
+        unsigned_vector ps;
+        max_cliques<neg_literal> mc;
+        expr_ref lit(m_manager);
         for (unsigned i = 0; i < vars.size(); ++i) {
             expr* n = vars[i];
             bool neg = m_manager.is_not(n, n);
             if (b_internalized(n)) {
-                lits.insert(literal(get_bool_var(n), neg).index());
+                ps.push_back(literal(get_bool_var(n), neg).index());
             }
         }
-        while (!lits.empty()) {
-            literal_vector mutex;
-            index_set other(lits);
-            while (!other.empty()) {
-                index_set conseq;
-                literal p = to_literal(*other.begin());
-                other.erase(p.index());
-                mutex.push_back(p);
-                if (other.empty()) {
-                    break;
+        for (unsigned i = 0; i < m_watches.size(); ++i) {
+            watch_list & w = m_watches[i];
+            for (literal const* it = w.begin_literals(), *end = w.end_literals(); it != end; ++it) {
+                unsigned idx1 = (~to_literal(i)).index();
+                unsigned idx2 = it->index();
+                if (idx1 < idx2) {
+                    mc.add_edge(idx1, idx2);
                 }
-                get_reachable(p, other, conseq);
-                other = conseq;
-            }
-            if (mutex.size() > 1) {
-                expr_ref_vector mux(m_manager);
-                for (unsigned i = 0; i < mutex.size(); ++i) {
-                    expr_ref e(m_manager);
-                    literal2expr(mutex[i], e);
-                    mux.push_back(e);
-                }
-                mutexes.push_back(mux);
-            }
-            for (unsigned i = 0; i < mutex.size(); ++i) {
-                lits.remove(mutex[i].index());
             }
         }
+        vector<unsigned_vector> _mutexes;
+        mc.cliques(ps, _mutexes);
+        for (unsigned i = 0; i < _mutexes.size(); ++i) {
+            expr_ref_vector lits(m_manager);
+            for (unsigned j = 0; j < _mutexes[i].size(); ++j) {
+                literal2expr(to_literal(_mutexes[i][j]), lit);
+                lits.push_back(lit);
+            }
+            mutexes.push_back(lits);
+        }        
         return l_true;
-    }
-
-    void context::get_reachable(literal p, index_set& goal, index_set& reachable) {
-        index_set seen;
-        literal_vector todo;
-        todo.push_back(p);
-        while (!todo.empty()) {
-            p = todo.back();
-            todo.pop_back();
-            if (seen.contains(p.index())) {
-                continue;
-            }
-            seen.insert(p.index());
-            literal np = ~p;
-            if (goal.contains(np.index())) {
-                reachable.insert(np.index());
-            }
-            watch_list & w = m_watches[np.index()];
-            todo.append(static_cast<unsigned>(w.end_literals() - w.begin_literals()), w.begin_literals());
-        }
     }
 
     //

@@ -691,6 +691,30 @@ class FuncDeclRef(AstRef):
         """
         return Z3_get_decl_kind(self.ctx_ref(), self.ast)
 
+    def params(self):
+        ctx = self.ctx
+        n = Z3_get_decl_num_parameters(self.ctx_ref(), self.ast)
+        result = [ None for i in range(n) ]
+        for i in range(n):
+            k = Z3_get_decl_parameter_kind(self.ctx_ref(), self.ast, i)
+            if k == Z3_PARAMETER_INT:
+               result[i] = Z3_get_decl_int_parameter(self.ctx_ref(), self.ast, i)
+            elif k == Z3_PARAMETER_DOUBLE:
+               result[i] = Z3_get_decl_double_parameter(self.ctx_ref(), self.ast, i)               
+            elif k == Z3_PARAMETER_RATIONAL:
+               result[i] = Z3_get_decl_rational_parameter(self.ctx_ref(), self.ast, i)               
+            elif k == Z3_PARAMETER_SYMBOL:
+               result[i] = Z3_get_decl_symbol_parameter(self.ctx_ref(), self.ast, i)
+            elif k == Z3_PARAMETER_SORT:
+               result[i] = SortRef(Z3_get_decl_sort_parameter(self.ctx_ref(), self.ast, i), ctx)
+            elif k == Z3_PARAMETER_AST:
+               result[i] = ExprRef(Z3_get_decl_ast_parameter(self.ctx_ref(), self.ast, i), ctx)
+            elif k == Z3_PARAMETER_FUNC_DECL:
+               result[i] = FuncDeclRef(Z3_get_decl_func_decl_parameter(self.ctx_ref(), self.ast, i), ctx)
+            else:
+               assert(False)
+        return result
+
     def __call__(self, *args):
         """Create a Z3 application expression using the function `self`, and the given arguments.
 
@@ -2636,6 +2660,19 @@ class RatNumRef(ArithRef):
         3
         """
         return self.denominator().as_long()
+
+    def is_int(self):
+        return False
+
+    def is_real(self):
+        return True
+
+    def is_int_value(self):
+        return self.denominator().is_int() and self.denominator_as_long() == 1
+
+    def as_long(self):
+        _z3_assert(self.is_int(), "Expected integer fraction")
+        return self.numerator_as_long()
 
     def as_decimal(self, prec):
         """ Return a Z3 rational value as a string in decimal notation using at most `prec` decimal places.
@@ -7617,11 +7654,6 @@ def AtLeast(*args):
     >>> a, b, c = Bools('a b c')
     >>> f = AtLeast(a, b, c, 2)
     """
-    def mk_not(a):
-        if is_not(a):
-            return a.arg(0)
-        else:
-            return Not(a)
     args  = _get_args(args)
     if __debug__:
         _z3_assert(len(args) > 1, "Non empty list of arguments expected")
@@ -7629,10 +7661,25 @@ def AtLeast(*args):
     if __debug__:
         _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
     args1 = _coerce_expr_list(args[:-1], ctx)
-    args1 = [ mk_not(a) for a in args1 ]
-    k = len(args1) - args[-1] 
+    k = args[-1]
     _args, sz = _to_ast_array(args1)
-    return BoolRef(Z3_mk_atmost(ctx.ref(), sz, _args, k), ctx)
+    return BoolRef(Z3_mk_atleast(ctx.ref(), sz, _args, k), ctx)
+
+
+def _pb_args_coeffs(args):
+    args  = _get_args(args)
+    args, coeffs = zip(*args)
+    if __debug__:
+        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
+    ctx   = _ctx_from_ast_arg_list(args)
+    if __debug__:
+        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
+    args = _coerce_expr_list(args, ctx)
+    _args, sz = _to_ast_array(args)
+    _coeffs = (ctypes.c_int * len(coeffs))()
+    for i in range(len(coeffs)):
+        _coeffs[i] = coeffs[i]
+    return ctx, sz, _args, _coeffs
 
 def PbLe(args, k):
     """Create a Pseudo-Boolean inequality k constraint.
@@ -7640,19 +7687,17 @@ def PbLe(args, k):
     >>> a, b, c = Bools('a b c')
     >>> f = PbLe(((a,1),(b,3),(c,2)), 3)
     """
-    args  = _get_args(args)
-    args, coeffs = zip(*args)
-    if __debug__:
-        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
-    ctx   = _ctx_from_ast_arg_list(args)
-    if __debug__:
-        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
-    args = _coerce_expr_list(args, ctx)
-    _args, sz = _to_ast_array(args)
-    _coeffs = (ctypes.c_int * len(coeffs))()
-    for i in range(len(coeffs)):
-        _coeffs[i] = coeffs[i]
+    ctx, sz, _args, _coeffs = _pb_args_coeffs(args)
     return BoolRef(Z3_mk_pble(ctx.ref(), sz, _args, _coeffs, k), ctx)
+
+def PbGe(args, k):
+    """Create a Pseudo-Boolean inequality k constraint.
+
+    >>> a, b, c = Bools('a b c')
+    >>> f = PbGe(((a,1),(b,3),(c,2)), 3)
+    """
+    ctx, sz, _args, _coeffs = _pb_args_coeffs(args)
+    return BoolRef(Z3_mk_pbge(ctx.ref(), sz, _args, _coeffs, k), ctx)
 
 def PbEq(args, k):
     """Create a Pseudo-Boolean inequality k constraint.
@@ -7660,18 +7705,7 @@ def PbEq(args, k):
     >>> a, b, c = Bools('a b c')
     >>> f = PbEq(((a,1),(b,3),(c,2)), 3)
     """
-    args  = _get_args(args)
-    args, coeffs = zip(*args)
-    if __debug__:
-        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
-    ctx   = _ctx_from_ast_arg_list(args)
-    if __debug__:
-        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
-    args = _coerce_expr_list(args, ctx)
-    _args, sz = _to_ast_array(args)
-    _coeffs = (ctypes.c_int * len(coeffs))()
-    for i in range(len(coeffs)):
-        _coeffs[i] = coeffs[i]
+    ctx, sz, _args, _coeffs = _pb_args_coeffs(args)
     return BoolRef(Z3_mk_pbeq(ctx.ref(), sz, _args, _coeffs, k), ctx)
 
 

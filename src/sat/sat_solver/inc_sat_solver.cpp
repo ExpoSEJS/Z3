@@ -105,33 +105,32 @@ public:
 
     virtual void set_progress_callback(progress_callback * callback) {}
 
-    virtual lbool check_sat(unsigned num_assumptions, expr * const * assumptions) {
-        return check_sat(num_assumptions, assumptions, 0, 0);
-    }
-
 
     void display_weighted(std::ostream& out, unsigned sz, expr * const * assumptions, unsigned const* weights) {
-        m_weights.reset();
         if (weights != 0) {
             for (unsigned i = 0; i < sz; ++i) m_weights.push_back(weights[i]);
         }
+        init_preprocess();
         m_solver.pop_to_base_level();
         dep2asm_t dep2asm;
+        expr_ref_vector asms(m);
+        for (unsigned i = 0; i < sz; ++i) {
+            expr_ref a(m.mk_fresh_const("s", m.mk_bool_sort()), m);
+            expr_ref fml(m.mk_implies(a, assumptions[i]), m);
+            assert_expr(fml);
+            asms.push_back(a);
+        }
         VERIFY(l_true == internalize_formulas());
-        VERIFY(l_true == internalize_assumptions(sz, assumptions, dep2asm));
+        VERIFY(l_true == internalize_assumptions(sz, asms.c_ptr(), dep2asm));
         svector<unsigned> nweights;
         for (unsigned i = 0; i < m_asms.size(); ++i) {
             nweights.push_back((unsigned) m_weights[i]);
         }
+        m_weights.reset();
         m_solver.display_wcnf(out, m_asms.size(), m_asms.c_ptr(), nweights.c_ptr());
     }
 
-    lbool check_sat(unsigned sz, expr * const * assumptions, double const* weights, double max_weight) {
-        m_weights.reset();
-        if (weights != 0) {
-            m_weights.append(sz, weights);
-        }
-        SASSERT(m_weights.empty() == (m_weights.c_ptr() == 0));
+    virtual lbool check_sat(unsigned sz, expr * const * assumptions) {
         m_solver.pop_to_base_level();
         dep2asm_t dep2asm;
         m_model = 0;
@@ -140,10 +139,10 @@ public:
         r = internalize_assumptions(sz, assumptions, dep2asm);
         if (r != l_true) return r;
 
-        r = m_solver.check(m_asms.size(), m_asms.c_ptr(), m_weights.c_ptr(), max_weight);
+        r = m_solver.check(m_asms.size(), m_asms.c_ptr());
         switch (r) {
         case l_true:
-            if (sz > 0 && !weights) {
+            if (sz > 0) {
                 check_assumptions(dep2asm);
             }
             break;
@@ -244,12 +243,17 @@ public:
         m_solver.pop_to_base_level();
         lbool r = internalize_formulas();
         if (r != l_true) return r;
+        r = internalize_vars(vars, bvars);
+        if (r != l_true) return r;
         r = internalize_assumptions(assumptions.size(), assumptions.c_ptr(), dep2asm);
         if (r != l_true) return r;
-        r = internalize_vars(vars, bvars);
-
         r = m_solver.get_consequences(m_asms, bvars, lconseq);
-        if (r != l_true) return r;
+        if (r == l_false) {
+            if (!m_asms.empty()) {
+                extract_core(dep2asm);
+            }
+            return r;
+        }
 
         // build map from bound variables to 
         // the consequences that cover them.
@@ -661,18 +665,6 @@ solver* mk_inc_sat_solver(ast_manager& m, params_ref const& p) {
     return alloc(inc_sat_solver, m, p);
 }
 
-
-lbool inc_sat_check_sat(solver& _s, unsigned sz, expr*const* soft, rational const* _weights, rational const& max_weight) {
-    inc_sat_solver& s = dynamic_cast<inc_sat_solver&>(_s);
-    vector<double> weights;
-    for (unsigned i = 0; _weights && i < sz; ++i) {
-        weights.push_back(_weights[i].get_double());
-    }
-    params_ref p;
-    p.set_bool("minimize_core", false);
-    s.updt_params(p);
-    return s.check_sat(sz, soft, weights.c_ptr(), max_weight.get_double());
-}
 
 void inc_sat_display(std::ostream& out, solver& _s, unsigned sz, expr*const* soft, rational const* _weights) {
     inc_sat_solver& s = dynamic_cast<inc_sat_solver&>(_s);

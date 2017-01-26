@@ -55,15 +55,18 @@ namespace opt {
 
     void maxsmt_solver_base::commit_assignment() {
         expr_ref tmp(m);
-        rational k(0);
+        rational k(0), cost(0);
         for (unsigned i = 0; i < m_soft.size(); ++i) {
             if (get_assignment(i)) {
                 k += m_weights[i];
             }
+            else {
+                cost += m_weights[i];
+            }
         }       
         pb_util pb(m);
         tmp = pb.mk_ge(m_weights.size(), m_weights.c_ptr(), m_soft.c_ptr(), k);
-        TRACE("opt", tout << tmp << "\n";);
+        TRACE("opt", tout << "cost: " << cost << "\n" << tmp << "\n";);
         s().assert_expr(tmp);
     }
 
@@ -140,7 +143,9 @@ namespace opt {
         m_wth = s.ensure_wmax_theory();
     }
     maxsmt_solver_base::scoped_ensure_theory::~scoped_ensure_theory() {
-        //m_wth->reset_local();
+        if (m_wth) {
+            m_wth->reset_local();
+        }
     }
     smt::theory_wmaxsat& maxsmt_solver_base::scoped_ensure_theory::operator()() { return *m_wth; }
 
@@ -206,6 +211,7 @@ namespace opt {
             rational w = weights[i];
             weight = w - weight;
             m_lower += weight*rational(i);
+            IF_VERBOSE(1, verbose_stream() << "(opt.maxsat mutex size: " << i + 1 << " weight: " << weight << ")\n";);
             sum2 += weight*rational(i+1);
             new_soft.insert(soft, weight);
             for (; i > 0 && weights[i-1] == w; --i) {} 
@@ -225,7 +231,9 @@ namespace opt {
         m_msolver = 0;
         symbol const& maxsat_engine = m_c.maxsat_engine();
         IF_VERBOSE(1, verbose_stream() << "(maxsmt)\n";);
-        TRACE("opt", tout << "maxsmt\n";);
+        TRACE("opt", tout << "maxsmt\n";
+              s().display(tout); tout << "\n";
+              );
         if (m_soft_constraints.empty() || maxsat_engine == symbol("maxres") || maxsat_engine == symbol::null) {            
             m_msolver = mk_maxres(m_c, m_index, m_weights, m_soft_constraints);
         }
@@ -333,8 +341,15 @@ namespace opt {
         TRACE("opt", tout << mk_pp(f, m) << " weight: " << w << "\n";);
         SASSERT(m.is_bool(f));
         SASSERT(w.is_pos());
-        m_soft_constraints.push_back(f);
-        m_weights.push_back(w);
+        unsigned index = 0;
+        if (m_soft_constraint_index.find(f, index)) {
+            m_weights[index] += w;
+        }
+        else {
+            m_soft_constraint_index.insert(f, m_weights.size());
+            m_soft_constraints.push_back(f);
+            m_weights.push_back(w);
+        }
         m_upper += w;
     }
 
@@ -342,8 +357,10 @@ namespace opt {
         for (unsigned i = 0; i < m_soft_constraints.size(); ++i) {
             expr* e = m_soft_constraints[i];
             bool is_not = m.is_not(e, e);
-            out << mk_pp(e, m)
-                << ((is_not != get_assignment(i))?" |-> true\n":" |-> false\n");
+            out << m_weights[i] << ": " << mk_pp(e, m)
+                << ((is_not != get_assignment(i))?" |-> true ":" |-> false ")
+                << "\n";
+            
         }
     }
     

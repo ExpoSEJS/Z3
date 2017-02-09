@@ -140,6 +140,7 @@ public:
         if (r != l_true) return r;
 
         r = m_solver.check(m_asms.size(), m_asms.c_ptr());
+        
         switch (r) {
         case l_true:
             if (sz > 0) {
@@ -272,7 +273,6 @@ public:
                 conseq.push_back(cons);
             }
         }
-
         return r;
     }
 

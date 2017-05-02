@@ -72,6 +72,7 @@ namespace sat {
         struct abort_solver {};
     protected:
         reslimit&               m_rlimit;
+        bool                    m_checkpoint_enabled;
         config                  m_config;
         stats                   m_stats;
         extension *             m_ext;
@@ -195,15 +196,44 @@ namespace sat {
         bool attach_nary_clause(clause & c);
         void attach_clause(clause & c, bool & reinit);
         void attach_clause(clause & c) { bool reinit; attach_clause(c, reinit); }
+        class scoped_detach {
+            solver& s;
+            clause& c;
+            bool m_deleted;
+        public:
+            scoped_detach(solver& s, clause& c): s(s), c(c), m_deleted(false) {
+                s.detach_clause(c);
+            }            
+            ~scoped_detach() {
+                if (!m_deleted) s.attach_clause(c);
+            }
+
+            void del_clause() {
+                if (!m_deleted) {
+                    s.del_clause(c);
+                    m_deleted = true;
+                }
+            }
+        };
+        class scoped_disable_checkpoint {
+            solver& s;
+        public:
+            scoped_disable_checkpoint(solver& s): s(s) {
+                s.m_checkpoint_enabled = false;
+            }            
+            ~scoped_disable_checkpoint() {
+                s.m_checkpoint_enabled = true;
+            }
+        };
         unsigned select_watch_lit(clause const & cls, unsigned starting_at) const;
         unsigned select_learned_watch_lit(clause const & cls) const;
         bool simplify_clause(unsigned & num_lits, literal * lits) const;
         template<bool lvl0>
         bool simplify_clause_core(unsigned & num_lits, literal * lits) const;
-        void dettach_bin_clause(literal l1, literal l2, bool learned);
-        void dettach_clause(clause & c);
-        void dettach_nary_clause(clause & c);
-        void dettach_ter_clause(clause & c);
+        void detach_bin_clause(literal l1, literal l2, bool learned);
+        void detach_clause(clause & c);
+        void detach_nary_clause(clause & c);
+        void detach_ter_clause(clause & c);
         void push_reinit_stack(clause & c);
 
         // -----------------------
@@ -217,6 +247,7 @@ namespace sat {
         unsigned num_clauses() const;
         unsigned num_restarts() const { return m_restarts; }
         bool is_external(bool_var v) const { return m_external[v] != 0; }
+        void set_external(bool_var v) { m_external[v] = true; }
         bool was_eliminated(bool_var v) const { return m_eliminated[v] != 0; }
         unsigned scope_lvl() const { return m_scope_lvl; }
         lbool value(literal l) const { return static_cast<lbool>(m_assignment[l.index()]); }
@@ -238,6 +269,7 @@ namespace sat {
         lbool status(clause const & c) const;        
         clause_offset get_offset(clause const & c) const { return m_cls_allocator.get_offset(&c); }
         void checkpoint() {
+            if (!m_checkpoint_enabled) return;
             if (!m_rlimit.inc()) {
                 m_mc.reset();
                 m_model_is_current = false;
@@ -449,6 +481,7 @@ namespace sat {
         typedef hashtable<unsigned, u_hash, u_eq> index_set;
 
         u_map<index_set>       m_antecedents;
+        literal_vector         m_todo_antecedents;
         vector<literal_vector> m_binary_clause_graph;
 
         bool extract_assumptions(literal lit, index_set& s);
@@ -465,7 +498,11 @@ namespace sat {
 
         void extract_fixed_consequences(unsigned& start, literal_set const& assumptions, bool_var_set& unfixed, vector<literal_vector>& conseq);
 
-        bool extract_fixed_consequences(literal lit, literal_set const& assumptions, bool_var_set& unfixed, vector<literal_vector>& conseq);
+        void extract_fixed_consequences(literal_set const& unfixed_lits, literal_set const& assumptions, bool_var_set& unfixed, vector<literal_vector>& conseq);
+
+        void extract_fixed_consequences(literal lit, literal_set const& assumptions, bool_var_set& unfixed, vector<literal_vector>& conseq);
+
+        bool extract_fixed_consequences1(literal lit, literal_set const& assumptions, bool_var_set& unfixed, vector<literal_vector>& conseq);
 
         void update_unfixed_literals(literal_set& unfixed_lits, bool_var_set& unfixed_vars);
 

@@ -53,8 +53,8 @@ make
 sudo make install
 ```
 
-Note by default ``gcc`` is used as the C++ compiler if it is available. If you
-would prefer to use Clang change the ``mk_make.py`` line to
+Note by default ``g++`` is used as the C++ compiler if it is available. If you
+would prefer to use Clang change the ``mk_make.py`` invocation to:
 
 ```bash
 CXX=clang++ CC=clang python scripts/mk_make.py
@@ -168,7 +168,10 @@ python scripts/mk_make.py --prefix=/home/leo --python --pypkgdir=/home/leo/lib/p
 
 If you do need to install to a non standard prefix a better approach is to use
 a [Python virtual environment](https://virtualenv.readthedocs.org/en/latest/)
-and install Z3 there.
+and install Z3 there. Python packages also work for Python3.
+Under Windows, recall to build inside the Visual C++ native command build environment.
+Note that the buit/python/z3 directory should be accessible from where python is used with Z3 
+and it depends on libz3.dll to be in the path.
 
 ```bash
 virtualenv venv
@@ -185,3 +188,4 @@ python -c 'import z3; print(z3.get_version_string())'
 ```
 
 See [``examples/python``](examples/python) for examples.
+

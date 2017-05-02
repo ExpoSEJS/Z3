@@ -79,6 +79,7 @@ enum seq_op_kind {
     _OP_REGEXP_EMPTY,
     _OP_REGEXP_FULL,
     _OP_SEQ_SKOLEM,
+    _OP_RE_UNROLL,
     LAST_SEQ_OP
 };
 
@@ -113,7 +114,11 @@ public:
     int  indexof(zstring const& other, int offset) const;
     zstring extract(int lo, int hi) const;
     zstring operator+(zstring const& other) const;
-    std::ostream& operator<<(std::ostream& out) const;
+    bool operator==(const zstring& other) const;
+    bool operator!=(const zstring& other) const;
+
+    friend std::ostream& operator<<(std::ostream &os, const zstring &str);
+    friend bool operator<(const zstring& lhs, const zstring& rhs);
 };
 
 class seq_decl_plugin : public decl_plugin {
@@ -268,6 +273,15 @@ public:
         bool is_in_re(expr const* n)    const { return is_app_of(n, m_fid, OP_SEQ_IN_RE); }
         bool is_unit(expr const* n)     const { return is_app_of(n, m_fid, OP_SEQ_UNIT); }
 
+        bool is_string_term(expr const * n) const {
+            sort * s = get_sort(n);
+            return u.is_string(s);
+        }
+
+        bool is_non_string_sequence(expr const * n) const {
+            sort * s = get_sort(n);
+            return (u.is_seq(s) && !u.is_string(s));
+        }
 
         MATCH_BINARY(is_concat);
         MATCH_UNARY(is_length);
@@ -299,6 +313,7 @@ public:
 
         app* mk_to_re(expr* s) { return m.mk_app(m_fid, OP_SEQ_TO_RE, 1, &s); }
         app* mk_in_re(expr* s, expr* r) { return m.mk_app(m_fid, OP_SEQ_IN_RE, s, r); }
+        app* mk_range(expr* s1, expr* s2) { return m.mk_app(m_fid, OP_RE_RANGE, s1, s2); }
         app* mk_concat(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_CONCAT, r1, r2); }
         app* mk_union(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_UNION, r1, r2); }
         app* mk_inter(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RE_INTERSECT, r1, r2); }
@@ -334,6 +349,7 @@ public:
         MATCH_UNARY(is_opt);
         bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi);
         bool is_loop(expr const* n, expr*& body, unsigned& lo);
+        bool is_unroll(expr const* n) const { return is_app_of(n, m_fid, _OP_RE_UNROLL); }
     };
     str str;
     re  re;

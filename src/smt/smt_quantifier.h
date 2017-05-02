@@ -91,6 +91,8 @@ namespace smt {
 
         ptr_vector<quantifier>::const_iterator begin_quantifiers() const;
         ptr_vector<quantifier>::const_iterator end_quantifiers() const;
+        unsigned num_quantifiers() const;
+        
     };
 
     class quantifier_manager_plugin {
@@ -164,6 +166,8 @@ namespace smt {
 
         virtual void push() = 0;
         virtual void pop(unsigned num_scopes) = 0;
+
+        
 
     };
 };

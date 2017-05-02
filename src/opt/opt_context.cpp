@@ -273,7 +273,8 @@ namespace opt {
         display_benchmark();
         IF_VERBOSE(1, verbose_stream() << "(optimize:check-sat)\n";);
         lbool is_sat = s.check_sat(0,0);
-        TRACE("opt", tout << "initial search result: " << is_sat << "\n";);
+        TRACE("opt", tout << "initial search result: " << is_sat << "\n";
+              s.display(tout););
         if (is_sat != l_false) {
             s.get_model(m_model);
             s.get_labels(m_labels);
@@ -338,6 +339,14 @@ namespace opt {
 
     void context::get_model(model_ref& mdl) {
         mdl = m_model;
+        fix_model(mdl);
+    }
+
+    void context::get_box_model(model_ref& mdl, unsigned index) {
+        if (index >= m_box_models.size()) {
+            throw default_exception("index into models is out of bounds");
+        }
+        mdl = m_box_models[index];
         fix_model(mdl);
     }
 
@@ -1002,7 +1011,8 @@ namespace opt {
             TRACE("opt", tout << "Term does not evaluate " << term << "\n";);
             return false;
         }
-        if (!m_arith.is_numeral(val, r)) {
+        unsigned bvsz;
+        if (!m_arith.is_numeral(val, r) && !m_bv.is_numeral(val, r, bvsz)) {
             TRACE("opt", tout << "model does not evaluate objective to a value\n";);
             return false;
         }
@@ -1033,6 +1043,10 @@ namespace opt {
             term = m_arith.mk_add(args.size(), args.c_ptr());
         }
         else if (m_arith.is_arith_expr(term) && !is_mul_const(term)) {
+            TRACE("opt", tout << "Purifying " << term << "\n";);
+            term = purify(fm, term);
+        }
+        else if (m.is_ite(term)) {
             TRACE("opt", tout << "Purifying " << term << "\n";);
             term = purify(fm, term);
         }
@@ -1221,7 +1235,7 @@ namespace opt {
             out << " (";
             display_objective(out, obj);
             if (get_lower_as_num(i) != get_upper_as_num(i)) {
-                out << "  (" << get_lower(i) << " " << get_upper(i) << ")";
+                out << "  (interval " << get_lower(i) << " " << get_upper(i) << ")";
             }
             else {
                 out << " " << get_lower(i);
@@ -1288,6 +1302,15 @@ namespace opt {
 
     expr_ref context::get_upper(unsigned idx) {
         return to_expr(get_upper_as_num(idx));
+    }
+
+    void context::to_exprs(inf_eps const& n, expr_ref_vector& es) {
+        rational inf = n.get_infinity();
+        rational r   = n.get_rational();
+        rational eps = n.get_infinitesimal();
+        es.push_back(m_arith.mk_numeral(inf, inf.is_int()));
+        es.push_back(m_arith.mk_numeral(r, r.is_int()));
+        es.push_back(m_arith.mk_numeral(eps, eps.is_int()));
     }
 
     expr_ref context::to_expr(inf_eps const& n) {
@@ -1455,9 +1478,10 @@ namespace opt {
 
     void context::validate_maxsat(symbol const& id) {
         maxsmt& ms = *m_maxsmts.find(id);
+        TRACE("opt", tout << "Validate: " << id << "\n";);
         for (unsigned i = 0; i < m_objectives.size(); ++i) {
             objective const& obj = m_objectives[i];
-            if (obj.m_id == id) {
+            if (obj.m_id == id && obj.m_type == O_MAXSMT) {        
                 SASSERT(obj.m_type == O_MAXSMT);
                 rational value(0);
                 expr_ref val(m);

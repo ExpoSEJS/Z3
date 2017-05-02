@@ -128,7 +128,7 @@ extern "C" {
         lbool r = l_undef;
         cancel_eh<reslimit> eh(mk_c(c)->m().limit());
         unsigned timeout = to_optimize_ptr(o)->get_params().get_uint("timeout", mk_c(c)->get_timeout());
-        unsigned rlimit = mk_c(c)->get_rlimit();
+        unsigned rlimit = to_optimize_ptr(o)->get_params().get_uint("rlimit", mk_c(c)->get_rlimit());
         api::context::set_interruptable si(*(mk_c(c)), eh);        
         {
             scoped_timer timer(timeout, &eh);
@@ -215,6 +215,34 @@ extern "C" {
         expr_ref e = to_optimize_ptr(o)->get_upper(idx);
         mk_c(c)->save_ast_trail(e);
         RETURN_Z3(of_expr(e));
+        Z3_CATCH_RETURN(0);
+    }
+
+    // get lower value or current approximation
+    Z3_ast_vector Z3_API Z3_optimize_get_lower_as_vector(Z3_context c, Z3_optimize o, unsigned idx) {
+        Z3_TRY;
+        LOG_Z3_optimize_get_lower_as_vector(c, o, idx);
+        RESET_ERROR_CODE();
+        expr_ref_vector es(mk_c(c)->m());
+        to_optimize_ptr(o)->get_lower(idx, es);
+        Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
+        mk_c(c)->save_object(v);
+        v->m_ast_vector.append(es.size(), (ast*const*)es.c_ptr());
+        RETURN_Z3(of_ast_vector(v));
+        Z3_CATCH_RETURN(0);
+    }
+
+    // get upper or current approximation
+    Z3_ast_vector Z3_API Z3_optimize_get_upper_as_vector(Z3_context c, Z3_optimize o, unsigned idx) {
+        Z3_TRY;
+        LOG_Z3_optimize_get_upper_as_vector(c, o, idx);
+        RESET_ERROR_CODE();
+        expr_ref_vector es(mk_c(c)->m());
+        to_optimize_ptr(o)->get_upper(idx, es);
+        Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
+        mk_c(c)->save_object(v);
+        v->m_ast_vector.append(es.size(), (ast*const*)es.c_ptr());
+        RETURN_Z3(of_ast_vector(v));
         Z3_CATCH_RETURN(0);
     }
 

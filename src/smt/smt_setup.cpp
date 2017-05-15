@@ -20,6 +20,7 @@ Revision History:
 #include"smt_setup.h"
 #include"static_features.h"
 #include"theory_arith.h"
+#include"theory_lra.h"
 #include"theory_dense_diff_logic.h"
 #include"theory_diff_logic.h"
 #include"theory_utvpi.h"
@@ -33,6 +34,7 @@ Revision History:
 #include"theory_seq.h"
 #include"theory_pb.h"
 #include"theory_fpa.h"
+#include"theory_str.h"
 
 namespace smt {
 
@@ -120,6 +122,8 @@ namespace smt {
             setup_QF_FP();
         else if (m_logic == "QF_FPBV" || m_logic == "QF_BVFP")
             setup_QF_FPBV();
+        else if (m_logic == "QF_S")
+            setup_QF_S();
         else
             setup_unknown();
     }
@@ -161,6 +165,8 @@ namespace smt {
                  setup_QF_BVRE();
             else if (m_logic == "QF_AUFLIA")
                 setup_QF_AUFLIA(st);
+            else if (m_logic == "QF_S")
+                setup_QF_S();
             else if (m_logic == "AUFLIA")
                 setup_AUFLIA(st);
             else if (m_logic == "AUFLIRA")
@@ -201,7 +207,7 @@ namespace smt {
     void setup::setup_QF_BVRE() {
         setup_QF_BV();
         setup_QF_LIA();
-        setup_seq();
+        m_context.register_plugin(alloc(theory_seq, m_manager));
     }
 
     void setup::setup_QF_UF(static_features const & st) {
@@ -437,7 +443,7 @@ namespace smt {
         m_params.m_arith_propagate_eqs = false;
         m_params.m_eliminate_term_ite  = true;
         m_params.m_nnf_cnf             = false;
-        setup_mi_arith();
+        setup_r_arith();
     }
 
     void setup::setup_QF_LRA(static_features const & st) {
@@ -462,6 +468,10 @@ namespace smt {
             m_params.m_restart_adaptive      = false;
         }
         m_params.m_arith_small_lemma_size = 32;
+        setup_r_arith();
+    }
+
+    void setup::setup_QF_LIRA(static_features const& st) {
         setup_mi_arith();
     }
 
@@ -470,7 +480,7 @@ namespace smt {
         m_params.m_relevancy_lvl       = 0;
         m_params.m_arith_expand_eqs    = true;
         m_params.m_arith_reflect       = false; 
-        m_params.m_arith_propagate_eqs = false;
+        m_params.m_arith_propagate_eqs = false; 
         m_params.m_nnf_cnf             = false;
         setup_i_arith();
     }
@@ -534,7 +544,7 @@ namespace smt {
         m_params.m_relevancy_lvl       = 0;
         m_params.m_arith_reflect       = false; 
         m_params.m_nnf_cnf             = false;
-        setup_mi_arith();
+        setup_r_arith();
     }
 
     void setup::setup_QF_BV() {
@@ -700,12 +710,23 @@ namespace smt {
         m_context.register_plugin(alloc(smt::theory_fpa, m_manager));
     }
 
+    void setup::setup_QF_S() {
+        m_context.register_plugin(alloc(smt::theory_mi_arith, m_manager, m_params));
+        m_context.register_plugin(alloc(smt::theory_str, m_manager, m_params));
+    }
+
     bool is_arith(static_features const & st) {
         return st.m_num_arith_ineqs > 0 || st.m_num_arith_terms > 0 || st.m_num_arith_eqs > 0;
     }
 
     void setup::setup_i_arith() {
         m_context.register_plugin(alloc(smt::theory_i_arith, m_manager, m_params));
+    }
+
+    void setup::setup_r_arith() {
+        // to disable theory lra
+        // m_context.register_plugin(alloc(smt::theory_mi_arith, m_manager, m_params));        
+        m_context.register_plugin(alloc(smt::theory_lra, m_manager, m_params));
     }
 
     void setup::setup_mi_arith() {
@@ -814,8 +835,25 @@ namespace smt {
         m_context.register_plugin(mk_theory_dl(m_manager));
     }
 
-    void setup::setup_seq() {
-        m_context.register_plugin(alloc(theory_seq, m_manager));
+    void setup::setup_seq_str(static_features const & st) {
+        // check params for what to do here when it's ambiguous
+        if (m_params.m_string_solver == "z3str3") {
+            setup_str();
+        } 
+        else if (m_params.m_string_solver == "seq") {
+            setup_seq();
+        } 
+        else if (m_params.m_string_solver == "auto") {
+            if (st.m_has_seq_non_str) {
+                setup_seq();
+            } 
+            else {
+                setup_str();
+            }
+        } 
+        else {
+            throw default_exception("invalid parameter for smt.string_solver, valid options are 'z3str3', 'seq', 'auto'");
+        }
     }
 
     void setup::setup_card() {
@@ -827,13 +865,25 @@ namespace smt {
         m_context.register_plugin(alloc(theory_fpa, m_manager));
     }
 
+    void setup::setup_str() {
+        setup_arith();
+        m_context.register_plugin(alloc(theory_str, m_manager, m_params));
+    }
+
+    void setup::setup_seq() {
+        m_context.register_plugin(alloc(smt::theory_seq, m_manager));
+    }
+
     void setup::setup_unknown() {
+        static_features st(m_manager);
+        st.collect(m_context.get_num_asserted_formulas(), m_context.get_asserted_formulas());
+
         setup_arith();
         setup_arrays();
         setup_bv();
         setup_datatypes();
         setup_dl();
-        setup_seq();
+        setup_seq_str(st);
         setup_card();
         setup_fpa();
     }
@@ -848,7 +898,7 @@ namespace smt {
             setup_datatypes();
             setup_bv();
             setup_dl();
-            setup_seq();
+            setup_seq_str(st);
             setup_card();
             setup_fpa();
             return;
@@ -890,7 +940,9 @@ namespace smt {
         }
         
         if (st.num_theories() == 1 && is_arith(st)) {
-            if (st.m_has_real)
+            if ((st.m_has_int && st.m_has_real) || (st.m_num_non_linear != 0)) 
+                setup_QF_LIRA(st);
+            else if (st.m_has_real)
                 setup_QF_LRA(st);
             else
                 setup_QF_LIA(st);

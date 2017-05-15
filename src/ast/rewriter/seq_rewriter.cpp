@@ -1434,6 +1434,7 @@ br_status seq_rewriter::mk_re_star(expr* a, expr_ref& result) {
  * (re.range c_1 c_n) = (re.union (str.to.re c1) (str.to.re c2) ... (str.to.re cn))
  */
 br_status seq_rewriter::mk_re_range(expr* lo, expr* hi, expr_ref& result) {
+    return BR_FAILED;
     TRACE("seq", tout << "rewrite re.range [" << mk_pp(lo, m()) << " " << mk_pp(hi, m()) << "]\n";);
     zstring str_lo, str_hi;
     if (m_util.str.is_string(lo, str_lo) && m_util.str.is_string(hi, str_hi)) {
@@ -1505,6 +1506,7 @@ br_status seq_rewriter::mk_re_opt(expr* a, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
+    TRACE("seq", tout << mk_pp(l, m()) << " = " << mk_pp(r, m()) << "\n";);
     expr_ref_vector lhs(m()), rhs(m()), res(m());
     bool changed = false;
     if (!reduce_eq(l, r, lhs, rhs, changed)) {

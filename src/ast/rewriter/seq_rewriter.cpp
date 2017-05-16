@@ -440,24 +440,16 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
  * (seq.unit (_ BitVector 8)) ==> String constant
  */
 br_status seq_rewriter::mk_seq_unit(expr* e, expr_ref& result) {
-    sort * s = m().get_sort(e);
     bv_util bvu(m());
-
-    if (is_sort_of(s, bvu.get_family_id(), BV_SORT)) {
-        // specifically we want (_ BitVector 8)
-        rational n_val;
-        unsigned int n_size;
-        if (bvu.is_numeral(e, n_val, n_size)) {
-            if (n_size == 8) {
-                // convert to string constant
-                char ch = (char)n_val.get_int32();
-                TRACE("seq", tout << "rewrite seq.unit of 8-bit value " << n_val.to_string() << " to string constant \"" << ch << "\"" << std::endl;);
-                char s_tmp[2] = {ch, '\0'};
-                symbol s(s_tmp);
-                result = m_util.str.mk_string(s);
-                return BR_DONE;
-            }
-        }
+    rational n_val;
+    unsigned int n_size;
+    // specifically we want (_ BitVector 8)
+    if (bvu.is_bv(e) && bvu.is_numeral(e, n_val, n_size) && n_size == 8) {
+        // convert to string constant
+        zstring str(n_val.get_unsigned());
+        TRACE("seq", tout << "rewrite seq.unit of 8-bit value " << n_val.to_string() << " to string constant \"" << str<< "\"" << std::endl;);
+        result = m_util.str.mk_string(str);
+        return BR_DONE;
     }
 
     return BR_FAILED;
@@ -1434,6 +1426,7 @@ br_status seq_rewriter::mk_re_star(expr* a, expr_ref& result) {
  * (re.range c_1 c_n) = (re.union (str.to.re c1) (str.to.re c2) ... (str.to.re cn))
  */
 br_status seq_rewriter::mk_re_range(expr* lo, expr* hi, expr_ref& result) {
+    return BR_FAILED;
     TRACE("seq", tout << "rewrite re.range [" << mk_pp(lo, m()) << " " << mk_pp(hi, m()) << "]\n";);
     zstring str_lo, str_hi;
     if (m_util.str.is_string(lo, str_lo) && m_util.str.is_string(hi, str_hi)) {
@@ -1505,6 +1498,7 @@ br_status seq_rewriter::mk_re_opt(expr* a, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
+    TRACE("seq", tout << mk_pp(l, m()) << " = " << mk_pp(r, m()) << "\n";);
     expr_ref_vector lhs(m()), rhs(m()), res(m());
     bool changed = false;
     if (!reduce_eq(l, r, lhs, rhs, changed)) {

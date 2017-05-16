@@ -65,6 +65,7 @@ namespace smt {
         void setup_QF_LRA();
         void setup_QF_LRA(static_features const & st);
         void setup_QF_LIA();
+        void setup_QF_LIRA(static_features const& st);
         void setup_QF_LIA(static_features const & st);
         void setup_QF_UFLIA();
         void setup_QF_UFLIA(static_features & st);
@@ -77,6 +78,7 @@ namespace smt {
         void setup_QF_AUFLIA(static_features const & st);
         void setup_QF_FP();
         void setup_QF_FPBV();
+        void setup_QF_S();
         void setup_LRA();
         void setup_AUFLIA(bool simple_array = true);
         void setup_AUFLIA(static_features const & st);
@@ -93,11 +95,14 @@ namespace smt {
         void setup_bv();
         void setup_arith();
         void setup_dl();
+        void setup_seq_str(static_features const & st);
         void setup_seq();
         void setup_card();
         void setup_i_arith();
         void setup_mi_arith();
+        void setup_r_arith();
         void setup_fpa();
+        void setup_str();
 
     public:
         setup(context & c, smt_params & params);

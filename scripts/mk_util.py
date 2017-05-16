@@ -774,8 +774,13 @@ def extract_c_includes(fname):
     linenum = 1
     for line in f:
         m1 = std_inc_pat.match(line)
-        if m1:
-            result.append(m1.group(1))
+        if m1: 
+            root_file_name = m1.group(1)
+            slash_pos =  root_file_name.rfind('/')
+            if slash_pos >= 0  and root_file_name.find("..") < 0 : #it is a hack for lp include files that behave as continued from "src"
+                print(root_file_name)
+                root_file_name = root_file_name[slash_pos+1:]
+            result.append(root_file_name)
         elif not system_inc_pat.match(line) and non_std_inc_pat.match(line):
             raise MKException("Invalid #include directive at '%s':%s" % (fname, line))
         linenum = linenum + 1
@@ -1002,6 +1007,7 @@ class Component:
         out.write('%s =' % include_defs)
         for dep in self.deps:
             out.write(' -I%s' % get_component(dep).to_src_dir)
+        out.write(' -I%s' % os.path.join(REV_BUILD_DIR,"src"))
         out.write('\n')
         mk_dir(os.path.join(BUILD_DIR, self.build_dir))
         if VS_PAR and IS_WINDOWS:
@@ -1636,6 +1642,8 @@ class DotNetDLLComponent(Component):
 
         if not self.key_file is None:
             print("%s.dll will be signed using key '%s'." % (self.dll_name, self.key_file))
+            if (self.key_file.find(' ') != -1):
+                self.key_file = '"' + self.key_file + '"'
             cscCmdLine.append('/keyfile:{}'.format(self.key_file))
 
         cscCmdLine.extend( ['/unsafe+',
@@ -2422,6 +2430,7 @@ def mk_config():
                 FOCI2 = False
         if GIT_HASH:
             CPPFLAGS = '%s -DZ3GITHASH=%s' % (CPPFLAGS, GIT_HASH)
+        CXXFLAGS = '%s -std=c++11' % CXXFLAGS
         CXXFLAGS = '%s -fvisibility=hidden -c' % CXXFLAGS
         FPMATH = test_fpmath(CXX)
         CXXFLAGS = '%s %s' % (CXXFLAGS, FPMATH_FLAGS)
@@ -2446,8 +2455,8 @@ def mk_config():
             CXXFLAGS   = '%s -Wno-unknown-pragmas -Wno-overloaded-virtual -Wno-unused-value' % CXXFLAGS
         sysname, _, _, _, machine = os.uname()
         if sysname == 'Darwin':
-            SO_EXT    = '.dylib'
-            SLIBFLAGS = '-dynamiclib'
+            SO_EXT         = '.dylib'
+            SLIBFLAGS      = '-dynamiclib'
         elif sysname == 'Linux':
             CXXFLAGS       = '%s -fno-strict-aliasing -D_LINUX_' % CXXFLAGS
             OS_DEFINES     = '-D_LINUX_'
@@ -2953,7 +2962,11 @@ def get_platform_toolset_str():
     if len(tokens) < 2:
         return default
     else:
-        return 'v' + tokens[0] + tokens[1]
+        if tokens[0] == "15": 
+            # Visual Studio 2017 reports 15.* but the PlatformToolsetVersion is 141
+            return "v141"
+        else:
+            return 'v' + tokens[0] + tokens[1]
 
 def mk_vs_proj_property_groups(f, name, target_ext, type):
     f.write('  <ItemGroup Label="ProjectConfigurations">\n')

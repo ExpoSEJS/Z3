@@ -18,11 +18,11 @@ Notes:
 
 --*/
 
-#include"expr_functors.h"
-#include"rule_properties.h"
-#include"dl_rule_set.h"
-#include"for_each_expr.h"
-#include"dl_context.h"
+#include "ast/expr_functors.h"
+#include "muz/base/rule_properties.h"
+#include "muz/base/dl_rule_set.h"
+#include "ast/for_each_expr.h"
+#include "muz/base/dl_context.h"
 
 using namespace datalog;
 rule_properties::rule_properties(ast_manager & m, rule_manager& rm, context& ctx, i_expr_pred& p): 
@@ -51,7 +51,8 @@ void rule_properties::collect(rule_set const& rules) {
         for (unsigned i = 0; m_inf_sort.empty() && i < r->get_decl()->get_arity(); ++i) {
             sort* d = r->get_decl()->get_domain(i);
             sort_size sz = d->get_num_elements();
-            if (!sz.is_finite()) {
+            if (!sz.is_finite() && !m_dl.is_rule_sort(d)) {
+                TRACE("dl", tout << "sort " << mk_pp(d, m) << " is not finite " << sz << "\n";);
                 m_inf_sort.push_back(m_rule);
             }
         }

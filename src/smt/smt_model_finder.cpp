@@ -16,26 +16,26 @@ Author:
 Revision History:
 
 --*/
-#include"smt_model_finder.h"
-#include"smt_context.h"
-#include"ast_util.h"
-#include"macro_util.h"
-#include"arith_decl_plugin.h"
-#include"bv_decl_plugin.h"
-#include"array_decl_plugin.h"
-#include"arith_simplifier_plugin.h"
-#include"bv_simplifier_plugin.h"
-#include"pull_quant.h"
-#include"var_subst.h"
-#include"backtrackable_set.h"
-#include"for_each_expr.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"well_sorted.h"
-#include"model_pp.h"
-#include"ast_smt2_pp.h"
-#include"cooperate.h"
-#include"tactic_exception.h"
+#include "smt/smt_model_finder.h"
+#include "smt/smt_context.h"
+#include "ast/ast_util.h"
+#include "ast/macros/macro_util.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/array_decl_plugin.h"
+#include "ast/simplifier/arith_simplifier_plugin.h"
+#include "ast/simplifier/bv_simplifier_plugin.h"
+#include "ast/normal_forms/pull_quant.h"
+#include "ast/rewriter/var_subst.h"
+#include "util/backtrackable_set.h"
+#include "ast/for_each_expr.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "ast/well_sorted.h"
+#include "model/model_pp.h"
+#include "ast/ast_smt2_pp.h"
+#include "util/cooperate.h"
+#include "tactic/tactic_exception.h"
 
 namespace smt {
 
@@ -760,7 +760,7 @@ namespace smt {
                 ptr_vector<expr> const & exceptions   = n->get_exceptions();
                 ptr_vector<node> const & avoid_set    = n->get_avoid_set();
                 obj_map<expr, unsigned> const & elems = s->get_elems();
-                SASSERT(!elems.empty());
+                if (elems.empty()) return;
                 if (!exceptions.empty() || !avoid_set.empty()) {
                     ptr_buffer<expr> ex_vals;
                     collect_exceptions_values(n, ex_vals);
@@ -927,15 +927,14 @@ namespace smt {
                 ptr_buffer<expr> values;
                 get_instantiation_set_values(n, values);
                 sort * s        = n->get_sort();
-                expr * else_val = eval(n->get_else(), true);
-                func_decl *   p  = m_manager.mk_fresh_func_decl(1, &s, s);
+                func_decl *   p = m_manager.mk_fresh_func_decl(1, &s, s);
                 func_interp * pi = alloc(func_interp, m_manager, 1);
-                pi->set_else(else_val);
                 m_model->register_aux_decl(p, pi);
-                ptr_buffer<expr>::const_iterator it  = values.begin();
-                ptr_buffer<expr>::const_iterator end = values.end();
-                for (; it != end; ++it) {
-                    expr * v = *it;
+                if (n->get_else()) {
+                    expr * else_val = eval(n->get_else(), true);
+                    pi->set_else(else_val);
+                }
+                for (expr * v : values) {
                     pi->insert_new_entry(&v, v);
                 }
                 n->set_proj(p);

@@ -14,17 +14,17 @@
   Revision History:
 
   --*/
-#include"ast_smt2_pp.h"
-#include"smt_context.h"
-#include"theory_str.h"
-#include"smt_model_generator.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
+#include "ast/ast_smt2_pp.h"
+#include "smt/smt_context.h"
+#include "smt/theory_str.h"
+#include "smt/smt_model_generator.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
 #include<list>
 #include<algorithm>
-#include"theory_seq_empty.h"
-#include"theory_arith.h"
-#include"ast_util.h"
+#include "smt/theory_seq_empty.h"
+#include "smt/theory_arith.h"
+#include "ast/ast_util.h"
 
 namespace smt {
 
@@ -1549,14 +1549,12 @@ namespace smt {
         expr_ref elseBranch(ctx.mk_eq_atom(result, expr->get_arg(0)), m);
 
         expr_ref breakdownAssert(m.mk_ite(condAst, m.mk_and(thenItems.size(), thenItems.c_ptr()), elseBranch), m);
+        assert_axiom(breakdownAssert);
+        
         SASSERT(breakdownAssert);
 
         expr_ref reduceToResult(ctx.mk_eq_atom(expr, result), m);
-        SASSERT(reduceToResult);
-
-        expr_ref finalAxiom(m.mk_and(breakdownAssert, reduceToResult), m);
-        SASSERT(finalAxiom);
-        assert_axiom(finalAxiom);
+        assert_axiom(reduceToResult);
     }
 
     void theory_str::instantiate_axiom_str_to_int(enode * e) {
@@ -1984,7 +1982,8 @@ namespace smt {
         return NULL;
     }
 
-    static inline std::string rational_to_string_if_exists(const rational & x, bool x_exists) {
+    // trace code helper
+    inline std::string rational_to_string_if_exists(const rational & x, bool x_exists) {
         if (x_exists) {
             return x.to_string();
         } else {
@@ -4651,35 +4650,25 @@ namespace smt {
         }
     }
 
-    bool theory_str::get_value(expr* e, rational& val) const {
-        if (opt_DisableIntegerTheoryIntegration) {
-            TRACE("str", tout << "WARNING: integer theory integration disabled" << std::endl;);
-            return false;
-        }
-
+    bool theory_str::get_arith_value(expr* e, rational& val) const {
         context& ctx = get_context();
         ast_manager & m = get_manager();
-        theory_mi_arith* tha = get_th_arith(ctx, m_autil.get_family_id(), e);
-        if (!tha) {
+
+	// safety
+	if (!ctx.e_internalized(e)) {
+	  return false;
+	}
+	
+        // if an integer constant exists in the eqc, it should be the root
+        enode * en_e = ctx.get_enode(e);
+        enode * root_e = en_e->get_root();
+        if (m_autil.is_numeral(root_e->get_owner(), val) && val.is_int()) {
+            TRACE("str", tout << mk_pp(e, m) << " ~= " << mk_pp(root_e->get_owner(), m) << std::endl;);
+            return true;
+        } else {
+            TRACE("str", tout << "root of eqc of " << mk_pp(e, m) << " is not a numeral" << std::endl;);
             return false;
         }
-        TRACE("str", tout << "checking eqc of " << mk_pp(e, m) << " for arithmetic value" << std::endl;);
-        expr_ref _val(m);
-        enode * en_e = ctx.get_enode(e);
-        enode * it = en_e;
-        do {
-            if (m_autil.is_numeral(it->get_owner(), val) && val.is_int()) {
-                // found an arithmetic term
-                TRACE("str", tout << mk_pp(it->get_owner(), m) << " is an integer ( ~= " << val << " )"
-                      << std::endl;);
-                return true;
-            } else {
-                TRACE("str", tout << mk_pp(it->get_owner(), m) << " not a numeral" << std::endl;);
-            }
-            it = it->get_next();
-        } while (it != en_e);
-        TRACE("str", tout << "no arithmetic values found in eqc" << std::endl;);
-        return false;
     }
 
     bool theory_str::lower_bound(expr* _e, rational& lo) {
@@ -4780,7 +4769,7 @@ namespace smt {
                         }
                     });
 
-                if (ctx.e_internalized(len) && get_value(len, val1)) {
+                if (ctx.e_internalized(len) && get_arith_value(len, val1)) {
                     val += val1;
                     TRACE("str", tout << "integer theory: subexpression " << mk_ismt2_pp(len, m) << " has length " << val1 << std::endl;);
                 }
@@ -8439,7 +8428,7 @@ namespace smt {
 
         // check integer theory
         rational Ival;
-        bool Ival_exists = get_value(a, Ival);
+        bool Ival_exists = get_arith_value(a, Ival);
         if (Ival_exists) {
             TRACE("str", tout << "integer theory assigns " << mk_pp(a, m) << " = " << Ival.to_string() << std::endl;);
             // if that value is not -1, we can assert (str.to-int S) = Ival --> S = "Ival"
@@ -8610,7 +8599,7 @@ namespace smt {
             rational lenValue;
             expr_ref concatlenExpr (mk_strlen(concat), m) ;
             bool allLeafResolved = true;
-            if (! get_value(concatlenExpr, lenValue)) {
+            if (! get_arith_value(concatlenExpr, lenValue)) {
                 // the length fo concat is unresolved yet
                 if (get_len_value(concat, lenValue)) {
                     // but all leaf nodes have length information
@@ -8647,7 +8636,7 @@ namespace smt {
                 expr * var = *it;
                 rational lenValue;
                 expr_ref varlen (mk_strlen(var), m) ;
-                if (! get_value(varlen, lenValue)) {
+                if (! get_arith_value(varlen, lenValue)) {
                     if (propagate_length_within_eqc(var)) {
                         axiomAdded = true;
                     }
@@ -9479,7 +9468,7 @@ namespace smt {
                   bool unrLenValue_exists = get_len_value(unrFunc, unrLenValue);
                   tout << "unroll length: " << (unrLenValue_exists ? unrLenValue.to_string() : "?") << std::endl;
                   rational cntInUnrValue;
-                  bool cntHasValue = get_value(cntInUnr, cntInUnrValue);
+                  bool cntHasValue = get_arith_value(cntInUnr, cntInUnrValue);
                   tout << "unroll count: " << (cntHasValue ? cntInUnrValue.to_string() : "?")
                   << " low = "
                   << (low_exists ? low.to_string() : "?")

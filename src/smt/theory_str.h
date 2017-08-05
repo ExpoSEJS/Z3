@@ -17,19 +17,19 @@
 #ifndef _THEORY_STR_H_
 #define _THEORY_STR_H_
 
-#include"smt_theory.h"
-#include"theory_str_params.h"
-#include"trail.h"
-#include"th_rewriter.h"
-#include"value_factory.h"
-#include"smt_model_generator.h"
-#include"arith_decl_plugin.h"
+#include "smt/smt_theory.h"
+#include "smt/params/theory_str_params.h"
+#include "util/trail.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "smt/proto_model/value_factory.h"
+#include "smt/smt_model_generator.h"
+#include "ast/arith_decl_plugin.h"
 #include<set>
 #include<stack>
 #include<vector>
 #include<map>
-#include"seq_decl_plugin.h"
-#include"union_find.h"
+#include "ast/seq_decl_plugin.h"
+#include "util/union_find.h"
 
 namespace smt {
 
@@ -219,7 +219,7 @@ protected:
     /*
      * If DisableIntegerTheoryIntegration is set to true,
      * ALL calls to the integer theory integration methods
-     * (get_value, get_len_value, lower_bound, upper_bound)
+     * (get_arith_value, get_len_value, lower_bound, upper_bound)
      * will ignore what the arithmetic solver believes about length terms,
      * and will return no information.
      *
@@ -464,7 +464,7 @@ protected:
     bool in_same_eqc(expr * n1, expr * n2);
     expr * collect_eq_nodes(expr * n, expr_ref_vector & eqcSet);
 
-    bool get_value(expr* e, rational& val) const;
+    bool get_arith_value(expr* e, rational& val) const;
     bool get_len_value(expr* e, rational& val);
     bool lower_bound(expr* _e, rational& lo);
     bool upper_bound(expr* _e, rational& hi);

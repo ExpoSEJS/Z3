@@ -17,26 +17,26 @@ Revision History:
 
 --*/
 #include<math.h>
-#include"smt_context.h"
-#include"luby.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"warning.h"
-#include"smt_quick_checker.h"
-#include"proof_checker.h"
-#include"ast_util.h"
-#include"uses_theory.h"
-#include"model.h"
-#include"smt_for_each_relevant_expr.h"
-#include"timeit.h"
-#include"well_sorted.h"
-#include"union_find.h"
-#include"smt_model_generator.h"
-#include"smt_model_checker.h"
-#include"smt_model_finder.h"
-#include"model_pp.h"
-#include"ast_smt2_pp.h"
-#include"ast_translation.h"
+#include "smt/smt_context.h"
+#include "util/luby.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "util/warning.h"
+#include "smt/smt_quick_checker.h"
+#include "ast/proof_checker/proof_checker.h"
+#include "ast/ast_util.h"
+#include "smt/uses_theory.h"
+#include "model/model.h"
+#include "smt/smt_for_each_relevant_expr.h"
+#include "util/timeit.h"
+#include "ast/well_sorted.h"
+#include "util/union_find.h"
+#include "smt/smt_model_generator.h"
+#include "smt/smt_model_checker.h"
+#include "smt/smt_model_finder.h"
+#include "model/model_pp.h"
+#include "ast/ast_smt2_pp.h"
+#include "ast/ast_translation.h"
 
 namespace smt {
 
@@ -1826,6 +1826,7 @@ namespace smt {
     }
     
     void context::rescale_bool_var_activity() {
+        TRACE("case_split", tout << "rescale\n";);
         svector<double>::iterator it  = m_activity.begin();
         svector<double>::iterator end = m_activity.end();
         for (; it != end; ++it)
@@ -2405,7 +2406,7 @@ namespace smt {
         if (m_manager.has_trace_stream())
             m_manager.trace_stream() << "[pop] " << num_scopes << " " << m_scope_lvl << "\n";
 
-        TRACE("context", tout << "backtracking: " << num_scopes << "\n";);
+        TRACE("context", tout << "backtracking: " << num_scopes << " from " << m_scope_lvl << "\n";);
         TRACE("pop_scope_detail", display(tout););
         SASSERT(num_scopes > 0);
         SASSERT(num_scopes <= m_scope_lvl);
@@ -2900,10 +2901,10 @@ namespace smt {
         }
         push_scope();
         m_base_scopes.push_back(base_scope());
-        base_scope & bs              = m_base_scopes.back();
-        bs.m_lemmas_lim              = m_lemmas.size();
-        bs.m_inconsistent            = inconsistent();
-        bs.m_simp_qhead_lim          = m_simp_qhead;
+        base_scope & bs = m_base_scopes.back();
+        bs.m_lemmas_lim = m_lemmas.size();
+        bs.m_inconsistent = inconsistent();
+        bs.m_simp_qhead_lim = m_simp_qhead;
         m_base_lvl++;
         m_search_lvl++; // Not really necessary. But, it is useful to enforce the invariant m_search_lvl >= m_base_lvl
         SASSERT(m_base_lvl <= m_scope_lvl);
@@ -2911,6 +2912,7 @@ namespace smt {
 
     void context::pop(unsigned num_scopes) {
         SASSERT (num_scopes > 0);
+        if (num_scopes > m_scope_lvl) return;
         pop_to_base_lvl();
         pop_scope(num_scopes);
     }
@@ -3546,7 +3548,7 @@ namespace smt {
                 return false;
             }
             if (cmr == quantifier_manager::UNKNOWN) {
-                IF_VERBOSE(1, verbose_stream() << "(smt.giveup quantifiers)\n";);
+                IF_VERBOSE(2, verbose_stream() << "(smt.giveup quantifiers)\n";);
                 // giving up
                 m_last_search_failure = QUANTIFIERS;
                 status = l_undef;
@@ -3556,7 +3558,7 @@ namespace smt {
         inc_limits();
         if (status == l_true || !m_fparams.m_restart_adaptive || m_agility < m_fparams.m_restart_agility_threshold) {
             SASSERT(!inconsistent());
-            IF_VERBOSE(1, verbose_stream() << "(smt.restarting :propagations " << m_stats.m_num_propagations 
+                IF_VERBOSE(2, verbose_stream() << "(smt.restarting :propagations " << m_stats.m_num_propagations 
                        << " :decisions " << m_stats.m_num_decisions
                        << " :conflicts " << m_stats.m_num_conflicts << " :restart " << m_restart_threshold;
                        if (m_fparams.m_restart_strategy == RS_IN_OUT_GEOMETRIC) {

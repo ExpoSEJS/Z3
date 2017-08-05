@@ -12,7 +12,7 @@
 Several online tutorials for Z3Py are available at:
 http://rise4fun.com/Z3Py/tutorial/guide
 
-Please send feedback, comments and/or corrections to leonardo@microsoft.com. Your comments are very valuable.
+Please send feedback, comments and/or corrections on the Issue tracker for https://github.com/Z3prover/z3.git. Your comments are very valuable.
 
 Small example:
 
@@ -6054,6 +6054,24 @@ class Solver(Z3PPObject):
         """
         Z3_solver_pop(self.ctx.ref(), self.solver, num)
 
+    def num_scopes(self):
+        """Return the current number of backtracking points.
+
+        >>> s = Solver()
+        >>> s.num_scopes()
+        0L
+        >>> s.push()
+        >>> s.num_scopes()
+        1L
+        >>> s.push()
+        >>> s.num_scopes()
+        2L
+        >>> s.pop()
+        >>> s.num_scopes()
+        1L
+        """
+        return Z3_solver_get_num_scopes(self.ctx.ref(), self.solver)
+
     def reset(self):
         """Remove all asserted constraints and backtracking points created using `push()`.
 
@@ -6518,6 +6536,22 @@ class Fixedpoint(Z3PPObject):
             r = Z3_fixedpoint_query(self.ctx.ref(), self.fixedpoint, query.as_ast())
         return CheckSatResult(r)
 
+    def query_from_lvl (self, lvl, *query):
+        """Query the fixedpoint engine whether formula is derivable starting at the given query level.
+        """
+        query = _get_args(query)
+        sz = len(query)
+        if sz >= 1 and isinstance(query[0], FuncDecl):
+            _z3_assert (False, "unsupported")
+        else:
+            if sz == 1:
+                query = query[0]
+            else:
+                query = And(query)
+            query = self.abstract(query, False)
+            r = Z3_fixedpoint_query_from_lvl (self.ctx.ref(), self.fixedpoint, query.as_ast(), lvl)
+        return CheckSatResult(r)
+
     def push(self):
         """create a backtracking point for added rules, facts and assertions"""
         Z3_fixedpoint_push(self.ctx.ref(), self.fixedpoint)
@@ -6539,6 +6573,23 @@ class Fixedpoint(Z3PPObject):
         """Retrieve answer from last query call."""
         r = Z3_fixedpoint_get_answer(self.ctx.ref(), self.fixedpoint)
         return _to_expr_ref(r, self.ctx)
+
+    def get_ground_sat_answer(self):
+        """Retrieve a ground cex from last query call."""
+        r = Z3_fixedpoint_get_ground_sat_answer(self.ctx.ref(), self.fixedpoint)
+        return _to_expr_ref(r, self.ctx)
+
+    def get_rules_along_trace(self):
+        """retrieve rules along the counterexample trace"""
+        return AstVector(Z3_fixedpoint_get_rules_along_trace(self.ctx.ref(), self.fixedpoint), self.ctx)
+
+    def get_rule_names_along_trace(self):
+        """retrieve rule names along the counterexample trace"""
+        # this is a hack as I don't know how to return a list of symbols from C++;
+        # obtain names as a single string separated by semicolons
+        names = _symbol2py (self.ctx, Z3_fixedpoint_get_rule_names_along_trace(self.ctx.ref(), self.fixedpoint))
+        # split into individual names
+        return names.split (';')
 
     def get_num_levels(self, predicate):
         """Retrieve number of levels used for predicate in PDR engine"""

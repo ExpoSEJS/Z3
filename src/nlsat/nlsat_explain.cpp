@@ -16,11 +16,11 @@ Author:
 Revision History:
 
 --*/
-#include"nlsat_explain.h"
-#include"nlsat_assignment.h"
-#include"nlsat_evaluator.h"
-#include"algebraic_numbers.h"
-#include"ref_buffer.h"
+#include "nlsat/nlsat_explain.h"
+#include "nlsat/nlsat_assignment.h"
+#include "nlsat/nlsat_evaluator.h"
+#include "math/polynomial/algebraic_numbers.h"
+#include "util/ref_buffer.h"
 
 namespace nlsat {
 
@@ -1190,6 +1190,7 @@ namespace nlsat {
             info.m_lc       = lc_eq.get();
             info.m_lc_sign  = sign(lc_eq);
             info.m_lc_add   = false;
+            info.m_lc_add_ineq = false;
             info.m_lc_const = m_pm.is_const(lc_eq);
             SASSERT(info.m_lc != 0);
             scoped_literal new_lit(m_solver);

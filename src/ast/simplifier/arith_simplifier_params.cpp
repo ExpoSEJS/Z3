@@ -16,8 +16,8 @@ Author:
 Revision History:
 
 --*/
-#include"arith_simplifier_params.h"
-#include"arith_simplifier_params_helper.hpp"
+#include "ast/simplifier/arith_simplifier_params.h"
+#include "ast/simplifier/arith_simplifier_params_helper.hpp"
 
 void arith_simplifier_params::updt_params(params_ref const & _p) {
     arith_simplifier_params_helper p(_p);

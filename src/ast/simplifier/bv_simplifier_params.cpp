@@ -16,9 +16,9 @@ Author:
 Revision History:
 
 --*/
-#include"bv_simplifier_params.h"
-#include"bv_simplifier_params_helper.hpp"
-#include"bv_rewriter_params.hpp"
+#include "ast/simplifier/bv_simplifier_params.h"
+#include "ast/simplifier/bv_simplifier_params_helper.hpp"
+#include "ast/rewriter/bv_rewriter_params.hpp"
 
 void bv_simplifier_params::updt_params(params_ref const & _p) {
     bv_simplifier_params_helper p(_p);

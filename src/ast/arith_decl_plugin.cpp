@@ -16,11 +16,11 @@ Author:
 Revision History:
 
 --*/
-#include"arith_decl_plugin.h"
-#include"warning.h"
-#include"algebraic_numbers.h"
-#include"id_gen.h"
-#include"ast_smt2_pp.h"
+#include "ast/arith_decl_plugin.h"
+#include "util/warning.h"
+#include "math/polynomial/algebraic_numbers.h"
+#include "util/id_gen.h"
+#include "ast/ast_smt2_pp.h"
 
 struct arith_decl_plugin::algebraic_numbers_wrapper {
     unsynch_mpq_manager           m_qmanager;
@@ -81,8 +81,9 @@ app * arith_decl_plugin::mk_numeral(algebraic_numbers::anum const & val, bool is
         return mk_numeral(rval, is_int);
     }
     else {
-        if (is_int)
+        if (is_int) {            
             m_manager->raise_exception("invalid irrational value passed as an integer");
+        }
         unsigned idx = aw().mk_id(val);
         parameter p(idx, true);
         SASSERT(p.is_external());
@@ -400,6 +401,12 @@ inline func_decl * arith_decl_plugin::mk_func_decl(decl_kind k, bool is_real) {
     case OP_U_ASIN:      return m_u_asin_decl;
     case OP_U_ACOS:      return m_u_acos_decl;
     default: return 0;
+    }
+}
+
+void arith_decl_plugin::check_arity(unsigned arity, unsigned expected_arity) {
+    if (arity != expected_arity) {
+        m_manager->raise_exception("invalid number of arguments passed to function");
     }
 }
 

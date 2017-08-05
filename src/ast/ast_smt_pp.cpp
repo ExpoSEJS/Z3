@@ -21,17 +21,17 @@ Revision History:
 
 #include<sstream>
 #include<iostream>
-#include"ast_smt_pp.h"
-#include"arith_decl_plugin.h"
-#include"bv_decl_plugin.h"
-#include"array_decl_plugin.h"
-#include"datatype_decl_plugin.h"
-#include"fpa_decl_plugin.h"
-#include"vector.h"
-#include"for_each_ast.h"
-#include"decl_collector.h"
-#include"smt2_util.h"
-#include"seq_decl_plugin.h"
+#include "ast/ast_smt_pp.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/array_decl_plugin.h"
+#include "ast/datatype_decl_plugin.h"
+#include "ast/fpa_decl_plugin.h"
+#include "util/vector.h"
+#include "ast/for_each_ast.h"
+#include "ast/decl_collector.h"
+#include "util/smt2_util.h"
+#include "ast/seq_decl_plugin.h"
 
 // ---------------------------------------
 // smt_renaming
@@ -366,7 +366,22 @@ class smt_printer {
             return;
         }
         else if (s->is_sort_of(m_dt_fid, DATATYPE_SORT)) {
-            m_out << m_renaming.get_symbol(s->get_name());
+            m_out << m_renaming.get_symbol(s->get_name());            
+#if 0
+            datatype_util util(m_manager);
+            unsigned num_sorts = util.get_datatype_num_parameter_sorts(s);
+            if (num_sorts > 0) {
+                m_out << "(";
+            }
+
+            if (num_sorts > 0) {
+                for (unsigned i = 0; i < num_sorts; ++i) {
+                    m_out << " ";
+                    visit_sort(util.get_datatype_parameter_sort(s, i));
+                }
+                m_out << ")";
+            }
+#endif
             return;
         }
         else {

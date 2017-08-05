@@ -19,7 +19,7 @@ Revision History:
 #ifndef ARITH_DECL_PLUGIN_H_
 #define ARITH_DECL_PLUGIN_H_
 
-#include"ast.h"
+#include "ast/ast.h"
 class sexpr;
 
 namespace algebraic_numbers {
@@ -157,6 +157,7 @@ protected:
     func_decl * mk_func_decl(decl_kind k, bool is_real);
     virtual void set_manager(ast_manager * m, family_id id);
     decl_kind fix_kind(decl_kind k, unsigned arity);
+    void check_arity(unsigned arity, unsigned expected_arity);
     func_decl * mk_num_decl(unsigned num_parameters, parameter const * parameters, unsigned arity);
 
 public:
@@ -275,7 +276,9 @@ public:
     bool is_uminus(expr const * n) const { return is_app_of(n, m_afid, OP_UMINUS); }
     bool is_mul(expr const * n) const { return is_app_of(n, m_afid, OP_MUL); }
     bool is_div(expr const * n) const { return is_app_of(n, m_afid, OP_DIV); }
+    bool is_div0(expr const * n) const { return is_app_of(n, m_afid, OP_DIV_0); }
     bool is_idiv(expr const * n) const { return is_app_of(n, m_afid, OP_IDIV); }
+    bool is_idiv0(expr const * n) const { return is_app_of(n, m_afid, OP_IDIV_0); }
     bool is_mod(expr const * n) const { return is_app_of(n, m_afid, OP_MOD); }
     bool is_rem(expr const * n) const { return is_app_of(n, m_afid, OP_REM); }
     bool is_to_real(expr const * n) const { return is_app_of(n, m_afid, OP_TO_REAL); }

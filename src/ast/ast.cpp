@@ -18,14 +18,14 @@ Revision History:
 --*/
 #include<sstream>
 #include<cstring>
-#include"ast.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"buffer.h"
-#include"warning.h"
-#include"string_buffer.h"
-#include"ast_util.h"
-#include"ast_smt2_pp.h"
+#include "ast/ast.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "util/buffer.h"
+#include "util/warning.h"
+#include "util/string_buffer.h"
+#include "ast/ast_util.h"
+#include "ast/ast_smt2_pp.h"
 
 // -----------------------------------
 //
@@ -2178,7 +2178,10 @@ app * ast_manager::mk_app(func_decl * decl, unsigned num_args, expr * const * ar
         throw ast_exception(buffer.str().c_str());
     }
     app * r = 0;
-    if (num_args > 2 && !decl->is_flat_associative()) {
+    if (num_args == 1 && decl->is_chainable() && decl->get_arity() == 2) {
+        r = mk_true();
+    }
+    else if (num_args > 2 && !decl->is_flat_associative()) {
         if (decl->is_right_associative()) {
             unsigned j = num_args - 1;
             r = mk_app_core(decl, args[j-1], args[j]);
@@ -2207,7 +2210,7 @@ app * ast_manager::mk_app(func_decl * decl, unsigned num_args, expr * const * ar
         r = mk_app_core(decl, num_args, args);
     }
     SASSERT(r != 0);
-    TRACE("app_ground", tout << "ground: " << r->is_ground() << "\n" << mk_ll_pp(r, *this) << "\n";);
+    TRACE("app_ground", tout << "ground: " << r->is_ground() << " id: " << r->get_id() << "\n" << mk_ll_pp(r, *this) << "\n";);
     return r;
 }
 

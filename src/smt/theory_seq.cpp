@@ -18,13 +18,13 @@ Revision History:
 
 --*/
 
-#include "value_factory.h"
-#include "smt_context.h"
-#include "smt_model_generator.h"
-#include "theory_seq.h"
-#include "ast_trail.h"
-#include "theory_arith.h"
-#include "smt_kernel.h"
+#include "smt/proto_model/value_factory.h"
+#include "smt/smt_context.h"
+#include "smt/smt_model_generator.h"
+#include "smt/theory_seq.h"
+#include "ast/ast_trail.h"
+#include "smt/theory_arith.h"
+#include "smt/smt_kernel.h"
 
 using namespace smt;
 
@@ -1681,6 +1681,7 @@ bool theory_seq::solve_binary_eq(expr_ref_vector const& ls, expr_ref_vector cons
         bool has_conflict = false;
         for (unsigned j = 0; !has_conflict && j < sz; ++j) {
             unsigned j1 = (offset + j) % sz;
+            if (xs[j] == ys[j1]) continue;
             literal eq = mk_eq(xs[j], ys[j1], false);
             switch (ctx.get_assignment(eq)) {
             case l_false:
@@ -1891,7 +1892,7 @@ bool theory_seq::solve_ne(unsigned idx) {
                     new_ls.push_back(ls);
                     new_rs.push_back(rs);
                 }
-                else {
+                else if (nl != nr) {                
                     literal lit(mk_eq(nl, nr, false));
                     ctx.mark_as_relevant(lit);
                     new_lits.push_back(lit);

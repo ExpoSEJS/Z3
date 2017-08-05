@@ -19,12 +19,12 @@ Revision History:
 #ifndef THEORY_ARITH_CORE_H_
 #define THEORY_ARITH_CORE_H_
 
-#include"smt_context.h"
-#include"theory_arith.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h" 
-#include"smt_model_generator.h"
-#include"ast_smt2_pp.h"
+#include "smt/smt_context.h"
+#include "smt/theory_arith.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "smt/smt_model_generator.h"
+#include "ast/ast_smt2_pp.h"
 
 namespace smt {
     
@@ -1224,7 +1224,9 @@ namespace smt {
         app * rhs      = to_app(n->get_arg(1));
         expr * rhs2;
         if (m_util.is_to_real(rhs, rhs2) && is_app(rhs2)) { rhs = to_app(rhs2); }
-        SASSERT(m_util.is_numeral(rhs));
+        if (!m_util.is_numeral(rhs)) {
+            throw default_exception("malformed atomic constraint");
+        }
         theory_var v   = internalize_term_core(lhs);
         if (v == null_theory_var) {
             TRACE("arith_internalize", tout << "failed to internalize: #" << n->get_id() << "\n";);

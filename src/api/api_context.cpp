@@ -20,10 +20,10 @@ Revision History:
 #include<typeinfo>
 #include "api/api_context.h"
 #include "parsers/smt/smtparser.h"
-#include"version.h"
+#include "util/version.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_ll_pp.h"
-#include"api_log_macros.h"
+#include "api/api_log_macros.h"
 #include "api/api_util.h"
 #include "ast/reg_decl_plugins.h"
 #include "math/realclosure/realclosure.h"
@@ -142,7 +142,7 @@ namespace api {
         #pragma omp critical (set_interruptable)
         {
             if (m_interruptable)
-                (*m_interruptable)();
+                (*m_interruptable)(API_INTERRUPT_EH_CALLER);
             m_limit.cancel();
             m().limit().cancel();
         }

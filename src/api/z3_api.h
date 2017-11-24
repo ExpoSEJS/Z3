@@ -397,23 +397,23 @@ typedef enum
        (xor3 l1 l2 l3) <=> (xor (xor l1 l2) l3)
 
    - Z3_OP_BSMUL_NO_OVFL: a predicate to check that bit-wise signed multiplication does not overflow.
-     Signed multiplication overflows if the operands have the same sign and the result of multiplication 
+     Signed multiplication overflows if the operands have the same sign and the result of multiplication
      does not fit within the available bits. \sa Z3_mk_bvmul_no_overflow.
 
    - Z3_OP_BUMUL_NO_OVFL: check that bit-wise unsigned multiplication does not overflow.
      Unsigned multiplication overflows if the result does not fit within the available bits.
      \sa Z3_mk_bvmul_no_overflow.
-    
+
    - Z3_OP_BSMUL_NO_UDFL: check that bit-wise signed multiplication does not underflow.
      Signed multiplication underflows if the operands have opposite signs and the result of multiplication
      does not fit within the avaialble bits. Z3_mk_bvmul_no_underflow.
-    
-   - Z3_OP_BSDIV_I: Binary signed division. 
+
+   - Z3_OP_BSDIV_I: Binary signed division.
      It has the same semantics as Z3_OP_BSDIV, but created in a context where the second operand can be assumed to be non-zero.
 
    - Z3_OP_BUDIV_I: Binary unsigned division.
      It has the same semantics as Z3_OP_BUDIV, but created in a context where the second operand can be assumed to be non-zero.
-    
+
    - Z3_OP_BSREM_I: Binary signed remainder.
      It has the same semantics as Z3_OP_BSREM, but created in a context where the second operand can be assumed to be non-zero.
 
@@ -979,7 +979,23 @@ typedef enum
 
       - Z3_OP_FPA_TO_IEEE_BV: Floating-point conversion to IEEE-754 bit-vector
 
-      - Z3_OP_INTERNAL: internal (often interpreted) symbol, but no additional information is exposed. Tools may use the string representation of the function declaration to obtain more information.
+      - Z3_OP_FPA_BVWRAP: (Implicitly) represents the internal bitvector-
+        representation of a floating-point term (used for the lazy encoding
+        of non-relevant terms in theory_fpa)
+
+      - Z3_OP_FPA_BV2RM: Conversion of a 3-bit bit-vector term to a
+        floating-point rouding-mode term
+
+        The conversion uses the following values:
+            0 = 000 = Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN,
+            1 = 001 = Z3_OP_FPA_RM_NEAREST_TIES_TO_AWAY,
+            2 = 010 = Z3_OP_FPA_RM_TOWARD_POSITIVE,
+            3 = 011 = Z3_OP_FPA_RM_TOWARD_NEGATIVE,
+            4 = 100 = Z3_OP_FPA_RM_TOWARD_ZERO.
+
+      - Z3_OP_INTERNAL: internal (often interpreted) symbol, but no additional
+        information is exposed. Tools may use the string representation of the
+        function declaration to obtain more information.
 
       - Z3_OP_UNINTERPRETED: kind used for uninterpreted symbols.
 */
@@ -1263,8 +1279,8 @@ typedef enum {
 
     Z3_OP_FPA_TO_IEEE_BV,
 
-    Z3_OP_FPA_MIN_I,
-    Z3_OP_FPA_MAX_I,
+    Z3_OP_FPA_BVWRAP,
+    Z3_OP_FPA_BV2RM,
 
     Z3_OP_INTERNAL,
 
@@ -1864,6 +1880,17 @@ extern "C" {
        def_API('Z3_mk_array_sort', SORT, (_in(CONTEXT), _in(SORT), _in(SORT)))
     */
     Z3_sort Z3_API Z3_mk_array_sort(Z3_context c, Z3_sort domain, Z3_sort range);
+
+    /**
+       \brief Create an array type with N arguments
+
+       \sa Z3_mk_select_n
+       \sa Z3_mk_store_n
+
+       def_API('Z3_mk_array_sort_n', SORT, (_in(CONTEXT), _in(UINT), _in_array(1, SORT), _in(SORT)))
+    */
+    Z3_sort Z3_API Z3_mk_array_sort_n(Z3_context c, unsigned n, Z3_sort const * domain, Z3_sort range);
+
 
     /**
        \brief Create a tuple type.
@@ -2958,6 +2985,15 @@ extern "C" {
     Z3_ast Z3_API Z3_mk_select(Z3_context c, Z3_ast a, Z3_ast i);
 
     /**
+       \brief n-ary Array read.
+       The argument \c a is the array and \c idxs are the indices of the array that gets read.
+
+       def_API('Z3_mk_select_n', AST, (_in(CONTEXT), _in(AST), _in(UINT), _in_array(2, AST)))
+
+    */
+    Z3_ast Z3_API Z3_mk_select_n(Z3_context c, Z3_ast a, unsigned n, Z3_ast const* idxs);
+
+    /**
        \brief Array update.
 
        The node \c a must have an array sort \ccode{[domain -> range]}, \c i must have sort \c domain,
@@ -2974,6 +3010,14 @@ extern "C" {
        def_API('Z3_mk_store', AST, (_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_store(Z3_context c, Z3_ast a, Z3_ast i, Z3_ast v);
+
+    /**
+       \brief n-ary Array update.
+
+       def_API('Z3_mk_store_n', AST, (_in(CONTEXT), _in(AST), _in(UINT), _in_array(2, AST), _in(AST)))
+
+    */
+    Z3_ast Z3_API Z3_mk_store_n(Z3_context c, Z3_ast a, unsigned n, Z3_ast const* idxs, Z3_ast v);
 
     /**
         \brief Create the constant array.
@@ -3015,6 +3059,15 @@ extern "C" {
         def_API('Z3_mk_array_default', AST, (_in(CONTEXT), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_array_default(Z3_context c, Z3_ast array);
+
+    /**
+       \brief Create array with the same interpretation as a function.
+       The array satisfies the property (f x) = (select (_ as-array f) x) 
+       for every argument x.
+
+       def_API('Z3_mk_as_array', AST, (_in(CONTEXT), _in(FUNC_DECL)))
+     */
+    Z3_ast Z3_API Z3_mk_as_array(Z3_context c, Z3_func_decl f);
     /*@}*/
 
     /** @name Sets */
@@ -3195,6 +3248,14 @@ extern "C" {
     */
     Z3_ast Z3_API Z3_mk_unsigned_int64(Z3_context c, __uint64 v, Z3_sort ty);
 
+    /**
+       \brief create a bit-vector numeral from a vector of Booleans.
+       
+       \sa Z3_mk_numeral
+       def_API('Z3_mk_bv_numeral', AST, (_in(CONTEXT), _in(UINT), _in_array(1, BOOL)))
+    */
+    Z3_ast Z3_API Z3_mk_bv_numeral(Z3_context c, unsigned sz, Z3_bool const* bits);
+
     /*@}*/
 
     /** @name Sequences and regular expressions */
@@ -3361,7 +3422,7 @@ extern "C" {
        \brief Convert string to integer.
 
        def_API('Z3_mk_str_to_int' ,AST ,(_in(CONTEXT), _in(AST)))
-     */    
+     */
     Z3_ast Z3_API Z3_mk_str_to_int(Z3_context c, Z3_ast s);
 
 
@@ -3369,7 +3430,7 @@ extern "C" {
        \brief Integer to string conversion.
 
        def_API('Z3_mk_int_to_str' ,AST ,(_in(CONTEXT), _in(AST)))
-     */    
+     */
     Z3_ast Z3_API Z3_mk_int_to_str(Z3_context c, Z3_ast s);
 
     /**
@@ -3838,6 +3899,7 @@ extern "C" {
 
     /**
        \brief Return the domain of the given array sort.
+       In the case of a multi-dimensional array, this function returns the sort of the first dimension.
 
        \pre Z3_get_sort_kind(c, t) == Z3_ARRAY_SORT
 
@@ -4859,12 +4921,12 @@ extern "C" {
     Z3_func_decl Z3_API Z3_get_as_array_func_decl(Z3_context c, Z3_ast a);
 
     /**
-       \brief Create a fresh func_interp object, add it to a model for a specified function. 
-       It has reference count 0.       
+       \brief Create a fresh func_interp object, add it to a model for a specified function.
+       It has reference count 0.
 
        \param c context
        \param m model
-       \param f function declaration 
+       \param f function declaration
        \param default_value default value for function interpretation
 
        def_API('Z3_add_func_interp', FUNC_INTERP, (_in(CONTEXT), _in(MODEL), _in(FUNC_DECL), _in(AST)))
@@ -4950,7 +5012,7 @@ extern "C" {
        \param args list of arguments. They should be constant values (such as integers) and be of the same types as the domain of the function.
        \param value value of the function when the parameters match args.
 
-       It is assumed that entries added to a function cover disjoint arguments. 
+       It is assumed that entries added to a function cover disjoint arguments.
        If an two entries are added with the same arguments, only the second insertion survives and the
        first inserted entry is removed.
 

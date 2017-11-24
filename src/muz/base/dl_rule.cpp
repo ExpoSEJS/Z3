@@ -44,6 +44,7 @@ Revision History:
 #include "tactic/filter_model_converter.h"
 #include "ast/scoped_proof.h"
 #include "ast/datatype_decl_plugin.h"
+#include "ast/ast_util.h"
 
 namespace datalog {
 
@@ -140,7 +141,7 @@ namespace datalog {
 
 
     void rule_manager::mk_rule(expr* fml, proof* p, rule_set& rules, symbol const& name) {
-        scoped_proof_mode _sc(m, m_ctx.generate_proof_trace()?PGM_FINE:PGM_DISABLED);
+        scoped_proof_mode _sc(m, m_ctx.generate_proof_trace()?PGM_ENABLED:PGM_DISABLED);
         proof_ref pr(p, m);
         expr_ref fml1(m);
         bind_variables(fml, true, fml1);
@@ -342,7 +343,7 @@ namespace datalog {
         }
         TRACE("dl", tout << rule_expr << "\n";);
 
-        scoped_proof_mode _sc(m, m_ctx.generate_proof_trace()?PGM_FINE:PGM_DISABLED);
+        scoped_proof_mode _sc(m, m_ctx.generate_proof_trace()?PGM_ENABLED:PGM_DISABLED);
         proof_ref pr(m);
         if (m_ctx.generate_proof_trace()) {
             pr = m.mk_asserted(rule_expr);
@@ -757,7 +758,7 @@ namespace datalog {
             );
 
             proof_ref pr(m);
-            qe::expr_quant_elim_star1 simpl(m, m_ctx.get_fparams());
+            qe::simplify_rewriter_star simpl(m);
             simpl(quant_tail, fixed_tail, pr);
         }
         else {

@@ -17,19 +17,21 @@
 #ifndef _THEORY_STR_H_
 #define _THEORY_STR_H_
 
+#include "util/trail.h"
+#include "util/union_find.h"
+#include "util/scoped_ptr_vector.h"
+#include "ast/ast_pp.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/seq_decl_plugin.h"
 #include "smt/smt_theory.h"
 #include "smt/params/theory_str_params.h"
-#include "util/trail.h"
-#include "ast/rewriter/th_rewriter.h"
 #include "smt/proto_model/value_factory.h"
 #include "smt/smt_model_generator.h"
-#include "ast/arith_decl_plugin.h"
 #include<set>
 #include<stack>
 #include<vector>
 #include<map>
-#include "ast/seq_decl_plugin.h"
-#include "util/union_find.h"
 
 namespace smt {
 
@@ -265,6 +267,10 @@ protected:
 
     str_value_factory * m_factory;
 
+    // Unique identifier appended to unused variables to ensure that model construction
+    // does not introduce equalities when they weren't enforced.
+    unsigned m_unused_id;
+
     // terms we couldn't go through set_up_axioms() with because they weren't internalized
     expr_ref_vector m_delayed_axiom_setup_terms;
 
@@ -291,6 +297,7 @@ protected:
     bool avoidLoopCut;
     bool loopDetected;
     obj_map<expr, std::stack<T_cut*> > cut_var_map;
+    scoped_ptr_vector<T_cut> m_cut_allocs;
     expr_ref m_theoryStrOverlapAssumption_term;
 
     obj_hashtable<expr> variable_set;
@@ -355,8 +362,8 @@ protected:
     // cache mapping each string S to Length(S)
     obj_map<expr, app*> length_ast_map;
 
-    th_union_find m_find;
     th_trail_stack m_trail_stack;
+    th_union_find m_find;
     theory_var get_var(expr * n) const;
     expr * get_eqc_next(expr * n);
     app * get_ast(theory_var i);

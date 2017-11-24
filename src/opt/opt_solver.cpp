@@ -47,8 +47,9 @@ namespace opt {
         m_dump_benchmarks(false),
         m_first(true),
         m_was_unknown(false) {
+        solver::updt_params(p);
         m_params.updt_params(p);
-        if (m_params.m_case_split_strategy == CS_ACTIVITY_DELAY_NEW) {
+        if (m_params.m_case_split_strategy == CS_ACTIVITY_DELAY_NEW) {            
             m_params.m_relevancy_lvl = 0;
         }
         // m_params.m_auto_config = false;
@@ -161,7 +162,7 @@ namespace opt {
         TRACE("opt_verbose", {
             tout << "context size: " << m_context.size() << "\n";            
             for (unsigned i = 0; i < m_context.size(); ++i) {
-                tout << mk_pp(m_context.get_formulas()[i], m_context.m()) << "\n";
+                tout << mk_pp(m_context.get_formula(i), m_context.m()) << "\n";
             }
         });
         stopwatch w;
@@ -330,7 +331,7 @@ namespace opt {
     
     expr * opt_solver::get_assertion(unsigned idx) const {
         SASSERT(idx < get_num_assertions());
-        return m_context.get_formulas()[idx];
+        return m_context.get_formula(idx);
     }
         
     smt::theory_var opt_solver::add_objective(app* term) {

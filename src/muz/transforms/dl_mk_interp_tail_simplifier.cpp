@@ -398,8 +398,8 @@ namespace datalog {
     }
 
     bool mk_interp_tail_simplifier::propagate_variable_equivalences(rule * r, rule_ref& res) {
-      if (!m_context.get_params ().xform_tail_simplifier_pve ())
-        return false;
+        if (!m_context.get_params ().xform_tail_simplifier_pve ())
+            return false;
         unsigned u_len = r->get_uninterpreted_tail_size();
         unsigned len = r->get_tail_size();
         if (u_len == len) {
@@ -607,6 +607,9 @@ namespace datalog {
         rule_set * res = alloc(rule_set, m_context);
         if (transform_rules(source, *res)) {
             res->inherit_predicates(source);
+            TRACE("dl", 
+                  source.display(tout); 
+                  res->display(tout););
         } else {
             dealloc(res);
             res = 0;

@@ -6,16 +6,14 @@ Copyright (c) 2015 Microsoft Corporation
 
 #include "util/trace.h"
 #include "util/vector.h"
+#include "util/sorting_network.h"
 #include "ast/ast.h"
 #include "ast/ast_pp.h"
 #include "ast/reg_decl_plugins.h"
-#include "util/sorting_network.h"
-#include "smt/smt_kernel.h"
-#include "model/model_smt2_pp.h"
-#include "smt/params/smt_params.h"
 #include "ast/ast_util.h"
-
-
+#include "model/model_smt2_pp.h"
+#include "smt/smt_kernel.h"
+#include "smt/params/smt_params.h"
 
 struct ast_ext {
     ast_manager& m;
@@ -220,7 +218,7 @@ static void test_sorting_eq(unsigned n, unsigned k) {
         TRACE("pb",
               unsigned sz = solver.size();
               for (unsigned i = 0; i < sz; ++i) {
-                  tout << mk_pp(solver.get_formulas()[i], m) << "\n";
+                  tout << mk_pp(solver.get_formula(i), m) << "\n";
               });
         model_ref model;
         solver.get_model(model);
@@ -266,7 +264,7 @@ static void test_sorting_le(unsigned n, unsigned k) {
         TRACE("pb",
               unsigned sz = solver.size();
               for (unsigned i = 0; i < sz; ++i) {
-                  tout << mk_pp(solver.get_formulas()[i], m) << "\n";
+                  tout << mk_pp(solver.get_formula(i), m) << "\n";
               });
         model_ref model;
         solver.get_model(model);
@@ -314,7 +312,7 @@ void test_sorting_ge(unsigned n, unsigned k) {
         TRACE("pb",
               unsigned sz = solver.size();
               for (unsigned i = 0; i < sz; ++i) {
-                  tout << mk_pp(solver.get_formulas()[i], m) << "\n";
+                  tout << mk_pp(solver.get_formula(i), m) << "\n";
               });
         model_ref model;
         solver.get_model(model);
@@ -388,7 +386,6 @@ void test_at_most_1(unsigned n, bool full) {
             std::cout << atom << "\n";
             if (is_true) ++k;
         }
-        VERIFY(l_false == solver.check());
         if (k > 1) {
             solver.assert_expr(result1);
         }
@@ -427,6 +424,12 @@ void tst_sorting_network() {
         test_at_most_1(i, true);
         test_at_most_1(i, false);
     }
+
+    for (unsigned n = 2; n < 20; ++n) {
+        std::cout << "verify eq-1 out of " << n << "\n";
+        test_sorting_eq(n, 1);
+    }
+
     test_at_most1();
 
     test_sorting_eq(11,7);

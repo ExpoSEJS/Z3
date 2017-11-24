@@ -121,6 +121,20 @@ public:
     explicit parameter(unsigned ext_id, bool):m_kind(PARAM_EXTERNAL), m_ext_id(ext_id) {}
     parameter(parameter const&);
 
+    parameter(parameter && other) : m_kind(other.m_kind) {
+        switch (other.m_kind) {
+        case PARAM_INT: m_int = other.get_int(); break;
+        case PARAM_AST: m_ast = other.get_ast(); break;
+        case PARAM_SYMBOL: m_symbol = other.m_symbol; break;
+        case PARAM_RATIONAL: m_rational = 0; std::swap(m_rational, other.m_rational); break;
+        case PARAM_DOUBLE: m_dval = other.m_dval; break;
+        case PARAM_EXTERNAL: m_ext_id = other.m_ext_id; break;
+        default:
+            UNREACHABLE();
+            break;
+        }
+    }
+
     ~parameter();
 
     parameter& operator=(parameter const& other);
@@ -335,13 +349,17 @@ public:
               unsigned num_parameters = 0, parameter const * parameters = 0, bool private_parameters = false):
         decl_info(family_id, k, num_parameters, parameters, private_parameters), m_num_elements(num_elements) {
     }
-    sort_info(sort_info const& other) : decl_info(other), m_num_elements(other.m_num_elements) {
+    sort_info(sort_info const& other) : decl_info(other), m_num_elements(other.m_num_elements) {            
     }
+    sort_info(decl_info const& di, sort_size const& num_elements) : 
+        decl_info(di), m_num_elements(num_elements) {}
+
     ~sort_info() {}
 
     bool is_infinite() const { return m_num_elements.is_infinite(); }
     bool is_very_big() const { return m_num_elements.is_very_big(); }
     sort_size const & get_num_elements() const { return m_num_elements; }
+    void set_num_elements(sort_size const& s) { m_num_elements = s; }
 };
 
 std::ostream & operator<<(std::ostream & out, sort_info const & info);
@@ -567,6 +585,7 @@ public:
     bool is_very_big() const { return get_info() == 0 || get_info()->is_very_big(); }
     bool is_sort_of(family_id fid, decl_kind k) const { return get_family_id() == fid && get_decl_kind() == k; }
     sort_size const & get_num_elements() const { return get_info()->get_num_elements(); }
+    void set_num_elements(sort_size const& s) { get_info()->set_num_elements(s); }
     unsigned get_size() const { return get_obj_size(); }
 };
 
@@ -890,6 +909,8 @@ struct ast_eq_proc {
     }
 };
 
+class ast_translation;
+
 class ast_table : public chashtable<ast*, obj_ptr_hash<ast>, ast_eq_proc> {
 public:
     void erase(ast * n);
@@ -924,6 +945,8 @@ protected:
         m_manager   = m;
         m_family_id = id;
     }
+
+    virtual void inherit(decl_plugin* other_p, ast_translation& ) { }
 
     friend class ast_manager;
 
@@ -988,7 +1011,7 @@ public:
 
     // Return true if the interpreted sort s does not depend on uninterpreted sorts.
     // This may be the case, for example, for array and datatype sorts.
-    virtual bool is_fully_interp(sort const * s) const { return true; }
+    virtual bool is_fully_interp(sort * s) const { return true; }
 
     // Event handlers for deleting/translating PARAM_EXTERNAL
     virtual void del(parameter const & p) {}
@@ -1373,8 +1396,7 @@ public:
 
 enum proof_gen_mode {
     PGM_DISABLED,
-    PGM_COARSE,
-    PGM_FINE
+    PGM_ENABLED
 };
 
 // -----------------------------------
@@ -1655,6 +1677,8 @@ public:
 
     sort * mk_sort(family_id fid, decl_kind k, unsigned num_parameters = 0, parameter const * parameters = 0);
 
+    sort * substitute(sort* s, unsigned n, sort * const * src, sort * const * dst);
+
     sort * mk_bool_sort() const { return m_bool_sort; }
 
     sort * mk_proof_sort() const { return m_proof_sort; }
@@ -1667,7 +1691,7 @@ public:
        \brief A sort is "fully" interpreted if it is interpreted,
        and doesn't depend on other uninterpreted sorts.
     */
-    bool is_fully_interp(sort const * s) const;
+    bool is_fully_interp(sort * s) const;
 
     func_decl * mk_func_decl(family_id fid, decl_kind k, unsigned num_parameters, parameter const * parameters,
                              unsigned arity, sort * const * domain, sort * range = 0);
@@ -2063,15 +2087,14 @@ protected:
     proof * mk_proof(family_id fid, decl_kind k, expr * arg1, expr * arg2);
     proof * mk_proof(family_id fid, decl_kind k, expr * arg1, expr * arg2, expr * arg3);
 
+    proof * mk_undef_proof() const { return m_undef_proof; }
+
 public:
     bool proofs_enabled() const { return m_proof_mode != PGM_DISABLED; }
     bool proofs_disabled() const { return m_proof_mode == PGM_DISABLED; }
-    bool coarse_grain_proofs() const { return m_proof_mode == PGM_COARSE; }
-    bool fine_grain_proofs() const { return m_proof_mode == PGM_FINE; }
     proof_gen_mode proof_mode() const { return m_proof_mode; }
     void toggle_proof_mode(proof_gen_mode m) { m_proof_mode = m; } // APIs for creating proof objects return [undef]
 
-    proof * mk_undef_proof() const { return m_undef_proof; }
 
     bool is_proof(expr const * n) const { return is_app(n) && to_app(n)->get_decl()->get_range() == m_proof_sort; }
 
@@ -2469,6 +2492,7 @@ public:
     inc_ref_proc(ast_manager & m):m_manager(m) {}
     void operator()(AST * n) { m_manager.inc_ref(n); }
 };
+
 
 #endif /* AST_H_ */
 

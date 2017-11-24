@@ -148,11 +148,8 @@ namespace smt {
     }
 
     void qi_queue::instantiate() {
-        svector<entry>::iterator it               = m_new_entries.begin();
-        svector<entry>::iterator end              = m_new_entries.end();
         unsigned                 since_last_check = 0;
-        for (; it != end; ++it) {
-            entry & curr       = *it;
+        for (entry & curr : m_new_entries) {
             fingerprint * f    = curr.m_qb;
             quantifier * qa    = static_cast<quantifier*>(f->get_data());
 
@@ -227,9 +224,8 @@ namespace smt {
         TRACE("qi_queue_instance", tout << "new instance:\n" << mk_pp(instance, m_manager) << "\n";);
         expr_ref  s_instance(m_manager);
         proof_ref pr(m_manager);
-        simplifier & simp = m_context.get_simplifier();
-        simp(instance, s_instance, pr);
-        TRACE("qi_queue_bug", tout << "new instance after simplification:\n" << mk_pp(s_instance, m_manager) << "\n";);
+        m_context.get_rewriter()(instance, s_instance, pr);
+        TRACE("qi_queue_bug", tout << "new instance after simplification:\n" << s_instance << "\n";);
         if (m_manager.is_true(s_instance)) {
             TRACE("checker", tout << "reduced to true, before:\n" << mk_ll_pp(instance, m_manager););
 

@@ -23,7 +23,7 @@ Revision History:
 #include "ast/ast_ll_pp.h"
 #include "util/warning.h"
 #include "smt/smt_quick_checker.h"
-#include "ast/proof_checker/proof_checker.h"
+#include "ast/proofs/proof_checker.h"
 #include "ast/ast_util.h"
 #include "smt/uses_theory.h"
 #include "model/model.h"
@@ -224,20 +224,6 @@ namespace smt {
 
     void context::copy_plugins(context& src, context& dst) {
 
-        // copy missing simplifier_plugins
-        // remark: some simplifier_plugins are automatically created by the asserted_formulas class.
-        simplifier & src_s = src.get_simplifier();
-        simplifier & dst_s = dst.get_simplifier();
-        ptr_vector<simplifier_plugin>::const_iterator it1  = src_s.begin_plugins();
-        ptr_vector<simplifier_plugin>::const_iterator end1 = src_s.end_plugins();
-        for (; it1 != end1; ++it1) {
-            simplifier_plugin * p = *it1;
-            if (dst_s.get_plugin(p->get_family_id()) == 0) {
-                dst.register_plugin(p->mk_fresh());
-            }
-            SASSERT(dst_s.get_plugin(p->get_family_id()) != 0);
-        }
-
         // copy theory plugins
         for (theory* old_th : src.m_theory_set) {
             theory * new_th = old_th->mk_fresh(&dst);
@@ -298,7 +284,6 @@ namespace smt {
         SASSERT(validate_justification(v, d, j));
         d.set_justification(j);
     }
-
 
     void context::assign_core(literal l, b_justification j, bool decision) {
         TRACE("assign_core", tout << (decision?"decision: ":"propagating: ") << l << " ";
@@ -501,6 +486,7 @@ namespace smt {
     */
     void context::add_eq(enode * n1, enode * n2, eq_justification js) {
         unsigned old_trail_size = m_trail_stack.size();
+        scoped_suspend_rlimit _suspend_cancel(m_manager.limit());
 
         try {
             TRACE("add_eq", tout << "assigning: #" << n1->get_owner_id() << " = #" << n2->get_owner_id() << "\n";);
@@ -555,10 +541,14 @@ namespace smt {
                 mark_as_relevant(r1);
             }
 
+            TRACE("add_eq", tout << "to trail\n";);
+
             push_trail(add_eq_trail(r1, n1, r2->get_num_parents()));
 
+            TRACE("add_eq", tout << "qmanager add_eq\n";);
             m_qmanager->add_eq_eh(r1, r2);
 
+            TRACE("add_eq", tout << "merge theory_vars\n";);
             merge_theory_vars(n2, n1, js);
 
             // 'Proof' tree
@@ -591,6 +581,7 @@ namespace smt {
 #endif
 
 
+            TRACE("add_eq", tout << "remove_parents_from_cg_table\n";);
             remove_parents_from_cg_table(r1);
 
             enode * curr = r1;
@@ -602,8 +593,10 @@ namespace smt {
 
             SASSERT(r1->get_root() == r2);
 
+            TRACE("add_eq", tout << "reinsert_parents_into_cg_table\n";);
             reinsert_parents_into_cg_table(r1, r2, n1, n2, js);
 
+            TRACE("add_eq", tout << "propagate_bool_enode_assignment\n";);
             if (n2->is_bool())
                 propagate_bool_enode_assignment(r1, r2, n1, n2);
 
@@ -618,6 +611,7 @@ namespace smt {
         catch (...) {
             // Restore trail size since procedure was interrupted in the middle.
             // If the add_eq_trail remains on the trail stack, then Z3 may crash when the destructor is invoked.
+            TRACE("add_eq", tout << "add_eq interrupted. This is unsafe " << m_manager.limit().get_cancel_flag() << "\n";);
             m_trail_stack.shrink(old_trail_size);
             throw;
         }
@@ -907,7 +901,7 @@ namespace smt {
     }
 
     /**
-       \brief Propabate the boolean assignment when two equivalence classes are merged.
+       \brief Propagate the boolean assignment when two equivalence classes are merged.
     */
     void context::propagate_bool_enode_assignment(enode * r1, enode * r2, enode * n1, enode * n2) {
         SASSERT(n1->is_bool());
@@ -986,7 +980,7 @@ namespace smt {
             enode * parent = *it;
             if (parent->is_cgc_enabled()) {
                 TRACE("add_eq_parents", tout << "removing: #" << parent->get_owner_id() << "\n";);
-                CTRACE("add_eq", !parent->is_cgr(),
+                CTRACE("add_eq", !parent->is_cgr() || !m_cg_table.contains_ptr(parent),
                        tout << "old num_parents: " << r2_num_parents << ", num_parents: " << r2->m_parents.size() << ", parent: #" <<
                        parent->get_owner_id() << ", parents: \n";
                        for (unsigned i = 0; i < r2->m_parents.size(); i++) {
@@ -1291,7 +1285,7 @@ namespace smt {
         else {
             if (depth >= m_almost_cg_tables.size()) {
                 unsigned old_sz = m_almost_cg_tables.size();
-                m_almost_cg_tables.resize(depth+1, 0);
+                m_almost_cg_tables.resize(depth+1);
                 for (unsigned i = old_sz; i < depth + 1; i++)
                     m_almost_cg_tables[i] = alloc(almost_cg_table);
             }
@@ -1620,11 +1614,9 @@ namespace smt {
        \brief Return set of assigned literals as expressions.
     */
     void context::get_assignments(expr_ref_vector& assignments) {
-        literal_vector::const_iterator it  = m_assigned_literals.begin();
-        literal_vector::const_iterator end = m_assigned_literals.end();
-        for (; it != end; ++it) {
+        for (literal lit : m_assigned_literals) {
             expr_ref e(m_manager);
-            literal2expr(*it, e);
+            literal2expr(lit, e);
             assignments.push_back(e);
         }
     }
@@ -1699,10 +1691,8 @@ namespace smt {
     }
 
     bool context::propagate_theories() {
-        ptr_vector<theory>::iterator it  = m_theory_set.begin();
-        ptr_vector<theory>::iterator end = m_theory_set.end();
-        for (; it != end; ++it) {
-            (*it)->propagate();
+        for (theory * t : m_theory_set) {
+            t->propagate();
             if (inconsistent())
                 return false;
         }
@@ -1738,10 +1728,8 @@ namespace smt {
     }
 
     bool context::can_theories_propagate() const {
-        ptr_vector<theory>::const_iterator it  = m_theory_set.begin();
-        ptr_vector<theory>::const_iterator end = m_theory_set.end();
-        for (; it != end; ++it) {
-            if ((*it)->can_propagate()) {
+        for (theory* t : m_theory_set) {
+            if (t->can_propagate()) {
                 return true;
             }
         }
@@ -1826,7 +1814,7 @@ namespace smt {
     }
 
     void context::rescale_bool_var_activity() {
-        TRACE("case_split", tout << "rescale\n";);
+        TRACE("case_split", tout << "rescale\n";);        
         svector<double>::iterator it  = m_activity.begin();
         svector<double>::iterator end = m_activity.end();
         for (; it != end; ++it)
@@ -1973,10 +1961,8 @@ namespace smt {
         m_case_split_queue->push_scope();
         m_asserted_formulas.push_scope();
 
-        ptr_vector<theory>::iterator it  = m_theory_set.begin();
-        ptr_vector<theory>::iterator end = m_theory_set.end();
-        for (; it != end; ++it)
-            (*it)->push_scope_eh();
+        for (theory* t : m_theory_set) 
+            t->push_scope_eh();
         CASSERT("context", check_invariant());
     }
 
@@ -2151,10 +2137,7 @@ namespace smt {
             }
             for (unsigned i = new_scope_lvl; i <= lim; i++) {
                 clause_vector & v = m_clauses_to_reinit[i];
-                clause_vector::iterator it  = v.begin();
-                clause_vector::iterator end = v.end();
-                for (; it != end; ++it) {
-                    clause * cls        = *it;
+                for (clause* cls : v) {
                     cache_generation(cls, new_scope_lvl);
                 }
             }
@@ -2251,10 +2234,7 @@ namespace smt {
         }
         for (unsigned i = m_scope_lvl+1; i <= lim; i++) {
             clause_vector & v = m_clauses_to_reinit[i];
-            clause_vector::iterator it  = v.begin();
-            clause_vector::iterator end = v.end();
-            for (; it != end; ++it) {
-                clause * cls        = *it;
+            for (clause* cls : v) {
                 if (cls->deleted()) {
                     cls->release_atoms(m_manager);
                     cls->m_reinit              = false;
@@ -2845,11 +2825,6 @@ namespace smt {
         return false;
     }
 
-    void context::register_plugin(simplifier_plugin * s) {
-        SASSERT(!already_internalized());
-        SASSERT(m_scope_lvl == 0);
-        m_asserted_formulas.register_simplifier_plugin(s);
-    }
 
 #ifdef Z3DEBUG
     /**
@@ -2932,10 +2907,8 @@ namespace smt {
         TRACE("flush", tout << "m_scope_lvl: " << m_scope_lvl << "\n";);
         m_relevancy_propagator = 0;
         m_model_generator->reset();
-        ptr_vector<theory>::iterator it  = m_theory_set.begin();
-        ptr_vector<theory>::iterator end = m_theory_set.end();
-        for (; it != end; ++it)
-            (*it)->flush_eh();
+        for (theory* t : m_theory_set) 
+            t->flush_eh();
         undo_trail_stack(0);
         m_qmanager = 0;
         del_clauses(m_aux_clauses, 0);
@@ -3193,10 +3166,8 @@ namespace smt {
     }
 
     void context::reset_assumptions() {
-        literal_vector::iterator it  = m_assumptions.begin();
-        literal_vector::iterator end = m_assumptions.end();
-        for (; it != end; ++it)
-            get_bdata(it->var()).m_assumption = false;
+        for (literal lit : m_assumptions) 
+            get_bdata(lit.var()).m_assumption = false;
         m_assumptions.reset();
     }
 
@@ -4383,7 +4354,7 @@ namespace smt {
     void context::add_rec_funs_to_model() {
         ast_manager& m = m_manager;
         SASSERT(m_model);
-        for (unsigned i = 0; i < m_asserted_formulas.get_num_formulas(); ++i) {
+        for (unsigned i = 0; !get_cancel_flag() && i < m_asserted_formulas.get_num_formulas(); ++i) {
             expr* e = m_asserted_formulas.get_formula(i);
             if (is_quantifier(e)) {
                 TRACE("context", tout << mk_pp(e, m) << "\n";);
@@ -4393,9 +4364,18 @@ namespace smt {
                 expr* fn = to_app(q->get_pattern(0))->get_arg(0);
                 expr* body = to_app(q->get_pattern(1))->get_arg(0);
                 SASSERT(is_app(fn));
+                // reverse argument order so that variable 0 starts at the beginning.
+                expr_ref_vector subst(m);
+                for (expr* arg : *to_app(fn)) {
+                    subst.push_back(arg);
+                }
+                expr_ref bodyr(m);
+                var_subst sub(m, true);
+                TRACE("context", tout << expr_ref(q, m) << " " << subst << "\n";);
+                sub(body, subst.size(), subst.c_ptr(), bodyr);
                 func_decl* f = to_app(fn)->get_decl();
                 func_interp* fi = alloc(func_interp, m, f->get_arity());
-                fi->set_else(body);
+                fi->set_else(bodyr);
                 m_model->register_decl(f, fi);
             }
         }

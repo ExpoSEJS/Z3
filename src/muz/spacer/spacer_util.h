@@ -26,12 +26,13 @@ Revision History:
 #include "ast/ast_pp.h"
 #include "util/obj_hashtable.h"
 #include "util/ref_vector.h"
-#include "ast/simplifier/simplifier.h"
 #include "util/trace.h"
 #include "util/vector.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
+#include "ast/ast_util.h"
+#include "ast/expr_map.h"
 #include "model/model.h"
 
 #include "util/stopwatch.h"
@@ -73,15 +74,6 @@ inline std::ostream& operator<<(std::ostream& out, pp_level const& p)
 }
 
 
-struct scoped_watch {
-    stopwatch &m_sw;
-    scoped_watch (stopwatch &sw, bool reset=false): m_sw(sw)
-        {
-            if(reset) { m_sw.reset(); }
-            m_sw.start ();
-        }
-    ~scoped_watch () {m_sw.stop ();}
-};
 
 
 typedef ptr_vector<app> app_vector;

@@ -1228,18 +1228,25 @@ bool theory_seq::is_solved() {
     return true;
 }
 
-void theory_seq::linearize(dependency* dep, enode_pair_vector& eqs, literal_vector& lits) const {
+/**
+   \brief while extracting dependency literals ensure that they have all been asserted on the context.
+*/
+bool theory_seq::linearize(dependency* dep, enode_pair_vector& eqs, literal_vector& lits) const {
+    context & ctx = get_context();    
+    DEBUG_CODE(for (literal lit : lits) SASSERT(ctx.get_assignment(lit) == l_true); );
+    bool asserted = true;
     svector<assumption> assumptions;
     const_cast<dependency_manager&>(m_dm).linearize(dep, assumptions);
-    for (unsigned i = 0; i < assumptions.size(); ++i) {
-        assumption const& a = assumptions[i];
+    for (assumption const& a : assumptions) {
         if (a.lit != null_literal) {
             lits.push_back(a.lit);
+            asserted &= ctx.get_assignment(a.lit) == l_true;
         }
         if (a.n1 != 0) {
             eqs.push_back(enode_pair(a.n1, a.n2));
         }
     }
+    return asserted;
 }
 
 
@@ -1257,7 +1264,8 @@ void theory_seq::propagate_lit(dependency* dep, unsigned n, literal const* _lits
 
     ctx.mark_as_relevant(lit);
     enode_pair_vector eqs;
-    linearize(dep, eqs, lits);
+    if (!linearize(dep, eqs, lits)) 
+        return;
     TRACE("seq",
           tout << "assert:";
           ctx.display_detailed_literal(tout, lit);
@@ -1276,7 +1284,8 @@ void theory_seq::set_conflict(dependency* dep, literal_vector const& _lits) {
     context& ctx = get_context();
     enode_pair_vector eqs;
     literal_vector lits(_lits);
-    linearize(dep, eqs, lits);
+    if (!linearize(dep, eqs, lits)) 
+        return;
     TRACE("seq", display_deps(tout << "assert conflict:", lits, eqs););
     m_new_propagation = true;
     ctx.set_conflict(
@@ -1292,7 +1301,8 @@ void theory_seq::propagate_eq(dependency* dep, enode* n1, enode* n2) {
     context& ctx = get_context();
     literal_vector lits;
     enode_pair_vector eqs;
-    linearize(dep, eqs, lits);
+    if (!linearize(dep, eqs, lits))
+        return;
     TRACE("seq",
           tout << "assert: " << mk_pp(n1->get_owner(), m) << " = " << mk_pp(n2->get_owner(), m) << " <-\n";
           display_deps(tout, dep); 
@@ -1843,12 +1853,12 @@ bool theory_seq::solve_ne(unsigned idx) {
     ne const& n = m_nqs[idx];
 
     unsigned num_undef_lits = 0;
-    for (unsigned i = 0; i < n.lits().size(); ++i) {
-        switch (ctx.get_assignment(n.lits(i))) {
+    for (literal lit : n.lits()) {
+        switch (ctx.get_assignment(lit)) {
         case l_false:
             TRACE("seq", display_disequation(tout << "has false literal\n", n);
-                  ctx.display_literal_verbose(tout, n.lits(i));                  
-                  tout << "\n" << n.lits(i) << " " << ctx.is_relevant(n.lits(i)) << "\n";
+                  ctx.display_literal_verbose(tout, lit);
+                  tout << "\n" << lit << " " << ctx.is_relevant(lit) << "\n";
                   );
             return true;
         case l_true:
@@ -1952,8 +1962,7 @@ bool theory_seq::solve_ne(unsigned idx) {
     if (num_undef_lits == 1 && new_ls.empty()) {
         literal_vector lits;
         literal undef_lit = null_literal;
-        for (unsigned i = 0; i < new_lits.size(); ++i) {
-            literal lit = new_lits[i];
+        for (literal lit : new_lits) {
             switch (ctx.get_assignment(lit)) {
             case l_true:
                 lits.push_back(lit);
@@ -2559,8 +2568,8 @@ void theory_seq::display_disequations(std::ostream& out) const {
 }
 
 void theory_seq::display_disequation(std::ostream& out, ne const& e) const {
-    for (unsigned j = 0; j < e.lits().size(); ++j) {
-        out << e.lits(j) << " ";
+    for (literal lit : e.lits()) {
+        out << lit << " ";
     }
     if (e.lits().size() > 0) {
         out << "\n";
@@ -3027,6 +3036,8 @@ expr_ref theory_seq::expand1(expr* e0, dependency*& eqs) {
             enode* n1 = ctx.get_enode(num);
             enode* n2 = ctx.get_enode(e1);
             res = m_util.str.mk_string(symbol(val.to_string().c_str()));
+#if 1
+            // TBD remove this: using roots is unsound for propagation.
             if (n1->get_root() == n2->get_root()) {
                 result = res;
                 deps = m_dm.mk_join(deps, m_dm.mk_leaf(assumption(n1, n2)));
@@ -3037,6 +3048,12 @@ expr_ref theory_seq::expand1(expr* e0, dependency*& eqs) {
                 add_axiom(mk_eq(num, e1, false), ~mk_eq(e, res, false));
                 result = e;
             }
+#else
+            TRACE("seq", tout << "add axiom\n";);                
+            add_axiom(~mk_eq(num, e1, false), mk_eq(e, res, false));
+            add_axiom(mk_eq(num, e1, false), ~mk_eq(e, res, false));
+            result = e;
+#endif
         }
         else {
             result = e;
@@ -3466,6 +3483,8 @@ static bool get_arith_value(context& ctx, theory_id afid, expr* e, expr_ref& v) 
 bool theory_seq::get_num_value(expr* e, rational& val) const {
     context& ctx = get_context();
     expr_ref _val(m);
+	if (!ctx.e_internalized(e))
+		return false;
     enode* next = ctx.get_enode(e), *n = next;
     do { 
         if (get_arith_value(ctx, m_autil.get_family_id(), next->get_owner(), _val) && m_autil.is_numeral(_val, val) && val.is_int()) {
@@ -3795,11 +3814,11 @@ literal theory_seq::mk_eq_empty(expr* _e, bool phase) {
     }
     expr_ref_vector concats(m);
     m_util.str.get_concat(e, concats);
-    for (unsigned i = 0; i < concats.size(); ++i) {
-        if (m_util.str.is_unit(concats[i].get())) {
+    for (expr* c : concats) {
+        if (m_util.str.is_unit(c)) {
             return false_literal;
         }
-        if (m_util.str.is_string(concats[i].get(), s) && s.length() > 0) {
+        if (m_util.str.is_string(c, s) && s.length() > 0) {
             return false_literal;
         }
     }
@@ -3870,8 +3889,9 @@ void theory_seq::propagate_eq(dependency* deps, literal_vector const& _lits, exp
     
     literal_vector lits(_lits);
     enode_pair_vector eqs;
-    linearize(deps, eqs, lits);
-
+    if (!linearize(deps, eqs, lits))
+        return;
+    
     if (add_to_eqs) {
         deps = mk_join(deps, _lits);
         new_eq_eh(deps, n1, n2);

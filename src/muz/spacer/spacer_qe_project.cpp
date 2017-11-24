@@ -25,6 +25,7 @@ Revision History:
 #include "ast/ast_pp.h"
 #include "ast/expr_functors.h"
 #include "ast/expr_substitution.h"
+#include "ast/ast_util.h"
 
 #include "ast/rewriter/expr_replacer.h"
 #include "ast/rewriter/expr_safe_replace.h"
@@ -65,7 +66,6 @@ class peq {
     app_ref             m_peq;      // partial equality application
     app_ref             m_eq;       // equivalent std equality using def. of partial eq
     array_util          m_arr_u;
-    ast_eq_proc         m_eq_proc;  // for checking if two asts are equal
 
 public:
     static const char* PARTIAL_EQ;
@@ -101,7 +101,7 @@ peq::peq (app* p, ast_manager& m):
     VERIFY (is_partial_eq (p));
     SASSERT (m_arr_u.is_array (m_lhs) &&
              m_arr_u.is_array (m_rhs) &&
-             m_eq_proc (m.get_sort (m_lhs), m.get_sort (m_rhs)));
+             ast_eq_proc() (m.get_sort (m_lhs), m.get_sort (m_rhs)));
     for (unsigned i = 2; i < p->get_num_args (); i++) {
         m_diff_indices.push_back (p->get_arg (i));
     }
@@ -120,7 +120,7 @@ peq::peq (expr* lhs, expr* rhs, unsigned num_indices, expr * const * diff_indice
 {
     SASSERT (m_arr_u.is_array (lhs) &&
              m_arr_u.is_array (rhs) &&
-             m_eq_proc (m.get_sort (lhs), m.get_sort (rhs)));
+             ast_eq_proc() (m.get_sort (lhs), m.get_sort (rhs)));
     ptr_vector<sort> sorts;
     sorts.push_back (m.get_sort (m_lhs));
     sorts.push_back (m.get_sort (m_rhs));
@@ -1208,7 +1208,7 @@ namespace qe {
 
         void operator()(model& mdl, app_ref_vector& vars, expr_ref& fml) {
           expr_map map (m);
-        	operator()(mdl, vars, fml, map);
+            operator()(mdl, vars, fml, map);
         }
 
         void operator()(model& mdl, app_ref_vector& vars, expr_ref& fml, expr_map& map) {

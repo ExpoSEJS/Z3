@@ -36,7 +36,7 @@ class iz3translation : public iz3base {
 
     /** This is thrown when the proof cannot be translated. */
     struct unsupported: public iz3_exception {
-        unsupported(): iz3_exception("unsupported") {}
+    unsupported(): iz3_exception("unsupported") { }
     };
 
     static iz3translation *create(iz3mgr &mgr,
@@ -47,9 +47,9 @@ class iz3translation : public iz3base {
 
  protected:
  iz3translation(iz3mgr &mgr,
-		const std::vector<std::vector<ast> > &_cnsts,
-		const std::vector<int> &_parents,
-		const std::vector<ast> &_theory)
+                const std::vector<std::vector<ast> > &_cnsts,
+                const std::vector<int> &_parents,
+                const std::vector<ast> &_theory)
      : iz3base(mgr,_cnsts,_parents,_theory)  {}
 };
 

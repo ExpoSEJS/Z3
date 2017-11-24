@@ -197,6 +197,9 @@ public:
     }
 
     virtual void execute(cmd_context & ctx) {
+        if (!m_tactic) {
+            throw cmd_exception("check-sat-using needs a tactic argument");
+        }
         params_ref p = ctx.params().merge_default_params(ps());
         tactic_ref tref = using_params(sexpr2tactic(ctx, m_tactic), p);
         tref->set_logic(ctx.get_logic());
@@ -255,11 +258,9 @@ public:
             result->m_core.append(core_elems.size(), core_elems.c_ptr());
             if (p.get_bool("print_unsat_core", false)) {
                 ctx.regular_stream() << "(unsat-core";
-                ptr_vector<expr>::const_iterator it  = core_elems.begin();
-                ptr_vector<expr>::const_iterator end = core_elems.end();
-                for (; it != end; ++it) {
+                for (expr * e : core_elems) {
                     ctx.regular_stream() << " ";
-                    ctx.display(ctx.regular_stream(), *it);
+                    ctx.display(ctx.regular_stream(), e);
                 }
                 ctx.regular_stream() << ")" << std::endl;
             }

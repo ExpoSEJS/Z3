@@ -73,7 +73,7 @@ extern "C" {
                      ('P' == *m) ||
                      ('+' == *m))))) {
                 SET_ERROR_CODE(Z3_PARSER_ERROR);
-                return 0;
+                RETURN_Z3(0);
             }
             ++m;
         }

@@ -603,7 +603,7 @@ namespace smt {
         void internalize_is_int(app * n);
         theory_var internalize_numeral(app * n);
         theory_var internalize_term_core(app * n);
-        void mk_axiom(expr * n1, expr * n2);
+        void mk_axiom(expr * n1, expr * n2, bool simplify_conseq = true);
         void mk_idiv_mod_axioms(expr * dividend, expr * divisor);
         void mk_div_axiom(expr * dividend, expr * divisor);
         void mk_rem_axiom(expr * dividend, expr * divisor);
@@ -660,7 +660,7 @@ namespace smt {
            satisfy their respective constraints.  However, when they
            do that the may create inconsistencies in the other
            modules. I use m_liberal_final_check to avoid infinite
-           loops where the modules keep changing the assigment and no
+           loops where the modules keep changing the assignment and no
            progress is made. If m_liberal_final_check is set to false,
            these modules will avoid mutating the assignment to satisfy
            constraints.

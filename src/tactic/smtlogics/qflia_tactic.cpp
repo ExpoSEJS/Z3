@@ -24,7 +24,6 @@ Notes:
 #include "tactic/core/solve_eqs_tactic.h"
 #include "tactic/core/elim_uncnstr_tactic.h"
 #include "smt/tactic/smt_tactic.h"
-// include"mip_tactic.h"
 #include "tactic/arith/add_bounds_tactic.h"
 #include "tactic/arith/pb2bv_tactic.h"
 #include "tactic/arith/lia2pb_tactic.h"
@@ -42,10 +41,7 @@ struct quasi_pb_probe : public probe {
         bound_manager bm(g.m());
         bm(g);
         rational l, u; bool st;
-        bound_manager::iterator it  = bm.begin();
-        bound_manager::iterator end = bm.end();
-        for (; it != end; ++it) {
-            expr * t = *it;
+        for (expr * t : bm) {
             if (bm.has_lower(t, l, st) && bm.has_upper(t, u, st) && (l.is_zero() || l.is_one()) && (u.is_zero() || u.is_one()))
                 continue;
             if (found_non_01)

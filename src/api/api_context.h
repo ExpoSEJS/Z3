@@ -138,7 +138,7 @@ namespace api {
         datatype_decl_plugin * get_dt_plugin() const { return m_dt_plugin; }
 
         Z3_error_code get_error_code() const { return m_error_code; }
-        void reset_error_code() { m_error_code = Z3_OK; }
+        void reset_error_code();
         void set_error_code(Z3_error_code err);
         void set_error_handler(Z3_error_handler h) { m_error_handler = h; }
         // Sign an error if solver is searching
@@ -220,19 +220,11 @@ namespace api {
 
         // ------------------------
         //
-        // Parser interface for backward compatibility 
+        // Parser interface 
         //
         // ------------------------
 
-        // TODO: move to a "parser" object visible to the external world.
-        std::string                m_smtlib_error_buffer;
-        smtlib::parser *           m_smtlib_parser;
-        bool                       m_smtlib_parser_has_decls;
-        ptr_vector<func_decl>      m_smtlib_parser_decls;
-        ptr_vector<sort>           m_smtlib_parser_sorts;
-        
-        void reset_parser();
-        void extract_smtlib_parser_decls();
+        std::string m_parser_error_buffer;        
         
     };
     

@@ -122,6 +122,7 @@ namespace opt {
         m_bv(m),
         m_hard_constraints(m),
         m_solver(0),
+        m_pareto1(false),
         m_box_index(UINT_MAX),
         m_optsmt(m),
         m_scoped_state(m),
@@ -137,6 +138,7 @@ namespace opt {
         p.set_bool("unsat_core", true);
         p.set_bool("elim_to_real", true);
         updt_params(p);
+        m_model_counter = 0;
     }
 
     context::~context() {
@@ -287,27 +289,31 @@ namespace opt {
         TRACE("opt", model_smt2_pp(tout, m, *m_model, 0););
         m_optsmt.setup(*m_opt_solver.get());
         update_lower();
+
+        opt_params optp(m_params);
+        symbol pri = optp.priority();
         
-        switch (m_objectives.size()) {
-        case 0:
-            break;
-        case 1:
-            is_sat = execute(m_objectives[0], true, false);
-            break;
-        default: {
-            opt_params optp(m_params);
-            symbol pri = optp.priority();
-            if (pri == symbol("pareto")) {
-                is_sat = execute_pareto();
-            }
-            else if (pri == symbol("box")) {
-                is_sat = execute_box();
+        if (0 == m_objectives.size()) {
+            // no op
+        }
+        else if (1 == m_objectives.size()) {
+            if (m_pareto1) {
+                is_sat = l_false;
+                m_pareto1 = false;
             }
             else {
-                is_sat = execute_lex();
+                m_pareto1 = (pri == symbol("pareto"));
+                is_sat = execute(m_objectives[0], true, false);
             }
-            break;
         }
+        else if (pri == symbol("pareto")) {
+            is_sat = execute_pareto();
+        }
+        else if (pri == symbol("box")) {
+            is_sat = execute_box();
+        }
+        else {
+            is_sat = execute_lex();
         }
         return adjust_unknown(is_sat);
     }
@@ -1002,6 +1008,22 @@ namespace opt {
         }
     }
 
+    void context::model_updated(model* md) {
+        opt_params optp(m_params);
+        symbol prefix = optp.solution_prefix();
+        if (prefix == symbol::null) return;        
+        model_ref mdl = md->copy();
+        fix_model(mdl);
+        std::ostringstream buffer;
+        buffer << prefix << (m_model_counter++) << ".smt2";
+        std::ofstream out(buffer.str());        
+        if (out) {
+            model_smt2_pp(out, m, *mdl, 0);
+            out.close();
+        }
+    }
+
+
     bool context::verify_model(unsigned index, model* md, rational const& _v) {
         rational r;
         app_ref term = m_objectives[index].m_term;
@@ -1010,7 +1032,7 @@ namespace opt {
         }
         rational v = m_objectives[index].m_adjust_value(_v);
         expr_ref val(m);
-        model_ref mdl = md;
+        model_ref mdl = md->copy();
         fix_model(mdl);
 
         if (!mdl->eval(term, val)) {
@@ -1361,13 +1383,14 @@ namespace opt {
     }
 
     void context::clear_state() {
-        set_pareto(0);
+        set_pareto(0);        
         m_box_index = UINT_MAX;
         m_model.reset();
     }
 
     void context::set_pareto(pareto_base* p) {
         m_pareto = p;        
+        m_pareto1 = p != nullptr;
     }
 
     void context::collect_statistics(statistics& stats) const {

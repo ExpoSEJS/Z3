@@ -134,13 +134,25 @@ namespace datatype {
             ~plus() override { m_arg1->dec_ref(); m_arg2->dec_ref(); }
             size* subst(obj_map<sort,size*>& S) override { return mk_plus(m_arg1->subst(S), m_arg2->subst(S)); }
             sort_size eval(obj_map<sort, sort_size> const& S) override {
-                sort_size s1 = m_arg1->eval(S);
-                sort_size s2 = m_arg2->eval(S);
-                if (s1.is_infinite()) return s1;
-                if (s2.is_infinite()) return s2;
-                if (s1.is_very_big()) return s1;
-                if (s2.is_very_big()) return s2;
-                rational r = rational(s1.size(), rational::ui64()) + rational(s2.size(), rational::ui64());
+                rational r(0);
+                ptr_vector<size> todo;
+                todo.push_back(m_arg1);
+                todo.push_back(m_arg2);
+                while (!todo.empty()) {
+                    size* s = todo.back();
+                    todo.pop_back();
+                    plus* p = dynamic_cast<plus*>(s);
+                    if (p) {
+                        todo.push_back(p->m_arg1);
+                        todo.push_back(p->m_arg2);
+                    }
+                    else {
+                        sort_size sz = s->eval(S);                        
+                        if (sz.is_infinite()) return sz;
+                        if (sz.is_very_big()) return sz;
+                        r += rational(sz.size(), rational::ui64());
+                    }
+                }
                 return sort_size(r);
             }
         };
@@ -358,8 +370,10 @@ namespace datatype {
         bool is_accessor(func_decl * f) const { return is_decl_of(f, m_family_id, OP_DT_ACCESSOR); }
         bool is_update_field(func_decl * f) const { return is_decl_of(f, m_family_id, OP_DT_UPDATE_FIELD); }
         bool is_constructor(app * f) const { return is_app_of(f, m_family_id, OP_DT_CONSTRUCTOR); }
+        bool is_constructor(expr* e) const { return is_app(e) && is_constructor(to_app(e)); }
         bool is_recognizer0(app * f) const { return is_app_of(f, m_family_id, OP_DT_RECOGNISER);} 
         bool is_is(app * f) const { return is_app_of(f, m_family_id, OP_DT_IS);} 
+        bool is_is(expr * e) const { return is_app(e) && is_is(to_app(e)); }
         bool is_recognizer(app * f) const { return is_recognizer0(f) || is_is(f); }
         bool is_accessor(app * f) const { return is_app_of(f, m_family_id, OP_DT_ACCESSOR); }
         bool is_update_field(app * f) const { return is_app_of(f, m_family_id, OP_DT_UPDATE_FIELD); }

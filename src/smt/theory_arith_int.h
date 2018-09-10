@@ -200,10 +200,12 @@ namespace smt {
         SASSERT(is_int(v));
         SASSERT(!get_value(v).is_int());
         m_stats.m_branches++;
-        TRACE("arith_int", tout << "branching v" << v << " = " << get_value(v) << "\n";
-              display_var(tout, v););
         numeral k     = ceil(get_value(v));
         rational _k   = k.to_rational();
+        TRACE("arith_int", tout << "branching v" << v << " = " << get_value(v) << "\n";
+              display_var(tout, v);
+              tout << "k = " << k << ", _k = "<< _k << std::endl;
+              );
         expr_ref bound(get_manager());
         expr* e = get_enode(v)->get_owner();
         bound  = m_util.mk_ge(e, m_util.mk_numeral(_k, m_util.is_int(e)));
@@ -1333,7 +1335,7 @@ namespace smt {
                       }
                   }
               });
-
+        m_stats.m_patches++;
         patch_int_infeasible_vars();
         fix_non_base_vars();
         
@@ -1366,6 +1368,7 @@ namespace smt {
         
         theory_var int_var = find_infeasible_int_base_var();
         if (int_var == null_theory_var) {
+            m_stats.m_patches_succ++;
             TRACE("arith_int_incomp", tout << "FC_DONE 2...\n"; display(tout););
             return m_liberal_final_check || !m_changed_assignment ? FC_DONE : FC_CONTINUE;
         }
@@ -1383,6 +1386,7 @@ namespace smt {
 
         m_branch_cut_counter++;
         // TODO: add giveup code
+        TRACE("gomory_cut", tout << m_branch_cut_counter << ", " << m_params.m_arith_branch_cut_ratio << std::endl;);
         if (m_branch_cut_counter % m_params.m_arith_branch_cut_ratio == 0) {
             TRACE("opt_verbose", display(tout););
             move_non_base_vars_to_bounds();
@@ -1397,7 +1401,7 @@ namespace smt {
                 SASSERT(is_base(int_var));
                 row const & r = m_rows[get_var_row(int_var)];
                 if (!mk_gomory_cut(r)) {
-                    // silent failure
+                    TRACE("gomory_cut", tout << "silent failure\n";);
                 }
                 return FC_CONTINUE;
             }

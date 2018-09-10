@@ -115,8 +115,7 @@ namespace datalog {
         expr_ref tmp(m);
         for (unsigned i = 0; i < tgt.size(); ++i) {
             if (tgt[i].get()) {
-                vs(tgt[i].get(), sub.size(), sub.c_ptr(), tmp);
-                tgt[i] = tmp;
+                tgt[i] = vs(tgt[i].get(), sub.size(), sub.c_ptr());
             }
             else {
                 tgt[i] = sub[i];
@@ -389,24 +388,32 @@ namespace datalog {
     public:
         skip_model_converter() {}
  
-        model_converter * translate(ast_translation & translator) override {
+        model_converter * translate(ast_translation & translator) override { 
             return alloc(skip_model_converter);
         }
+
+        void operator()(model_ref&) override {}
+
+        void display(std::ostream & out) override { }
+
+        void get_units(obj_map<expr, bool>& units) override {}
 
     };
 
     model_converter* mk_skip_model_converter() { return alloc(skip_model_converter); }
 
     class skip_proof_converter : public proof_converter {
-        void operator()(ast_manager & m, unsigned num_source, proof * const * source, proof_ref & result) override {
+
+        proof_ref operator()(ast_manager & m, unsigned num_source, proof * const * source) override {
             SASSERT(num_source == 1);
-            result = source[0];
+            return proof_ref(source[0], m);
         }
 
         proof_converter * translate(ast_translation & translator) override {
             return alloc(skip_proof_converter);
         }
 
+        void display(std::ostream & out) override { out << "(skip-proof-converter)\n"; }
     };
 
     proof_converter* mk_skip_proof_converter() { return alloc(skip_proof_converter); }
@@ -517,10 +524,9 @@ namespace datalog {
     }
 
     void collect_and_transform(const unsigned_vector & src, const unsigned_vector & translation, 
-            unsigned_vector & res) {
-        unsigned n = src.size();
-        for(unsigned i=0; i<n; i++) {
-            unsigned translated = translation[src[i]];
+                               unsigned_vector & res) {
+        for (unsigned s : src) {
+            unsigned translated = translation[s];
             if(translated!=UINT_MAX) {
                 res.push_back(translated);
             }
@@ -529,10 +535,8 @@ namespace datalog {
 
 
     void transform_set(const unsigned_vector & map, const idx_set & src, idx_set & result) {
-        idx_set::iterator it = src.begin();
-        idx_set::iterator end = src.end();
-        for(; it!=end; ++it) {
-            result.insert(map[*it]);
+        for (unsigned s : src) {
+            result.insert(map[s]);
         }
     }
 

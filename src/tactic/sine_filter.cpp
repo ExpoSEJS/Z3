@@ -18,11 +18,9 @@ Revision History:
 
 #include "tactic/sine_filter.h"
 #include "tactic/tactical.h"
-#include "tactic/filter_model_converter.h"
+#include "tactic/generic_model_converter.h"
 #include "ast/datatype_decl_plugin.h"
 #include "ast/rewriter/rewriter_def.h"
-#include "tactic/filter_model_converter.h"
-#include "tactic/extension_model_converter.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/ast_util.h"
 #include "util/obj_pair_hashtable.h"
@@ -38,23 +36,17 @@ public:
     sine_tactic(ast_manager& m, params_ref const& p):
         m(m), m_params(p) {}
 
-    virtual tactic * translate(ast_manager & m) {
+    tactic * translate(ast_manager & m) override {
         return alloc(sine_tactic, m, m_params);
     }
 
-    virtual void updt_params(params_ref const & p) {
+    void updt_params(params_ref const & p) override {
     }
 
-    virtual void collect_param_descrs(param_descrs & r) {
+    void collect_param_descrs(param_descrs & r) override {
     }
 
-    virtual void operator()(goal_ref const & g,
-                            goal_ref_buffer & result,
-                            model_converter_ref & mc,
-                            proof_converter_ref & pc,
-                            expr_dependency_ref & core) {
-        mc = 0; pc = 0; core = 0;
-
+    void operator()(goal_ref const & g, goal_ref_buffer& result) override {
         TRACE("sine", g->display(tout););
         TRACE("sine", tout << g->size(););
         ptr_vector<expr> new_forms;
@@ -69,11 +61,9 @@ public:
         result.push_back(g.get());
         TRACE("sine", result[0]->display(tout););
         SASSERT(g->is_well_sorted());
-        filter_model_converter * fmc = alloc(filter_model_converter, m);
-        mc = fmc;
     }
 
-    virtual void cleanup() {
+    void cleanup() override {
     }
 
 private:
@@ -103,11 +93,8 @@ private:
                             obj_hashtable<func_decl> const & consts,
                             ptr_vector<func_decl> & next_consts) {
         TRACE("sine",
-            tout << "size of consts is "; tout << consts.size(); tout << "\n";
-            obj_hashtable<func_decl>::iterator it = consts.begin();
-            obj_hashtable<func_decl>::iterator end = consts.end();
-            for (; it != end; it++)
-                tout << *it << "\n"; );
+              tout << "size of consts is "; tout << consts.size(); tout << "\n";
+              for (func_decl* f : consts) tout << f->get_name() << "\n";);
 
         bool matched = false;
         for (unsigned i = 0; i < q->get_num_patterns(); i++) {
@@ -166,10 +153,8 @@ private:
                 if (!consts.contains(f)) {
                     consts.insert(f);
                     if (const2quantifier.contains(f)) {
-                        obj_pair_hashtable<expr, expr>::iterator it = const2quantifier[f].begin();
-                        obj_pair_hashtable<expr, expr>::iterator end = const2quantifier[f].end();
-                        for (; it != end; it++)
-                            stack.push_back(*it);
+                        for (auto const& p : const2quantifier[f]) 
+                            stack.push_back(p);
                         const2quantifier.remove(f);
                     }
                 }
@@ -192,7 +177,7 @@ private:
             }
             else if (is_quantifier(curr.first)) {
                 quantifier *q = to_quantifier(curr.first);
-                if (q->is_forall()) {
+                if (is_forall(q)) {
                     if (q->has_patterns()) {
                         ptr_vector<func_decl> next_consts;
                         if (quantifier_matches(q, consts, next_consts)) {
@@ -214,7 +199,7 @@ private:
                         stack.push_back(work_item(q->get_expr(), curr.second));
                     }
                 }
-                else if (q->is_exists()) {
+                else if (is_exists(q)) {
                     stack.push_back(work_item(q->get_expr(), curr.second));
                 }
             }
@@ -230,16 +215,11 @@ private:
             visiting = to_visit.back();
             to_visit.pop_back();
             visited.insert(visiting);
-            obj_hashtable<func_decl>::iterator it = exp2const[visiting].begin();
-            obj_hashtable<func_decl>::iterator end = exp2const[visiting].end();
-            for (; it != end; it++) {
-                obj_hashtable<expr>::iterator exprit = const2exp[*it].begin();
-                obj_hashtable<expr>::iterator exprend = const2exp[*it].end();
-                for (; exprit != exprend; exprit++) {
-                    if (!visited.contains(*exprit))
-                        to_visit.push_back(*exprit);
+            for (func_decl* f : exp2const[visiting]) 
+                for (expr* e : const2exp[f]) {
+                    if (!visited.contains(e))
+                        to_visit.push_back(e);
                 }
-            }
         }
 
         for (unsigned i = 0; i < g->size(); i++) {

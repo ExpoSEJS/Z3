@@ -17,8 +17,8 @@ Revision History:
 --*/
 #include<iostream>
 #include "util/cancel_eh.h"
-#include "util/file_path.h"
 #include "util/scoped_timer.h"
+#include "util/file_path.h"
 #include "parsers/smt2/smt2parser.h"
 #include "opt/opt_context.h"
 #include "opt/opt_cmds.h"
@@ -30,6 +30,7 @@ Revision History:
 #include "api/api_util.h"
 #include "api/api_model.h"
 #include "api/api_ast_vector.h"
+
 
 extern "C" {
 
@@ -139,8 +140,16 @@ extern "C" {
                 r = to_optimize_ptr(o)->optimize();
             }
             catch (z3_exception& ex) {
-                mk_c(c)->handle_exception(ex);
+                if (!mk_c(c)->m().canceled()) {
+                    mk_c(c)->handle_exception(ex);
+                }
                 r = l_undef;
+                if (ex.msg() == std::string("canceled") && mk_c(c)->m().canceled()) {
+                    to_optimize_ptr(o)->set_reason_unknown(ex.msg());
+                }
+                else {
+                    mk_c(c)->handle_exception(ex);
+                }
             }
             // to_optimize_ref(d).cleanup();
         }
@@ -164,6 +173,7 @@ extern "C" {
         to_optimize_ptr(o)->get_model(_m);
         Z3_model_ref * m_ref = alloc(Z3_model_ref, *mk_c(c)); 
         if (_m) {
+            if (mk_c(c)->params().m_model_compress) _m->compress();
             m_ref->m_model = _m;
         }
         else {
@@ -296,6 +306,11 @@ extern "C" {
             parse_wcnf(*to_optimize_ptr(opt), s, h);
             return;
         }
+        if (ext && std::string("lp") == ext) {
+            unsigned_vector h;
+            parse_lp(*to_optimize_ptr(opt), s, h);
+            return;
+        }
         scoped_ptr<cmd_context> ctx = alloc(cmd_context, false, &m);
         install_opt_cmds(*ctx.get(), to_optimize_ptr(opt));
         std::stringstream errstrm;
@@ -303,17 +318,15 @@ extern "C" {
         ctx->set_ignore_check(true);
         try {
             if (!parse_smt2_commands(*ctx.get(), s)) {
-                mk_c(c)->m_parser_error_buffer = errstrm.str();            
                 ctx = nullptr;
-                SET_ERROR_CODE(Z3_PARSER_ERROR);
+                SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str().c_str());
                 return;
             }        
         }
         catch (z3_exception& e) {
             errstrm << e.msg();
-            mk_c(c)->m_parser_error_buffer = errstrm.str();            
             ctx = nullptr;
-            SET_ERROR_CODE(Z3_PARSER_ERROR);
+            SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str().c_str());
             return;
         }
 

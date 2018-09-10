@@ -43,9 +43,9 @@ Notes:
 #include "model/model_v2_pp.h"
 #include "model/model_params.hpp"
 #include "tactic/tactic_exception.h"
+#include "tactic/generic_model_converter.h"
 #include "solver/smt_logics.h"
 #include "cmd_context/basic_cmds.h"
-#include "cmd_context/interpolant_cmds.h"
 #include "cmd_context/cmd_context.h"
 
 func_decls::func_decls(ast_manager & m, func_decl * f):
@@ -369,7 +369,7 @@ void stream_ref::set(char const * name) {
             std::string msg = "failed to set output stream '";
             msg += name;
             msg += "'";
-            throw cmd_exception(msg);
+            throw cmd_exception(std::move(msg));
         }
         SASSERT(m_stream);
     }
@@ -396,7 +396,7 @@ protected:
     datalog::dl_decl_util m_dlutil;
 
     format_ns::format * pp_fdecl_name(symbol const & s, func_decls const & fs, func_decl * f, unsigned & len) {
-        format_ns::format * f_name = smt2_pp_environment::pp_fdecl_name(s, len);
+        format_ns::format * f_name = smt2_pp_environment::pp_fdecl_name(s, len, f->is_skolem());
         if (!fs.more_than_one())
             return f_name;
         if (!fs.clash(f))
@@ -406,7 +406,7 @@ protected:
 
     format_ns::format * pp_fdecl_ref_core(symbol const & s, func_decls const & fs, func_decl * f) {
         unsigned len;
-        format_ns::format * f_name = smt2_pp_environment::pp_fdecl_name(s, len);
+        format_ns::format * f_name = smt2_pp_environment::pp_fdecl_name(s, len, f->is_skolem());
         if (!fs.more_than_one())
             return f_name;
         return pp_signature(f_name, f);
@@ -483,7 +483,6 @@ cmd_context::cmd_context(bool main_ctx, ast_manager * m, symbol const & l):
     install_basic_cmds(*this);
     install_ext_basic_cmds(*this);
     install_core_tactic_cmds(*this);
-    install_interpolant_cmds(*this);
     SASSERT(m != 0 || !has_manager());
     if (m_main_ctx) {
         set_verbose_stream(diagnostic_stream());
@@ -494,10 +493,12 @@ cmd_context::~cmd_context() {
     if (m_main_ctx) {
         set_verbose_stream(std::cerr);
     }
+    pop(m_scopes.size());
     finalize_cmds();
     finalize_tactic_cmds();
     finalize_probes();
     reset(true);
+    m_mc0 = nullptr;
     m_solver = nullptr;
     m_check_sat_result = nullptr;
 }
@@ -870,6 +871,23 @@ void cmd_context::insert(symbol const & s, object_ref * r) {
     m_object_refs.insert(s, r);
 }
 
+void cmd_context::model_add(symbol const & s, unsigned arity, sort *const* domain, expr * t) {
+    if (!m_mc0.get()) m_mc0 = alloc(generic_model_converter, m(), "cmd_context");
+    if (m_solver.get() && !m_solver->mc0()) m_solver->set_model_converter(m_mc0.get()); 
+    func_decl_ref fn(m().mk_func_decl(s, arity, domain, m().get_sort(t)), m());
+    dictionary<func_decls>::entry * e = m_func_decls.insert_if_not_there2(s, func_decls());
+    func_decls & fs = e->get_data().m_value;
+    fs.insert(m(), fn);
+    VERIFY(fn->get_range() == m().get_sort(t));
+    m_mc0->add(fn, t);
+}
+
+void cmd_context::model_del(func_decl* f) {
+    if (!m_mc0.get()) m_mc0 = alloc(generic_model_converter, m(), "cmd_context");
+    if (m_solver.get() && !m_solver->mc0()) m_solver->set_model_converter(m_mc0.get()); 
+    m_mc0->hide(f);
+}
+
 void cmd_context::insert_rec_fun(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* e) {
     expr_ref eq(m());
     app_ref lhs(m());
@@ -1045,7 +1063,7 @@ void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * arg
         return;
     }
     if (num_indices > 0)
-        throw cmd_exception("invalid use of indexed indentifier, unknown builtin function ", s);
+        throw cmd_exception("invalid use of indexed identifier, unknown builtin function ", s);
     expr* _t;
     if (macros_find(s, num_args, args, _t)) {
         TRACE("macro_bug", tout << "well_sorted_check_enabled(): " << well_sorted_check_enabled() << "\n";
@@ -1053,7 +1071,7 @@ void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * arg
               tout << "body:\n" << mk_ismt2_pp(_t, m()) << "\n";
               tout << "args:\n"; for (unsigned i = 0; i < num_args; i++) tout << mk_ismt2_pp(args[i], m()) << "\n" << mk_pp(m().get_sort(args[i]), m()) << "\n";);
         var_subst subst(m());
-        subst(_t, num_args, args, result);
+        result = subst(_t, num_args, args);
         if (well_sorted_check_enabled() && !is_well_sorted(m(), result))
             throw cmd_exception("invalid macro application, sort mismatch ", s);
         return;
@@ -1256,8 +1274,8 @@ void cmd_context::reset(bool finalize) {
     reset_macros();
     reset_func_decls();
     restore_assertions(0);
-    if (m_solver)
-        m_solver = nullptr;
+    m_solver = nullptr;
+    m_mc0 = nullptr;
     m_scopes.reset();
     m_opt = nullptr;
     m_pp_env = nullptr;
@@ -1412,7 +1430,8 @@ void cmd_context::restore_assertions(unsigned old_sz) {
         SASSERT(m_assertions.empty());
         return;
     }
-    if (old_sz == m_assertions.size()) return;
+    if (old_sz == m_assertions.size())
+        return;
     SASSERT(old_sz < m_assertions.size());
     SASSERT(!m_interactive_mode || m_assertions.size() == m_assertion_strings.size());
     restore(m(), m_assertions, old_sz);
@@ -1500,12 +1519,20 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
         scoped_rlimit _rlimit(m().limit(), rlimit);
         try {
             r = m_solver->check_sat(num_assumptions, assumptions);
+            if (r == l_undef && m().canceled()) {
+                m_solver->set_reason_unknown(eh);
+            }
         }
         catch (z3_error & ex) {
             throw ex;
         }
         catch (z3_exception & ex) {
-            m_solver->set_reason_unknown(ex.msg());
+            if (m().canceled()) {
+                m_solver->set_reason_unknown(eh);
+            }
+            else {
+                m_solver->set_reason_unknown(ex.msg());
+            }
             r = l_undef;
         }
         m_solver->set_status(r);
@@ -1517,7 +1544,6 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
     }
     display_sat_result(r);
     if (r == l_true) {
-        complete_model();
         validate_model();
     }
     validate_check_sat_result(r);
@@ -1525,9 +1551,8 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
         // get_opt()->display_assignment(regular_stream());
     }
 
-    if (r == l_true && m_params.m_dump_models) {
-        model_ref md;
-        get_check_sat_result()->get_model(md);
+    model_ref md;
+    if (r == l_true && m_params.m_dump_models && is_model_available(md)) {
         display_model(md);
     }
 }
@@ -1600,6 +1625,8 @@ void cmd_context::display_dimacs() {
 
 void cmd_context::display_model(model_ref& mdl) {
     if (mdl) {
+        if (m_mc0) (*m_mc0)(mdl);
+        if (m_params.m_model_compress) mdl->compress();
         model_params p;
         if (p.v1() || p.v2()) {
             std::ostringstream buffer;
@@ -1691,14 +1718,10 @@ struct contains_underspecified_op_proc {
 /**
     \brief Complete the model if necessary.
 */
-void cmd_context::complete_model() {
-    if (!is_model_available() ||
-        gparams::get_value("model.completion") != "true")
+void cmd_context::complete_model(model_ref& md) const {
+    if (gparams::get_value("model.completion") != "true" || !md.get())
         return;
 
-    model_ref md;
-    get_check_sat_result()->get_model(md);
-    SASSERT(md.get() != 0);
     params_ref p;
     p.set_uint("max_degree", UINT_MAX); // evaluate algebraic numbers of any degree.
     p.set_uint("sort_store", true);
@@ -1761,12 +1784,11 @@ void cmd_context::complete_model() {
    \brief Check if the current model satisfies the quantifier free formulas.
 */
 void cmd_context::validate_model() {
+    model_ref md;
     if (!validate_model_enabled())
         return;
-    if (!is_model_available())
+    if (!is_model_available(md))
         return;
-    model_ref md;
-    get_check_sat_result()->get_model(md);
     SASSERT(md.get() != 0);
     params_ref p;
     p.set_uint("max_degree", UINT_MAX); // evaluate algebraic numbers of any degree.
@@ -1806,7 +1828,9 @@ void cmd_context::validate_model() {
                 catch (contains_underspecified_op_proc::found) {
                     continue;
                 }
-                TRACE("model_validate", model_smt2_pp(tout, *this, *(md.get()), 0););
+                TRACE("model_validate", model_smt2_pp(tout, *this, *md, 0););
+                IF_VERBOSE(10, verbose_stream() << "model check failed on: " << mk_pp(a, m()) << "\n";);                
+                IF_VERBOSE(11, model_smt2_pp(verbose_stream(), *this, *md, 0););                
                 invalid_model = true;
             }
         }
@@ -1892,12 +1916,12 @@ void cmd_context::display_assertions() {
     regular_stream() << ")" << std::endl;
 }
 
-bool cmd_context::is_model_available() const {
+bool cmd_context::is_model_available(model_ref& md) const {
     if (produce_models() &&
         has_manager() &&
         (cs_state() == css_sat || cs_state() == css_unknown)) {
-        model_ref md;
         get_check_sat_result()->get_model(md);
+        complete_model(md);
         return md.get() != nullptr;
     }
     return false;
@@ -1925,7 +1949,7 @@ void cmd_context::pp(expr * n, format_ns::format_ref & r) const {
 }
 
 void cmd_context::pp(func_decl * f, format_ns::format_ref & r) const {
-    mk_smt2_format(f, get_pp_env(), params_ref(), r);
+    mk_smt2_format(f, get_pp_env(), params_ref(), r, "declare-fun");
 }
 
 void cmd_context::display(std::ostream & out, sort * s, unsigned indent) const {

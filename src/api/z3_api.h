@@ -83,14 +83,14 @@ typedef const char * Z3_string;
 typedef Z3_string * Z3_string_ptr;
 
 /**
-   \brief True value. It is just an alias for \c 1.
+   \brief True value. It is just an alias for \c true.
 */
-#define Z3_TRUE  1
+#define Z3_TRUE  true
 
 /**
-   \brief False value. It is just an alias for \c 0.
+   \brief False value. It is just an alias for \c false.
 */
-#define Z3_FALSE 0
+#define Z3_FALSE false
 
 /**
    \brief Lifted Boolean type: \c false, \c undefined, \c true.
@@ -211,8 +211,6 @@ typedef enum
 
    - Z3_OP_OEQ Binary equivalence modulo namings. This binary predicate is used in proof terms.
         It captures equisatisfiability and equivalence modulo renamings.
-
-   - Z3_OP_INTERP Marks a sub-formula for interpolation.
 
    - Z3_OP_ANUM Arithmetic numeral.
 
@@ -483,6 +481,10 @@ typedef enum
 
        T1: (~ p q)
        [quant-intro T1]: (~ (forall (x) p) (forall (x) q))
+
+   - Z3_OP_PR_BIND: Given a proof p, produces a proof of lambda x . p, where x are free variables in p.
+       T1: f
+       [proof-bind T1] forall (x) f
 
    - Z3_OP_PR_DISTRIBUTIVITY: Distributivity proof object.
           Given that f (= or) distributes over g (= and), produces a proof for
@@ -991,7 +993,6 @@ typedef enum {
     Z3_OP_NOT,
     Z3_OP_IMPLIES,
     Z3_OP_OEQ,
-    Z3_OP_INTERP,
 
     // Arithmetic
     Z3_OP_ANUM = 0x200,
@@ -1112,6 +1113,7 @@ typedef enum {
     Z3_OP_PR_TRANSITIVITY_STAR,
     Z3_OP_PR_MONOTONICITY,
     Z3_OP_PR_QUANT_INTRO,
+    Z3_OP_PR_BIND,
     Z3_OP_PR_DISTRIBUTIVITY,
     Z3_OP_PR_AND_ELIM,
     Z3_OP_PR_NOT_OR_ELIM,
@@ -1859,7 +1861,6 @@ extern "C" {
        def_API('Z3_mk_array_sort_n', SORT, (_in(CONTEXT), _in(UINT), _in_array(1, SORT), _in(SORT)))
     */
     Z3_sort Z3_API Z3_mk_array_sort_n(Z3_context c, unsigned n, Z3_sort const * domain, Z3_sort range);
-
 
     /**
        \brief Create a tuple type.
@@ -2949,6 +2950,8 @@ extern "C" {
     */
     Z3_ast Z3_API Z3_mk_select(Z3_context c, Z3_ast a, Z3_ast i);
 
+    
+
     /**
        \brief n-ary Array read.
        The argument \c a is the array and \c idxs are the indices of the array that gets read.
@@ -2957,6 +2960,7 @@ extern "C" {
 
     */
     Z3_ast Z3_API Z3_mk_select_n(Z3_context c, Z3_ast a, unsigned n, Z3_ast const* idxs);
+
 
     /**
        \brief Array update.
@@ -2975,6 +2979,7 @@ extern "C" {
        def_API('Z3_mk_store', AST, (_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_store(Z3_context c, Z3_ast a, Z3_ast i, Z3_ast v);
+
 
     /**
        \brief n-ary Array update.
@@ -3766,6 +3771,54 @@ extern "C" {
         Z3_ast body
         );
 
+    /**
+       \brief Create a lambda expression. It taks an expression \c body that contains bound variables 
+       of the same sorts as the sorts listed in the array \c sorts. The bound variables are de-Bruijn indices created
+       using #Z3_mk_bound. The array \c decl_names contains the names that the quantified formula uses for the
+       bound variables. Z3 applies the convention that the last element in the \c decl_names and \c sorts array
+       refers to the variable with index 0, the second to last element of \c decl_names and \c sorts refers
+       to the variable with index 1, etc.
+       The sort of the resulting expression is \c (Array sorts range) where \c range is the sort of \c body.
+       For example, if the lambda binds two variables of sort \c Int and \c Bool, and the \c body has sort \c Real, 
+       the sort of the expression is \c (Array Int Bool Real).
+
+       \param c logical context
+       \param num_decls number of variables to be bound.
+       \param sorts the sorts of the bound variables.
+       \param decl_names names of the bound variables
+       \param body the body of the lambda expression.       
+
+       \sa Z3_mk_bound
+       \sa Z3_mk_forall
+       \sa Z3_mk_lambda_const
+
+       def_API('Z3_mk_lambda', AST, (_in(CONTEXT), _in(UINT), _in_array(1, SORT), _in_array(1, SYMBOL), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_lambda(Z3_context c, 
+                               unsigned num_decls, Z3_sort const sorts[],
+                               Z3_symbol const decl_names[],
+                               Z3_ast body);
+
+    /**
+       \brief Create a lambda expression using a list of constants that form the set
+       of bound variables
+
+       \param c logical context.
+       \param num_bound number of constants to be abstracted into bound variables.
+       \param bound array of constants to be abstracted into bound variables.
+       \param body the body of the lambda expression.
+
+       \sa Z3_mk_bound
+       \sa Z3_mk_forall
+       \sa Z3_mk_lambda
+
+       def_API('Z3_mk_lambda_const', AST, (_in(CONTEXT), _in(UINT), _in_array(1, APP), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_lambda_const(Z3_context c, 
+                                     unsigned num_bound, Z3_app const bound[],
+                                     Z3_ast body);
+
+
     /*@}*/
 
     /** @name Accessors */
@@ -4532,13 +4585,28 @@ extern "C" {
     unsigned Z3_API Z3_get_index_value(Z3_context c, Z3_ast a);
 
     /**
-       \brief Determine if quantifier is universal.
-
-       \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
+       \brief Determine if an ast is a universal quantifier.
 
        def_API('Z3_is_quantifier_forall', BOOL, (_in(CONTEXT), _in(AST)))
     */
     Z3_bool Z3_API Z3_is_quantifier_forall(Z3_context c, Z3_ast a);
+
+    /**
+       \brief Determine if ast is an existential quantifier.
+
+
+       def_API('Z3_is_quantifier_exists', BOOL, (_in(CONTEXT), _in(AST)))
+    */
+    Z3_bool Z3_API Z3_is_quantifier_exists(Z3_context c, Z3_ast a);
+
+    /**
+       \brief Determine if ast is a lambda expresion.
+
+       \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
+
+       def_API('Z3_is_lambda', BOOL, (_in(CONTEXT), _in(AST)))
+    */
+    Z3_bool Z3_API Z3_is_lambda(Z3_context c, Z3_ast a);
 
     /**
        \brief Obtain weight of quantifier.
@@ -5175,9 +5243,9 @@ extern "C" {
        It returns a formula comprising of the conjunction of assertions in the scope
        (up to push/pop) at the end of the string.
 
-       def_API('Z3_parse_smtlib2_string', AST, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
+       def_API('Z3_parse_smtlib2_string', AST_VECTOR, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
     */
-    Z3_ast Z3_API Z3_parse_smtlib2_string(Z3_context c,
+    Z3_ast_vector Z3_API Z3_parse_smtlib2_string(Z3_context c,
                                           Z3_string str,
                                           unsigned num_sorts,
                                           Z3_symbol const sort_names[],
@@ -5189,9 +5257,9 @@ extern "C" {
     /**
        \brief Similar to #Z3_parse_smtlib2_string, but reads the benchmark from a file.
 
-       def_API('Z3_parse_smtlib2_file', AST, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
+       def_API('Z3_parse_smtlib2_file', AST_VECTOR, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
     */
-    Z3_ast Z3_API Z3_parse_smtlib2_file(Z3_context c,
+    Z3_ast_vector Z3_API Z3_parse_smtlib2_file(Z3_context c,
                                         Z3_string file_name,
                                         unsigned num_sorts,
                                         Z3_symbol const sort_names[],
@@ -5212,12 +5280,6 @@ extern "C" {
 
     Z3_string Z3_API Z3_eval_smtlib2_string(Z3_context, Z3_string str);
     
-    /**
-       \brief Retrieve that last error message information generated from parsing.
-
-       def_API('Z3_get_parser_error', STRING, (_in(CONTEXT), ))
-    */
-    Z3_string Z3_API Z3_get_parser_error(Z3_context c);
     /*@}*/
 
     /** @name Error Handling */
@@ -5264,11 +5326,6 @@ extern "C" {
     */
     Z3_string Z3_API Z3_get_error_msg(Z3_context c, Z3_error_code err);
 
-    /**
-       \brief Return a string describing the given error code.
-       Retained function name for backwards compatibility within v4.1
-    */
-    Z3_string Z3_API Z3_get_error_msg_ex(Z3_context c, Z3_error_code err);
     /*@}*/
 
     /** @name Miscellaneous */
@@ -5451,11 +5508,32 @@ extern "C" {
     Z3_goal Z3_API Z3_goal_translate(Z3_context source, Z3_goal g, Z3_context target);
 
     /**
+       \brief Convert a model of the formulas of a goal to a model of an original goal.
+       The model may be null, in which case the returned model is valid if the goal was
+       established satisfiable.
+
+       def_API('Z3_goal_convert_model', MODEL, (_in(CONTEXT), _in(GOAL), _in(MODEL)))
+    */
+    Z3_model Z3_API Z3_goal_convert_model(Z3_context c, Z3_goal g, Z3_model m);
+
+    /**
        \brief Convert a goal into a string.
 
        def_API('Z3_goal_to_string', STRING, (_in(CONTEXT), _in(GOAL)))
     */
     Z3_string Z3_API Z3_goal_to_string(Z3_context c, Z3_goal g);
+
+    /**
+       \brief Convert a goal into a DIMACS formatted string.
+       The goal must be in CNF. You can convert a goal to CNF
+       by applying the tseitin-cnf tactic. Bit-vectors are not automatically
+       converted to Booleans either, so the caller intends to 
+       preserve satisfiability, it should apply bit-blasting tactics.
+       Quantifiers and theory atoms will not be encoded.
+
+       def_API('Z3_goal_to_dimacs_string', STRING, (_in(CONTEXT), _in(GOAL)))
+    */
+    Z3_string Z3_API Z3_goal_to_dimacs_string(Z3_context c, Z3_goal g);
 
     /*@}*/
 
@@ -5809,14 +5887,6 @@ extern "C" {
     */
     Z3_goal Z3_API Z3_apply_result_get_subgoal(Z3_context c, Z3_apply_result r, unsigned i);
 
-    /**
-       \brief Convert a model for the subgoal \c Z3_apply_result_get_subgoal(c, r, i) into a model for the original goal \c g.
-       Where \c g is the goal used to create \c r using \c Z3_tactic_apply(c, t, g).
-
-       def_API('Z3_apply_result_convert_model', MODEL, (_in(CONTEXT), _in(APPLY_RESULT), _in(UINT), _in(MODEL)))
-    */
-    Z3_model Z3_API Z3_apply_result_convert_model(Z3_context c, Z3_apply_result r, unsigned i, Z3_model m);
-
     /*@}*/
 
     /** @name Solvers*/
@@ -5915,6 +5985,13 @@ extern "C" {
        def_API('Z3_solver_translate', SOLVER, (_in(CONTEXT), _in(SOLVER), _in(CONTEXT)))
     */
     Z3_solver Z3_API Z3_solver_translate(Z3_context source, Z3_solver s, Z3_context target);
+
+    /**
+       \brief Ad-hoc method for importing model convertion from solver.
+       
+       def_API('Z3_solver_import_model_converter', VOID, (_in(CONTEXT), _in(SOLVER), _in(SOLVER)))
+     */
+    void Z3_API Z3_solver_import_model_converter(Z3_context ctx, Z3_solver src, Z3_solver dst);
 
     /**
        \brief Return a string describing all solver available parameters.
@@ -6017,13 +6094,6 @@ extern "C" {
     void Z3_API Z3_solver_assert_and_track(Z3_context c, Z3_solver s, Z3_ast a, Z3_ast p);
 
     /**
-       \brief Return the set of asserted formulas on the solver.
-
-       def_API('Z3_solver_get_assertions', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
-    */
-    Z3_ast_vector Z3_API Z3_solver_get_assertions(Z3_context c, Z3_solver s);
-
-    /**
        \brief load solver assertions from a file.
 
        def_API('Z3_solver_from_file', VOID, (_in(CONTEXT), _in(SOLVER), _in(STRING)))
@@ -6036,6 +6106,20 @@ extern "C" {
        def_API('Z3_solver_from_string', VOID, (_in(CONTEXT), _in(SOLVER), _in(STRING)))
     */
     void Z3_API Z3_solver_from_string(Z3_context c, Z3_solver s, Z3_string file_name);
+
+    /**
+       \brief Return the set of asserted formulas on the solver.
+
+       def_API('Z3_solver_get_assertions', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
+    */
+    Z3_ast_vector Z3_API Z3_solver_get_assertions(Z3_context c, Z3_solver s);
+
+    /**
+       \brief Return the set of units modulo model conversion.
+
+       def_API('Z3_solver_get_units', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
+    */
+    Z3_ast_vector Z3_API Z3_solver_get_units(Z3_context c, Z3_solver s);
 
     /**
        \brief Check whether the assertions in a given solver are consistent or not.
@@ -6104,6 +6188,28 @@ extern "C" {
                                                Z3_ast_vector assumptions,
                                                Z3_ast_vector variables,
                                                Z3_ast_vector consequences);
+
+
+    /**
+       \brief extract a next cube for a solver. The last cube is the constant \c true or \c false.
+       The number of (non-constant) cubes is by default 1. For the sat solver cubing is controlled
+       using parameters sat.lookahead.cube.cutoff and sat.lookahead.cube.fraction.
+       
+       The third argument is a vector of variables that may be used for cubing.
+       The contents of the vector is only used in the first call. The initial list of variables
+       is used in subsequent calls until it returns the unsatisfiable cube. 
+       The vector is modified to contain a set of Autarky variables that occor in clauses that
+       are affected by the (last literal in the) cube. These variables could be used by a different
+       cuber (on a different solver object) for further recursive cubing. 
+
+       The last argument is a backtracking level. It instructs the cube process to backtrack below
+       the indicated level for the next cube.
+       
+       def_API('Z3_solver_cube', AST_VECTOR, (_in(CONTEXT), _in(SOLVER), _in(AST_VECTOR), _in(UINT)))
+    */
+
+    Z3_ast_vector Z3_API Z3_solver_cube(Z3_context c, Z3_solver s, Z3_ast_vector vars, unsigned backtrack_level);
+
     /**
        \brief Retrieve the model for the last #Z3_solver_check or #Z3_solver_check_assumptions
 

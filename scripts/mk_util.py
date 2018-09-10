@@ -82,6 +82,7 @@ VS_ARM = False
 LINUX_X64 = True
 ONLY_MAKEFILES = False
 Z3PY_SRC_DIR=None
+Z3JS_SRC_DIR=None
 VS_PROJ = False
 TRACE = False
 PYTHON_ENABLED=False
@@ -89,6 +90,7 @@ DOTNET_ENABLED=False
 DOTNET_KEY_FILE=getenv("Z3_DOTNET_KEY_FILE", None)
 JAVA_ENABLED=False
 ML_ENABLED=False
+JS_ENABLED=False
 PYTHON_INSTALL_ENABLED=False
 STATIC_LIB=False
 STATIC_BIN=False
@@ -654,6 +656,7 @@ def display_help(exit_code):
     print("  --dotnet-key=<file>           sign the .NET assembly using the private key in <file>.")
     print("  --java                        generate Java bindings.")
     print("  --ml                          generate OCaml bindings.")
+    print("  --js                          generate JScript bindings.")
     print("  --python                      generate Python bindings.")
     print("  --staticlib                   build Z3 static library.")
     print("  --staticbin                   build a statically linked Z3 binary.")
@@ -687,14 +690,14 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
+    global DOTNET_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, JS_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, USE_OMP, LOG_SYNC
     global GUARD_CF, ALWAYS_DYNAMIC_BASE
     try:
         options, remainder = getopt.gnu_getopt(sys.argv[1:],
                                                'b:df:sxhmcvtnp:gj',
                                                ['build=', 'debug', 'silent', 'x64', 'help', 'makefiles', 'showcpp', 'vsproj', 'guardcf',
-                                                'trace', 'dotnet', 'dotnet-key=', 'staticlib', 'prefix=', 'gmp', 'java', 'parallel=', 'gprof',
+                                                'trace', 'dotnet', 'dotnet-key=', 'staticlib', 'prefix=', 'gmp', 'java', 'parallel=', 'gprof', 'js',
                                                 'githash=', 'git-describe', 'x86', 'ml', 'optimize', 'noomp', 'pypkgdir=', 'python', 'staticbin', 'log-sync'])
     except:
         print("ERROR: Invalid command line option")
@@ -755,6 +758,8 @@ def parse_options():
             GIT_DESCRIBE = True
         elif opt in ('', '--ml'):
             ML_ENABLED = True
+        elif opt == "--js":
+            JS_ENABLED = True
         elif opt in ('', '--noomp'):
             USE_OMP = False
         elif opt in ('', '--log-sync'):
@@ -817,6 +822,16 @@ def set_build_dir(d):
     BUILD_DIR = norm_path(d)
     REV_BUILD_DIR = reverse_path(d)
 
+def set_z3js_dir(p):
+    global SRC_DIR, Z3JS_SRC_DIR
+    p = norm_path(p)
+    full = os.path.join(SRC_DIR, p)
+    if not os.path.exists(full):
+        raise MKException("Python bindings directory '%s' does not exist" % full)
+    Z3JS_SRC_DIR = full
+    if VERBOSE:
+        print("Js bindings directory was detected.")
+
 def set_z3py_dir(p):
     global SRC_DIR, Z3PY_SRC_DIR
     p = norm_path(p)
@@ -864,6 +879,9 @@ def is_java_enabled():
 
 def is_ml_enabled():
     return ML_ENABLED
+
+def is_js_enabled():
+    return JS_ENABLED
 
 def is_dotnet_enabled():
     return DOTNET_ENABLED
@@ -1414,6 +1432,22 @@ class DLLComponent(Component):
             shutil.copy('%s.a' % os.path.join(build_path, self.dll_name),
                         '%s.a' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
 
+class JsComponent(Component):
+    def __init__(self):
+         Component.__init__(self, "js", None, [])
+
+    def main_component(self):
+        return False
+
+    def mk_win_dist(self, build_path, dist_path):
+        return
+
+    def mk_unix_dist(self, build_path, dist_path):
+        return
+
+    def mk_makefile(self, out):
+        return
+
 class PythonComponent(Component):
     def __init__(self, name, libz3Component):
         assert isinstance(libz3Component, DLLComponent)
@@ -1935,8 +1969,14 @@ class MLComponent(Component):
             OCAML_FLAGS = ''
             if DEBUG_MODE:
                 OCAML_FLAGS += '-g'
-            OCAMLCF = OCAMLC + ' ' + OCAML_FLAGS
-            OCAMLOPTF = OCAMLOPT + ' ' + OCAML_FLAGS
+
+            if OCAMLFIND:
+                # Load Big_int, which is no longer part of the standard library, via the num package: https://github.com/ocaml/num
+                OCAMLCF = OCAMLFIND + ' ' + 'ocamlc -package num' + ' ' + OCAML_FLAGS
+                OCAMLOPTF = OCAMLFIND + ' ' + 'ocamlopt -package num' + ' ' + OCAML_FLAGS
+            else:
+                OCAMLCF = OCAMLC + ' ' + OCAML_FLAGS
+                OCAMLOPTF = OCAMLOPT + ' ' + OCAML_FLAGS
 
             src_dir = self.to_src_dir
             mk_dir(os.path.join(BUILD_DIR, self.sub_dir))
@@ -2317,6 +2357,9 @@ def add_python(libz3Component):
     name = 'python'
     reg_component(name, PythonComponent(name, libz3Component))
 
+def add_js():
+    reg_component('js', JsComponent())
+
 def add_python_install(libz3Component):
     name = 'python_install'
     reg_component(name, PythonInstallComponent(name, libz3Component))
@@ -2508,6 +2551,7 @@ def mk_config():
             LDFLAGS        = '%s -lrt' % LDFLAGS
             SLIBFLAGS      = '-shared'
             SLIBEXTRAFLAGS = '%s -lrt' % SLIBEXTRAFLAGS
+            SLIBEXTRAFLAGS = '%s -Wl,-soname,libz3.so' % SLIBEXTRAFLAGS
         elif sysname == 'FreeBSD':
             CXXFLAGS       = '%s -D_FREEBSD_' % CXXFLAGS
             OS_DEFINES     = '-D_FREEBSD_'
@@ -2806,6 +2850,7 @@ def get_header_files_for_components(component_src_dirs):
 def mk_install_tactic_cpp(cnames, path):
     component_src_dirs = []
     for cname in cnames:
+        print("Component %s" % cname)
         c = get_component(cname)
         component_src_dirs.append(c.src_dir)
     h_files_full_path = get_header_files_for_components(component_src_dirs)
@@ -2944,6 +2989,9 @@ def mk_bindings(api_files):
         ml_output_dir = None
         if is_ml_enabled():
           ml_output_dir = get_component('ml').src_dir
+        if is_js_enabled():
+          set_z3js_dir("api/js")
+          js_output_dir = get_component('js').src_dir
         # Get the update_api module to do the work for us
         update_api.generate_files(api_files=new_api_files,
           api_output_dir=get_component('api').src_dir,
@@ -2951,6 +2999,7 @@ def mk_bindings(api_files):
           dotnet_output_dir=dotnet_output_dir,
           java_output_dir=java_output_dir,
           java_package_name=java_package_name,
+          js_output_dir=get_z3js_dir(),
           ml_output_dir=ml_output_dir,
           ml_src_dir=ml_output_dir
         )

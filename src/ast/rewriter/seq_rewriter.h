@@ -89,6 +89,7 @@ public:
     ~re2automaton();
     eautomaton* operator()(expr* e);
     void set_solver(expr_solver* solver);
+    bool has_solver() const { return m_solver; }
     eautomaton* mk_product(eautomaton *a1, eautomaton *a2);
 };
 
@@ -166,6 +167,8 @@ public:
     bool reduce_eq(expr* l, expr* r, expr_ref_vector& lhs, expr_ref_vector& rhs, bool& change);
 
     bool reduce_eq(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_vector& lhs, expr_ref_vector& rhs, bool& change);
+
+    bool reduce_contains(expr* a, expr* b, expr_ref_vector& disj);
 
     void add_seqs(expr_ref_vector const& ls, expr_ref_vector const& rs, expr_ref_vector& lhs, expr_ref_vector& rhs);
 

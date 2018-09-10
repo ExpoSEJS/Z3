@@ -34,9 +34,10 @@ namespace smt {
             switch (to_app(n)->get_decl_kind()) {
             case OP_AND:
             case OP_OR:
-            case OP_IFF:
             case OP_ITE:
                 return true;
+            case OP_EQ:
+                return m.is_bool(to_app(n)->get_arg(0));
             default:
                 return false;
             }
@@ -229,7 +230,7 @@ namespace smt {
                 add_or_rel_watches(to_app(n));
                 break;
             }
-            case OP_IFF: {
+            case OP_EQ: {
                 expr * lhs = to_app(n)->get_arg(0);
                 expr * rhs = to_app(n)->get_arg(1);
                 internalize(lhs, true);
@@ -328,6 +329,9 @@ namespace smt {
             SASSERT(is_quantifier(n) || is_app(n));
             internalize_formula(n, gate_ctx);
         }
+        else if (is_lambda(n)) {
+            internalize_lambda(to_quantifier(n));
+        }
         else {
             SASSERT(is_app(n));
             SASSERT(!gate_ctx);
@@ -381,7 +385,7 @@ namespace smt {
             return;
         }
 
-        if (m_manager.is_eq(n))
+        if (m_manager.is_eq(n) && !m_manager.is_iff(n))
             internalize_eq(to_app(n), gate_ctx);
         else if (m_manager.is_distinct(n))
             internalize_distinct(to_app(n), gate_ctx);
@@ -513,7 +517,7 @@ namespace smt {
         CTRACE("internalize_quantifier_zero", q->get_weight() == 0, tout << mk_pp(q, m_manager) << "\n";);
         SASSERT(gate_ctx); // limitation of the current implementation
         SASSERT(!b_internalized(q));
-        SASSERT(q->is_forall());
+        SASSERT(is_forall(q));
         SASSERT(check_patterns(q));
         bool_var v             = mk_bool_var(q);
         unsigned generation    = m_generation;
@@ -527,6 +531,31 @@ namespace smt {
         m_qmanager->add(q, generation);
     }
 
+    void context::internalize_lambda(quantifier * q) {
+        UNREACHABLE();
+
+#if 0
+        TRACE("internalize_quantifier", tout << mk_pp(q, m_manager) << "\n";);
+        SASSERT(is_lambda(q));
+        app_ref lam_name(m_manager.mk_fresh_const("lambda", m_manager.get_sort(q)), m_manager);
+        enode * e = mk_enode(lam_name, true, false, false);
+        expr_ref eq(m_manager), lam_app(m_manager);
+        expr_ref_vector vars(m_manager);
+        vars.push_back(lam_name);
+        unsigned sz = q->get_num_decls();
+        for (unsigned i = 0; i < sz; ++i) {
+            vars.push_back(m_manager.mk_var(sz - i - 1, q->get_decl_sort(i)));
+        }
+        array_util autil(m_manager);
+        lam_app = autil.mk_select(vars.size(), vars.c_ptr());
+        eq = m_manager.mk_eq(lam_app, q->get_expr());
+        quantifier_ref fa(m_manager);
+        expr * patterns[1] = { m_manager.mk_pattern(lam_name) };
+        fa = m_manager.mk_forall(sz, q->get_decl_sorts(), q->get_decl_names(), eq, 0, m_manager.lambda_def_qid(), symbol::null, 1, patterns);
+        internalize_quantifier(fa, true);
+#endif
+    }
+
     /**
        \brief Internalize gates and (uninterpreted and equality) predicates.
     */
@@ -538,9 +567,7 @@ namespace smt {
 
         bool _is_gate  = is_gate(m_manager, n) || m_manager.is_not(n);
         // process args
-        unsigned num   = n->get_num_args();
-        for (unsigned i = 0; i < num; i++) {
-            expr * arg = n->get_arg(i); 
+        for (expr * arg : *n) {
             internalize(arg, _is_gate);
         }
         
@@ -596,8 +623,9 @@ namespace smt {
                 mk_or_cnstr(to_app(n));
                 add_or_rel_watches(to_app(n));
                 break;
-            case OP_IFF:
-                mk_iff_cnstr(to_app(n));
+            case OP_EQ:
+                if (m_manager.is_iff(n))
+                    mk_iff_cnstr(to_app(n));
                 break;
             case OP_ITE:
                 mk_ite_cnstr(to_app(n));
@@ -611,7 +639,6 @@ namespace smt {
             case OP_XOR:
                 UNREACHABLE();
             case OP_OEQ:
-            case OP_INTERP:            
                 UNREACHABLE();
             default:
                 break;
@@ -651,8 +678,18 @@ namespace smt {
                 push_trail(set_merge_tf_trail(n));
             n->m_merge_tf = true;
             lbool val = get_assignment(v); 
-            if (val != l_undef)
-                push_eq(n, val == l_true ? m_true_enode : m_false_enode, eq_justification(literal(v, val == l_false)));
+            switch (val) {
+            case l_undef: 
+                break;
+            case l_true: 
+                if (n->get_root() != m_true_enode->get_root()) 
+                    push_eq(n, m_true_enode, eq_justification(literal(v, false))); 
+                break;
+            case l_false: 
+                if (n->get_root() != m_false_enode->get_root()) 
+                    push_eq(n, m_false_enode, eq_justification(literal(v, true))); 
+                break;
+            }
         }
     }
 
@@ -822,7 +859,7 @@ namespace smt {
             std::cerr << v << " ::=\n" << mk_ll_pp(n, m_manager) << "<END-OF-FORMULA>\n";
         }
 #endif
-        TRACE("mk_bool_var", tout << "creating boolean variable: " << v << " for:\n" << mk_pp(n, m_manager) << "\n";);
+        TRACE("mk_bool_var", tout << "creating boolean variable: " << v << " for:\n" << mk_pp(n, m_manager) << " " << n->get_id() << "\n";);
         TRACE("mk_var_bug", tout << "mk_bool: " << v << "\n";);                
         set_bool_var(id, v);
         m_bdata.reserve(v+1);
@@ -1345,6 +1382,7 @@ namespace smt {
                     cls->swap_lits(1, w2_idx);
                     TRACE("mk_th_lemma", display_clause(tout, cls); tout << "\n";);
                 }
+                // display_clause(std::cout, cls); std::cout << "\n";
                 m_lemmas.push_back(cls);
                 add_watch_literal(cls, 0);
                 add_watch_literal(cls, 1);

@@ -188,6 +188,24 @@ public:
         m_data = nullptr;
     }
 
+    bool operator==(vector const & other) const {
+        if (this == &other) {
+            return true;
+        }
+        if (size() != other.size())
+            return false;
+        for (unsigned i = 0; i < size(); i++) {
+            if ((*this)[i] != other[i])
+                return false;
+        }
+        return true;
+    }
+
+    bool operator!=(vector const & other) const {
+        return !(*this == other);
+    }
+
+    
     vector & operator=(vector const & source) {
         if (this == &source) {
             return *this;
@@ -471,7 +489,7 @@ public:
 
     void fill(unsigned sz, T const & elem) {
         resize(sz);
-        fill(sz, elem);
+        fill(elem);
     }
 
     bool contains(T const & elem) const {
@@ -547,6 +565,11 @@ typedef svector<unsigned> unsigned_vector;
 typedef svector<char> char_vector;
 typedef svector<signed char> signed_char_vector;
 typedef svector<double> double_vector;
+
+inline std::ostream& operator<<(std::ostream& out, unsigned_vector const& v) {
+    for (unsigned u : v) out << u << " ";
+    return out;
+}
 
 template<typename Hash, typename Vec>
 struct vector_hash_tpl {

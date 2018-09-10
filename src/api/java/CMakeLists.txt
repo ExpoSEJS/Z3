@@ -137,11 +137,11 @@ set(Z3_JAVA_JAR_SOURCE_FILES
   GoalDecRefQueue.java
   Goal.java
   IDecRefQueue.java
-  InterpolationContext.java
   IntExpr.java
   IntNum.java
   IntSort.java
   IntSymbol.java
+  Lambda.java
   ListSort.java
   Log.java
   ModelDecRefQueue.java

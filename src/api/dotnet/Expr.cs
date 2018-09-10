@@ -90,6 +90,15 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// The i'th argument of the expression.
+        /// </summary>
+        public Expr Arg(uint i)
+        {
+            Contract.Ensures(Contract.Result<Expr>() != null);
+            return Expr.Create(Context, Native.Z3_get_app_arg(Context.nCtx, NativeObject, i));
+        }
+
+        /// <summary>
         /// Update the arguments of the expression using the arguments <paramref name="args"/>
         /// The number of new arguments should coincide with the current number of arguments.
         /// </summary>
@@ -239,7 +248,7 @@ namespace Microsoft.Z3
         /// </summary>
         public bool IsAlgebraicNumber
         {
-            get { return Native.Z3_is_algebraic_number(Context.nCtx, NativeObject) != 0; }
+            get { return 0 != Native.Z3_is_algebraic_number(Context.nCtx, NativeObject); }
         }
         #endregion
 
@@ -315,14 +324,41 @@ namespace Microsoft.Z3
         /// </summary>
         public bool IsImplies { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_IMPLIES; } }
 
-        #endregion
-
-        #region Interpolation
         /// <summary>
-        /// Indicates whether the term is marked for interpolation.
+        /// Indicates whether the term is at-most
         /// </summary>
-        /// <remarks></remarks>
-        public bool IsInterpolant { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_INTERP; } }
+        public bool IsAtMost { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_PB_AT_MOST; } }
+
+        /// <summary>
+        /// Retrieve bound of at-most
+        /// </summary>
+        public uint AtMostBound { get { Contract.Requires(IsAtMost); return (uint)FuncDecl.Parameters[0].Int; } }
+
+        /// <summary>
+        /// Indicates whether the term is at-least
+        /// </summary>
+        public bool IsAtLeast { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_PB_AT_LEAST; } }
+
+        /// <summary>
+        /// Retrieve bound of at-least
+        /// </summary>
+        public uint AtLeastBound { get { Contract.Requires(IsAtLeast); return (uint)FuncDecl.Parameters[0].Int; } }
+
+        /// <summary>
+        /// Indicates whether the term is pbeq
+        /// </summary>
+        public bool IsPbEq { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_PB_EQ; } }
+
+        /// <summary>
+        /// Indicates whether the term is pble
+        /// </summary>
+        public bool IsPbLe { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_PB_LE; } }
+
+        /// <summary>
+        /// Indicates whether the term is pbge
+        /// </summary>
+        public bool IsPbGe { get { return IsApp && FuncDecl.DeclKind == Z3_decl_kind.Z3_OP_PB_GE; } }        
+
         #endregion
 
         #region Arithmetic Terms
@@ -797,7 +833,7 @@ namespace Microsoft.Z3
         /// Check whether expression is a string constant.
         /// </summary>
         /// <returns>a Boolean</returns>
-        public bool IsString  { get { return IsApp && 0 != Native.Z3_is_string(Context.nCtx, NativeObject); } }
+        public bool IsString  { get { return IsApp && Native.Z3_is_string(Context.nCtx, NativeObject) != 0; } }
 
         /// <summary>
         /// Retrieve string corresponding to string constant.
@@ -1466,7 +1502,7 @@ namespace Microsoft.Z3
         {
             get
             {
-                return (Native.Z3_is_app(Context.nCtx, NativeObject) != 0 &&
+                return (Native.Z3_is_app(Context.nCtx, NativeObject)  != 0 &&
                         Native.Z3_get_sort_kind(Context.nCtx, Native.Z3_get_sort(Context.nCtx, NativeObject)) == (uint)Z3_sort_kind.Z3_FINITE_DOMAIN_SORT);
             }
         }
@@ -1830,11 +1866,12 @@ namespace Microsoft.Z3
             IntPtr s = Native.Z3_get_sort(ctx.nCtx, obj);
             Z3_sort_kind sk = (Z3_sort_kind)Native.Z3_get_sort_kind(ctx.nCtx, s);
 
-            if (Native.Z3_is_algebraic_number(ctx.nCtx, obj) != 0) // is this a numeral ast?
+            if (0 != Native.Z3_is_algebraic_number(ctx.nCtx, obj)) // is this a numeral ast?
                 return new AlgebraicNum(ctx, obj);
 
             if (Native.Z3_is_numeral_ast(ctx.nCtx, obj) != 0)
             {
+
                 switch (sk)
                 {
                     case Z3_sort_kind.Z3_INT_SORT: return new IntNum(ctx, obj);

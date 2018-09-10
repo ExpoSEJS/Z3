@@ -49,6 +49,7 @@ Revision History:
 #include "util/timer.h"
 #include "util/statistics.h"
 #include "solver/progress_callback.h"
+#include <tuple>
 
 // there is a significant space overhead with allocating 1000+ contexts in
 // the case that each context only references a few expressions.
@@ -87,6 +88,7 @@ namespace smt {
         scoped_ptr<relevancy_propagator> m_relevancy_propagator;
         random_gen                  m_random;
         bool                        m_flushing; // (debug support) true when flushing
+        mutable unsigned            m_lemma_id;
         progress_callback *         m_progress_callback;
         unsigned                    m_next_progress_sample;
 
@@ -116,6 +118,7 @@ namespace smt {
         plugin_manager<theory>      m_theories;     // mapping from theory_id -> theory
         ptr_vector<theory>          m_theory_set;   // set of theories for fast traversal
         vector<enode_vector>        m_decl2enodes;  // decl -> enode (for decls with arity > 0)
+        enode_vector                m_empty_vector;
         cg_table                    m_cg_table;
         dyn_ack_manager             m_dyn_ack_manager;
         struct new_eq {
@@ -168,6 +171,8 @@ namespace smt {
         expr_ref_vector             m_units_to_reassert;
         svector<char>               m_units_to_reassert_sign;
         literal_vector              m_assigned_literals;
+        typedef std::pair<clause*, literal_vector> tmp_clause;
+        vector<tmp_clause>          m_tmp_clauses;
         unsigned                    m_qhead;
         unsigned                    m_simp_qhead;
         int                         m_simp_counter; //!< can become negative
@@ -319,6 +324,7 @@ namespace smt {
         }
 #endif
 
+        clause_vector const& get_lemmas() const { return m_lemmas; }
 
         literal get_literal(expr * n) const;
 
@@ -453,6 +459,8 @@ namespace smt {
         theory * get_theory(theory_id th_id) const {
             return m_theories.get_plugin(th_id);
         }
+        
+        ptr_vector<theory> const& theories() const { return m_theories.plugins(); }
 
         ptr_vector<theory>::const_iterator begin_theories() const {
             return m_theories.begin();
@@ -483,7 +491,7 @@ namespace smt {
         }
 
         bool tracking_assumptions() const {
-            return m_search_lvl > m_base_lvl;
+            return !m_assumptions.empty() && m_search_lvl > m_base_lvl;
         }
 
         expr * bool_var2expr(bool_var v) const {
@@ -514,6 +522,11 @@ namespace smt {
             return id < m_decl2enodes.size() ? m_decl2enodes[id].size() : 0;
         }
 
+        enode_vector const& enodes_of(func_decl const * d) const {
+            unsigned id = d->get_decl_id();
+            return id < m_decl2enodes.size() ? m_decl2enodes[id] : m_empty_vector;
+        }
+
         enode_vector::const_iterator begin_enodes_of(func_decl const * decl) const {
             unsigned id = decl->get_decl_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id].begin() : nullptr;
@@ -523,6 +536,8 @@ namespace smt {
             unsigned id = decl->get_decl_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id].end() : nullptr;
         }
+
+        ptr_vector<enode> const& enodes() const { return m_enodes; }
 
         ptr_vector<enode>::const_iterator begin_enodes() const {
             return m_enodes.begin();
@@ -550,8 +565,8 @@ namespace smt {
             return m_asserted_formulas.has_quantifiers();
         }
 
-        fingerprint * add_fingerprint(void * data, unsigned data_hash, unsigned num_args, enode * const * args) {
-            return m_fingerprints.insert(data, data_hash, num_args, args);
+        fingerprint * add_fingerprint(void * data, unsigned data_hash, unsigned num_args, enode * const * args, expr* def = 0) {
+            return m_fingerprints.insert(data, data_hash, num_args, args, def);
         }
 
         theory_id get_var_theory(bool_var v) const {
@@ -621,8 +636,6 @@ namespace smt {
 
         void remove_cls_occs(clause * cls);
 
-        void mark_as_deleted(clause * cls);
-
         void del_clause(clause * cls);
 
         void del_clauses(clause_vector & v, unsigned old_size);
@@ -646,6 +659,14 @@ namespace smt {
         void reinit_clauses(unsigned num_scopes, unsigned num_bool_vars);
 
         void reassert_units(unsigned units_to_reassert_lim);
+
+    public:
+        // \brief exposed for PB solver to participate in GC
+
+        void remove_watch(bool_var v);
+
+        void mark_as_deleted(clause * cls);
+
 
         // -----------------------------------
         //
@@ -726,6 +747,8 @@ namespace smt {
         bool internalize_theory_atom(app * n, bool gate_ctx);
 
         void internalize_quantifier(quantifier * q, bool gate_ctx);
+
+        void internalize_lambda(quantifier * q);
 
         void internalize_formula_core(app * n, bool gate_ctx);
 
@@ -885,10 +908,11 @@ namespace smt {
         failure            m_last_search_failure;
         ptr_vector<theory> m_incomplete_theories; //!< theories that failed to produce a model
         bool               m_searching;
-        ptr_vector<expr>   m_assumption_core;
         unsigned           m_num_conflicts;
         unsigned           m_num_conflicts_since_restart;
         unsigned           m_num_conflicts_since_lemma_gc;
+        unsigned           m_num_restarts;
+        unsigned           m_num_simplifications;
         unsigned           m_restart_threshold;
         unsigned           m_restart_outer_threshold;
         unsigned           m_luby_idx;
@@ -947,8 +971,8 @@ namespace smt {
 
         bool contains_instance(quantifier * q, unsigned num_bindings, enode * const * bindings);
 
-        bool add_instance(quantifier * q, app * pat, unsigned num_bindings, enode * const * bindings, unsigned max_generation,
-                          unsigned min_top_generation, unsigned max_top_generation, ptr_vector<enode> & used_enodes);
+        bool add_instance(quantifier * q, app * pat, unsigned num_bindings, enode * const * bindings, expr* def, unsigned max_generation,
+                          unsigned min_top_generation, unsigned max_top_generation, vector<std::tuple<enode *, enode*>> & used_enodes /*gives the equalities used for the pattern match, see mam.cpp for more info*/);
 
         void set_global_generation(unsigned generation) { m_generation = generation; }
 
@@ -987,6 +1011,7 @@ namespace smt {
 
         void push_eq(enode * lhs, enode * rhs, eq_justification const & js) {
             SASSERT(lhs != rhs);
+            SASSERT(lhs->get_root() != rhs->get_root());
             m_eq_propagation_queue.push_back(new_eq(lhs, rhs, js));
         }
 
@@ -1029,6 +1054,8 @@ namespace smt {
         bool is_ext_diseq(enode * n1, enode * n2, unsigned depth);
 
         enode * get_enode_eq_to(func_decl * f, unsigned num_args, enode * const * args);
+
+        expr* next_decision();
 
     protected:
         bool decide();
@@ -1091,17 +1118,21 @@ namespace smt {
 
         void internalize_assertions();
 
-        void assert_assumption(expr * a);
+        bool validate_assumptions(expr_ref_vector const& asms);
 
-        bool validate_assumptions(unsigned num_assumptions, expr * const * assumptions);
+        void init_assumptions(expr_ref_vector const& asms);
 
-        void init_assumptions(unsigned num_assumptions, expr * const * assumptions);
+        void init_clause(expr_ref_vector const& clause);
+
+        lbool decide_clause();
+
+        void reset_tmp_clauses();
 
         void reset_assumptions();
 
         void add_theory_assumptions(expr_ref_vector & theory_assumptions);
 
-        lbool mk_unsat_core();
+        lbool mk_unsat_core(lbool result);
 
         void validate_unsat_core();
 
@@ -1289,12 +1320,12 @@ namespace smt {
 
         void display_lemma_as_smt_problem(std::ostream & out, unsigned num_antecedents, literal const * antecedents, literal consequent = false_literal, symbol const& logic = symbol::null) const;
 
-        void display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents, literal consequent = false_literal, symbol const& logic = symbol::null) const;
+        unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents, literal consequent = false_literal, symbol const& logic = symbol::null) const;
         void display_lemma_as_smt_problem(std::ostream & out, unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
                                           literal consequent = false_literal, symbol const& logic = symbol::null) const;
 
-        void display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents,
+        unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
                                           literal consequent = false_literal, symbol const& logic = symbol::null) const;
 
@@ -1462,7 +1493,7 @@ namespace smt {
            If l == 0, then the logic of this context is used in the new context.
            If p == 0, then this->m_params is used
         */
-        context * mk_fresh(symbol const * l = nullptr,  smt_params * p = nullptr);
+        context * mk_fresh(symbol const * l = nullptr,  smt_params * smtp = nullptr, params_ref const & p = params_ref());
 
         static void copy(context& src, context& dst);
 
@@ -1485,6 +1516,8 @@ namespace smt {
         void pop(unsigned num_scopes);
 
         lbool check(unsigned num_assumptions = 0, expr * const * assumptions = nullptr, bool reset_cancel = true, bool already_did_theory_assumptions = false);
+
+        lbool check(expr_ref_vector const& cube, vector<expr_ref_vector> const& clauses);
 
         lbool get_consequences(expr_ref_vector const& assumptions, expr_ref_vector const& vars, expr_ref_vector& conseq, expr_ref_vector& unfixed);
 
@@ -1512,6 +1545,8 @@ namespace smt {
         void get_guessed_literals(expr_ref_vector & result);
 
         void internalize_assertion(expr * n, proof * pr, unsigned generation);
+
+        void internalize_proxies(expr_ref_vector const& asms, vector<std::pair<expr*,expr_ref>>& asm2proxy);
 
         void internalize_instance(expr * body, proof * pr, unsigned generation) {
             internalize_assertion(body, pr, generation);
@@ -1548,8 +1583,6 @@ namespace smt {
         void get_asserted_formulas(ptr_vector<expr>& r) const { m_asserted_formulas.get_assertions(r); }
 
         //proof * const * get_asserted_formula_proofs() const { return m_asserted_formulas.get_formula_proofs(); }
-
-        void get_assumptions_core(ptr_vector<expr> & result);
 
         void get_assertions(ptr_vector<expr> & result) { m_asserted_formulas.get_assertions(result); }
 

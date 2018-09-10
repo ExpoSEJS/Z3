@@ -31,6 +31,7 @@ Revision History:
 #include "smt/params/theory_arith_params.h"
 #include "smt/arith_eq_adapter.h"
 #include "smt/proto_model/numeral_factory.h"
+#include "smt/smt_context.h"
 #include "util/obj_pair_hashtable.h"
 #include "smt/old_interval.h"
 #include "math/grobner/grobner.h"
@@ -41,7 +42,7 @@ Revision History:
 namespace smt {
     
     struct theory_arith_stats {
-        unsigned m_conflicts, m_add_rows, m_pivots, m_diseq_cs, m_gomory_cuts, m_branches, m_gcd_tests;
+        unsigned m_conflicts, m_add_rows, m_pivots, m_diseq_cs, m_gomory_cuts, m_branches, m_gcd_tests, m_patches, m_patches_succ;
         unsigned m_assert_lower, m_assert_upper, m_assert_diseq, m_core2th_eqs, m_core2th_diseqs;
         unsigned m_th2core_eqs, m_th2core_diseqs, m_bound_props, m_offset_eqs, m_fixed_eqs, m_offline_eqs;
         unsigned m_max_min; 
@@ -1078,10 +1079,10 @@ namespace smt {
         // Optimization
         //
         // -----------------------------------
+        expr_ref mk_ge(generic_model_converter& fm, theory_var v, inf_numeral const& val);
         inf_eps_rational<inf_rational> maximize(theory_var v, expr_ref& blocker, bool& has_shared) override;
         inf_eps_rational<inf_rational> value(theory_var v) override;
         theory_var add_objective(app* term) override;
-        expr_ref mk_ge(filter_model_converter& fm, theory_var v, inf_numeral const& val);
         void enable_record_conflict(expr* bound);
         void record_conflict(unsigned num_lits, literal const * lits, 
                           unsigned num_eqs, enode_pair const * eqs,

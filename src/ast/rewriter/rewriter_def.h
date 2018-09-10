@@ -336,9 +336,9 @@ void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
             UNREACHABLE();
         }
         // TODO: add rewrite rules support
-        expr * def;
-        proof * def_pr;
-        quantifier * def_q;
+        expr * def = nullptr;
+        proof * def_pr = nullptr;
+        quantifier * def_q = nullptr;
         // When get_macro succeeds, then
         // we know that:
         // forall X. f(X) = def[X]
@@ -448,7 +448,7 @@ void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
             m_r = result_stack().back();
             if (!is_ground(m_r)) {
                 m_inv_shifter(m_r, num_args, tmp);
-                m_r = tmp;
+                m_r = std::move(tmp);
             }
             result_stack().shrink(fr.m_spos);
             result_stack().push_back(m_r);
@@ -542,7 +542,7 @@ void rewriter_tpl<Config>::process_quantifier(quantifier * q, frame & fr) {
     }
     result_stack().shrink(fr.m_spos);
     result_stack().push_back(m_r.get());
-    SASSERT(m().is_bool(m_r));
+    SASSERT(m().get_sort(q) == m().get_sort(m_r));
     if (!ProofGen) {
         SASSERT(num_decls <= m_bindings.size());
         m_bindings.shrink(m_bindings.size() - num_decls);
@@ -638,6 +638,17 @@ void rewriter_tpl<Config>::set_inv_bindings(unsigned num_bindings, expr * const 
     }
     TRACE("rewriter", display_bindings(tout););
 }
+
+template<typename Config>
+void rewriter_tpl<Config>::update_inv_binding_at(unsigned i, expr* binding) {
+    m_bindings[i] = binding;
+}
+
+template<typename Config>
+void rewriter_tpl<Config>::update_binding_at(unsigned i, expr* binding) {
+    m_bindings[m_bindings.size() - i - 1] = binding;
+}
+
 
 template<typename Config>
 template<bool ProofGen>

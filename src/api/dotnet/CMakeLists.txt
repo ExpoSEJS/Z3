@@ -80,11 +80,11 @@ set(Z3_DOTNET_ASSEMBLY_SOURCES_IN_SRC_TREE
     Global.cs
     Goal.cs
     IDecRefQueue.cs
-    InterpolationContext.cs
     IntExpr.cs
     IntNum.cs
     IntSort.cs
     IntSymbol.cs
+    Lambda.cs
     ListSort.cs
     Log.cs
     Model.cs

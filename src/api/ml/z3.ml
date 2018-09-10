@@ -43,6 +43,14 @@ let mk_list f n =
   in
   mk_list' 0 []
 
+let check_int32 v = v = Int32.to_int (Int32.of_int v)
+
+let mk_int_expr ctx v ty = 
+   if not (check_int32 v) then
+      Z3native.mk_numeral ctx (string_of_int v) ty
+   else
+      Z3native.mk_int ctx v ty
+    
 let mk_context (settings:(string * string) list) =
   let cfg = Z3native.mk_config () in
   let f e = Z3native.set_param_value cfg (fst e) (snd e) in
@@ -531,7 +539,7 @@ end = struct
   let mk_fresh_const (ctx:context) (prefix:string) (range:Sort.sort) = Z3native.mk_fresh_const ctx prefix range
   let mk_app (ctx:context) (f:FuncDecl.func_decl) (args:expr list) = expr_of_func_app ctx f args
   let mk_numeral_string (ctx:context) (v:string) (ty:Sort.sort) = Z3native.mk_numeral ctx v ty
-  let mk_numeral_int (ctx:context) (v:int) (ty:Sort.sort) = Z3native.mk_int ctx v ty
+  let mk_numeral_int (ctx:context) (v:int) (ty:Sort.sort) = mk_int_expr ctx v ty
   let equal (a:expr) (b:expr) = AST.equal a b
   let compare (a:expr) (b:expr) = AST.compare a b
 end
@@ -1036,7 +1044,7 @@ struct
     let mk_mod = Z3native.mk_mod
     let mk_rem = Z3native.mk_rem
     let mk_numeral_s (ctx:context) (v:string) = Z3native.mk_numeral ctx v (mk_sort ctx)
-    let mk_numeral_i (ctx:context) (v:int) = Z3native.mk_int ctx v (mk_sort ctx)
+    let mk_numeral_i (ctx:context) (v:int) = mk_int_expr ctx v (mk_sort ctx)
     let mk_int2real = Z3native.mk_int2real
     let mk_int2bv = Z3native.mk_int2bv
   end
@@ -1061,11 +1069,13 @@ struct
     let mk_numeral_nd (ctx:context) (num:int) (den:int) =
       if den = 0 then
         raise (Error "Denominator is zero")
+      else if not (check_int32 num) || not (check_int32 den) then
+        raise (Error "numerals don't fit in 32 bits")
       else
         Z3native.mk_real ctx num den
 
     let mk_numeral_s (ctx:context) (v:string) = Z3native.mk_numeral ctx v (mk_sort ctx)
-    let mk_numeral_i (ctx:context) (v:int) = Z3native.mk_int ctx v (mk_sort ctx)
+    let mk_numeral_i (ctx:context) (v:int) = mk_int_expr ctx v (mk_sort ctx)
     let mk_is_integer = Z3native.mk_is_int
     let mk_real2int = Z3native.mk_real2int
 
@@ -1154,11 +1164,6 @@ struct
   let is_bv_carry (x:expr) = (AST.is_app x) && (FuncDecl.get_decl_kind (Expr.get_func_decl x) = OP_CARRY)
   let is_bv_xor3 (x:expr) = (AST.is_app x) && (FuncDecl.get_decl_kind (Expr.get_func_decl x) = OP_XOR3)
   let get_size (x:Sort.sort) = Z3native.get_bv_sort_size (Sort.gc x) x
-
-  let get_int (x:expr) =
-    match Z3native.get_numeral_int (Expr.gc x) x with
-    | true, v -> v
-    | false, _ -> raise (Error "Conversion failed.")
 
   let numeral_to_string (x:expr) = Z3native.get_numeral_string (Expr.gc x) x
   let mk_const (ctx:context) (name:Symbol.symbol) (size:int) =
@@ -1654,7 +1659,6 @@ struct
       mk_list f n
 
     let get_subgoal (x:apply_result) (i:int) = Z3native.apply_result_get_subgoal (gc x) x i
-    let convert_model (x:apply_result) (i:int) (m:Model.model) = Z3native.apply_result_convert_model (gc x) x i m
     let to_string (x:apply_result) = Z3native.apply_result_to_string (gc x) x
   end
 
@@ -1995,52 +1999,6 @@ struct
         cs sort_names sorts cd decl_names decls
 end
 
-module Interpolation =
-struct
-  let mk_interpolant = Z3native.mk_interpolant
-
-  let mk_interpolation_context (settings:(string * string) list) =
-    let cfg = Z3native.mk_config () in
-    let f e = Z3native.set_param_value cfg (fst e) (snd e) in
-    List.iter f settings;
-    let res = Z3native.mk_interpolation_context cfg in
-    Z3native.del_config cfg;
-    Z3native.set_ast_print_mode res (int_of_ast_print_mode PRINT_SMTLIB2_COMPLIANT);
-    Z3native.set_internal_error_handler res;
-    res
-
-  let get_interpolant (ctx:context) (pf:expr) (pat:expr) (p:Params.params) =
-    let av = Z3native.get_interpolant ctx pf pat p in
-    AST.ASTVector.to_expr_list av
-
-  let compute_interpolant (ctx:context) (pat:expr) (p:Params.params) =
-    let (r, interp, model) = Z3native.compute_interpolant ctx pat p in
-    let res = lbool_of_int r in
-    match res with
-    | L_TRUE -> (res, None, Some model)
-    | L_FALSE -> (res, Some (AST.ASTVector.to_expr_list interp), None)
-    | _ -> (res, None, None)
-
-  let get_interpolation_profile = Z3native.interpolation_profile
-
-  let read_interpolation_problem (ctx:context) (filename:string) =
-    let (r, num, cnsts, parents, error, num_theory, theory) =
-      Z3native.read_interpolation_problem ctx filename
-    in
-    match r with
-    | 0 -> raise (Error "Interpolation problem could not be read.")
-    | _ -> (cnsts, parents, theory)
-
-  let check_interpolant (ctx:context) (num:int) (cnsts:Expr.expr list) (parents:int list) (interps:Expr.expr list) (num_theory:int) (theory:Expr.expr list) =
-    let (r, str) = Z3native.check_interpolant ctx num cnsts parents interps num_theory theory in
-    match (lbool_of_int r) with
-    | L_UNDEF -> raise (Error "Interpolant could not be verified.")
-    | L_FALSE -> raise (Error "Interpolant could not be verified.")
-    | _ -> ()
-
-  let write_interpolation_problem (ctx:context) (num:int) (cnsts:Expr.expr list) (parents:int list) (filename:string) (num_theory:int) (theory:Expr.expr list) =
-    Z3native.write_interpolation_problem ctx num cnsts parents filename num_theory theory
-end
 
 let set_global_param = Z3native.global_param_set
 

@@ -1325,7 +1325,7 @@ bool pred_transformer::is_qblocked (pob &n) {
 
     // assert cti
     s->assert_expr(n.post());
-    lbool res = s->check_sat(0, 0);
+    lbool res = s->check_sat(0, nullptr);
 
     // if (res == l_false) {
     //     expr_ref_vector core(m);
@@ -2737,7 +2737,7 @@ lbool context::solve(unsigned from_lvl)
             // }
         }
         VERIFY (validate ());
-    } catch (unknown_exception)
+    } catch (const unknown_exception &)
     {}
 
     if (m_last_result == l_true) {

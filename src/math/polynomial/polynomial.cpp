@@ -100,7 +100,7 @@ namespace polynomial {
 
         struct lt_var {
             bool operator()(power const & p1, power const & p2) {
-                // CMW: The assertion below does not hold on OSX, because
+                // CMW: The assertion below does not hold on macOS, because
                 // their implementation of std::sort will try to compare
                 // two items at the same index instead of comparing
                 // the indices directly. I suspect that the purpose of
@@ -4493,7 +4493,7 @@ namespace polynomial {
                         }
                         #endif
                     }
-                    catch (sparse_mgcd_failed) {
+                    catch (const sparse_mgcd_failed &) {
                         flet<bool> use_prs(m_use_prs_gcd, false);
                         gcd_prs(u, v, x, r);
                     }

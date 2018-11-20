@@ -28,6 +28,9 @@ Notes:
 #include<z3.h>
 #include<limits.h>
 
+#undef min
+#undef max
+
 /**
    \defgroup cppapi C++ API
 
@@ -310,6 +313,13 @@ namespace z3 {
         func_decl function(char const * name, sort const & d1, sort const & d2, sort const & d3, sort const & range);
         func_decl function(char const * name, sort const & d1, sort const & d2, sort const & d3, sort const & d4, sort const & range);
         func_decl function(char const * name, sort const & d1, sort const & d2, sort const & d3, sort const & d4, sort const & d5, sort const & range);
+
+        func_decl recfun(symbol const & name, unsigned arity, sort const * domain, sort const & range);
+        func_decl recfun(char const * name, unsigned arity, sort const * domain, sort const & range);
+        func_decl recfun(char const * name, sort const & domain, sort const & range);
+        func_decl recfun(char const * name, sort const & d1, sort const & d2, sort const & range);
+
+        void      recdef(func_decl, expr_vector const& args, expr const& body);
 
         expr constant(symbol const & name, sort const & s);
         expr constant(char const * name, sort const & s);
@@ -709,6 +719,7 @@ namespace z3 {
         bool is_numeral_u(unsigned& i) const { bool r = 0 != Z3_get_numeral_uint(ctx(), m_ast, &i); check_error(); return r;}
         bool is_numeral(std::string& s) const { if (!is_numeral()) return false; s = Z3_get_numeral_string(ctx(), m_ast); check_error(); return true; }
         bool is_numeral(std::string& s, unsigned precision) const { if (!is_numeral()) return false; s = Z3_get_numeral_decimal_string(ctx(), m_ast, precision); check_error(); return true; }
+        bool is_numeral(double& d) const { if (!is_numeral()) return false; d = Z3_get_numeral_double(ctx(), m_ast); check_error(); return true; }
         /**
            \brief Return true if this expression is an application.
         */
@@ -1470,9 +1481,51 @@ namespace z3 {
     inline expr nand(expr const& a, expr const& b) { check_context(a, b); Z3_ast r = Z3_mk_bvnand(a.ctx(), a, b); return expr(a.ctx(), r); }
     inline expr nor(expr const& a, expr const& b) { check_context(a, b); Z3_ast r = Z3_mk_bvnor(a.ctx(), a, b); return expr(a.ctx(), r); }
     inline expr xnor(expr const& a, expr const& b) { check_context(a, b); Z3_ast r = Z3_mk_bvxnor(a.ctx(), a, b); return expr(a.ctx(), r); }
-    inline expr min(expr const& a, expr const& b) { check_context(a, b); Z3_ast r = Z3_mk_fpa_min(a.ctx(), a, b); return expr(a.ctx(), r); }
-    inline expr max(expr const& a, expr const& b) { check_context(a, b); Z3_ast r = Z3_mk_fpa_max(a.ctx(), a, b); return expr(a.ctx(), r); }
-    inline expr abs(expr const & a) { Z3_ast r = Z3_mk_fpa_abs(a.ctx(), a); return expr(a.ctx(), r); }
+    inline expr min(expr const& a, expr const& b) { 
+        check_context(a, b); 
+        Z3_ast r;
+        if (a.is_arith()) {
+            r = Z3_mk_ite(a.ctx(), Z3_mk_ge(a.ctx(), a, b), b, a);
+        }
+        else if (a.is_bv()) {
+            r = Z3_mk_ite(a.ctx(), Z3_mk_bvuge(a.ctx(), a, b), b, a);
+        }
+        else {
+            assert(a.is_fpa());
+            r = Z3_mk_fpa_min(a.ctx(), a, b); 
+        }
+        return expr(a.ctx(), r); 
+    }
+    inline expr max(expr const& a, expr const& b) { 
+        check_context(a, b); 
+        Z3_ast r;
+        if (a.is_arith()) {
+            r = Z3_mk_ite(a.ctx(), Z3_mk_ge(a.ctx(), a, b), a, b);
+        }
+        else if (a.is_bv()) {
+            r = Z3_mk_ite(a.ctx(), Z3_mk_bvuge(a.ctx(), a, b), a, b);
+        }
+        else {
+            assert(a.is_fpa());
+            r = Z3_mk_fpa_max(a.ctx(), a, b); 
+        }
+        return expr(a.ctx(), r); 
+    }
+    inline expr abs(expr const & a) { 
+        Z3_ast r;
+        if (a.is_int()) {
+            expr zero = a.ctx().int_val(0);
+            r = Z3_mk_ite(a.ctx(), Z3_mk_ge(a.ctx(), a, zero), a, -a);
+        }
+        else if (a.is_real()) {
+            expr zero = a.ctx().real_val(0);
+            r = Z3_mk_ite(a.ctx(), Z3_mk_ge(a.ctx(), a, zero), a, -a);
+        }
+        else {
+            r = Z3_mk_fpa_abs(a.ctx(), a); 
+        }
+        return expr(a.ctx(), r); 
+    }
     inline expr sqrt(expr const & a, expr const& rm) {
         check_context(a, rm);
         assert(a.is_fpa());
@@ -1985,7 +2038,7 @@ namespace z3 {
             Z3_ast r = 0;
             Z3_bool status = Z3_model_eval(ctx(), m_model, n, model_completion, &r);
             check_error();
-            if (status == Z3_FALSE && ctx().enable_exceptions())
+            if (status == false && ctx().enable_exceptions())
                 Z3_THROW(exception("failed to evaluate expression"));
             return expr(ctx(), r);
         }
@@ -2814,6 +2867,37 @@ namespace z3 {
         return func_decl(*this, f);
     }
 
+    inline func_decl context::recfun(symbol const & name, unsigned arity, sort const * domain, sort const & range) {
+        array<Z3_sort> args(arity);
+        for (unsigned i = 0; i < arity; i++) {
+            check_context(domain[i], range);
+            args[i] = domain[i];
+        }
+        Z3_func_decl f = Z3_mk_rec_func_decl(m_ctx, name, arity, args.ptr(), range);
+        check_error();
+        return func_decl(*this, f);
+
+    }
+
+    inline func_decl context::recfun(char const * name, unsigned arity, sort const * domain, sort const & range) {
+        return recfun(str_symbol(name), arity, domain, range);
+    }
+
+    inline func_decl context::recfun(char const * name, sort const& d1, sort const & range) {
+        return recfun(str_symbol(name), 1, &d1, range);
+    }
+
+    inline func_decl context::recfun(char const * name, sort const& d1, sort const& d2, sort const & range) {
+        sort dom[2] = { d1, d2 };
+        return recfun(str_symbol(name), 2, dom, range);
+    }
+
+    inline void context::recdef(func_decl f, expr_vector const& args, expr const& body) {
+        check_context(f, args); check_context(f, body);
+        array<Z3_ast> vars(args);
+        Z3_add_rec_def(f.ctx(), f, vars.size(), vars.ptr(), body);
+    }
+
     inline expr context::constant(symbol const & name, sort const & s) {
         Z3_ast r = Z3_mk_const(m_ctx, name, s);
         check_error();
@@ -2973,6 +3057,19 @@ namespace z3 {
     }
     inline func_decl function(std::string const& name, sort_vector const& domain, sort const& range) {
         return range.ctx().function(name.c_str(), domain, range);
+    }
+
+    inline func_decl recfun(symbol const & name, unsigned arity, sort const * domain, sort const & range) {
+        return range.ctx().recfun(name, arity, domain, range);
+    }
+    inline func_decl recfun(char const * name, unsigned arity, sort const * domain, sort const & range) {
+        return range.ctx().recfun(name, arity, domain, range);
+    }
+    inline func_decl recfun(char const * name, sort const& d1, sort const & range) {
+        return range.ctx().recfun(name, d1, range);
+    }
+    inline func_decl recfun(char const * name, sort const& d1, sort const& d2, sort const & range) {
+        return range.ctx().recfun(name, d1, d2, range);
     }
 
     inline expr select(expr const & a, expr const & i) {

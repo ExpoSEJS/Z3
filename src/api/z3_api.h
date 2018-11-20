@@ -1435,7 +1435,7 @@ extern "C" {
     /**
        \brief Get a global (or module) parameter.
 
-       Returns \c Z3_FALSE if the parameter value does not exist.
+       Returns \c false if the parameter value does not exist.
 
        \sa Z3_global_param_set
 
@@ -1715,7 +1715,7 @@ extern "C" {
     unsigned Z3_API Z3_param_descrs_size(Z3_context c, Z3_param_descrs p);
 
     /**
-       \brief Return the number of parameters in the given parameter description set.
+       \brief Return the name of the parameter at given index \c i.
 
        \pre i < Z3_param_descrs_size(c, p)
 
@@ -1751,6 +1751,7 @@ extern "C" {
        NB. Not all integers can be passed to this function.
        The legal range of unsigned integers is 0 to 2^30-1.
 
+       \sa Z3_get_symbol_int
        \sa Z3_mk_string_symbol
 
        def_API('Z3_mk_int_symbol', SYMBOL, (_in(CONTEXT), _in(INT)))
@@ -1762,6 +1763,7 @@ extern "C" {
 
        Symbols are used to name several term and type constructors.
 
+       \sa Z3_get_symbol_string
        \sa Z3_mk_int_symbol
 
        def_API('Z3_mk_string_symbol', SYMBOL, (_in(CONTEXT), _in(STRING)))
@@ -2081,6 +2083,7 @@ extern "C" {
                                         Z3_sort range);
 
 
+
     /**
        \brief Create a constant or function application.
 
@@ -2140,6 +2143,48 @@ extern "C" {
        def_API('Z3_mk_fresh_const', AST, (_in(CONTEXT), _in(STRING), _in(SORT)))
     */
     Z3_ast Z3_API Z3_mk_fresh_const(Z3_context c, Z3_string prefix, Z3_sort ty);
+
+
+    /**
+       \brief Declare a recursive function
+
+       \param c logical context.
+       \param s name of the function.
+       \param domain_size number of arguments. It should be greater than 0.
+       \param domain array containing the sort of each argument. The array must contain domain_size elements. 
+       \param range sort of the constant or the return sort of the function.
+
+       After declaring recursive function, it should be associated with a recursive definition #Z3_mk_rec_def.
+       The function #Z3_mk_app can be used to create a constant or function
+       application.
+
+       \sa Z3_mk_app
+       \sa Z3_mk_rec_def
+
+       def_API('Z3_mk_rec_func_decl', FUNC_DECL, (_in(CONTEXT), _in(SYMBOL), _in(UINT), _in_array(2, SORT), _in(SORT)))
+    */
+    Z3_func_decl Z3_API Z3_mk_rec_func_decl(Z3_context c, Z3_symbol s,
+                                        unsigned domain_size, Z3_sort const domain[],
+                                        Z3_sort range);
+
+    /**
+       \brief Define the body of a recursive function.
+       
+       \param c logical context.
+       \param f function declaration.
+       \param n number of arguments to the function
+       \param args constants that are used as arguments to the recursive function in the definition.
+       \param body body of the recursive function
+
+       After declaring a recursive function or a collection of  mutually recursive functions, use 
+       this function to provide the definition for the recursive function.
+
+       \sa Z3_mk_rec_func_decl
+
+       def_API('Z3_add_rec_def', VOID, (_in(CONTEXT), _in(FUNC_DECL), _in(UINT), _in_array(2, AST), _in(AST)))
+     */
+    void Z3_API Z3_add_rec_def(Z3_context c, Z3_func_decl f, unsigned n, Z3_ast args[], Z3_ast body);
+
     /*@}*/
 
     /** @name Propositional Logic and Equality */
@@ -3772,7 +3817,7 @@ extern "C" {
         );
 
     /**
-       \brief Create a lambda expression. It taks an expression \c body that contains bound variables 
+       \brief Create a lambda expression. It takes an expression \c body that contains bound variables
        of the same sorts as the sorts listed in the array \c sorts. The bound variables are de-Bruijn indices created
        using #Z3_mk_bound. The array \c decl_names contains the names that the quantified formula uses for the
        bound variables. Z3 applies the convention that the last element in the \c decl_names and \c sorts array
@@ -3846,7 +3891,7 @@ extern "C" {
     /**
        \brief Return the symbol name.
 
-       \pre Z3_get_symbol_string(s) == Z3_STRING_SYMBOL
+       \pre Z3_get_symbol_kind(s) == Z3_STRING_SYMBOL
 
        \warning The returned buffer is statically allocated by Z3. It will
        be automatically deallocated when #Z3_del_context is invoked.
@@ -3908,7 +3953,7 @@ extern "C" {
     unsigned Z3_API Z3_get_bv_sort_size(Z3_context c, Z3_sort t);
 
     /**
-        \brief Store the size of the sort in \c r. Return Z3_FALSE if the call failed.
+        \brief Store the size of the sort in \c r. Return \c false if the call failed.
         That is, Z3_get_sort_kind(s) == Z3_FINITE_DOMAIN_SORT
 
         def_API('Z3_get_finite_domain_sort_size', BOOL, (_in(CONTEXT), _in(SORT), _out(UINT64)))
@@ -4439,6 +4484,15 @@ extern "C" {
     Z3_string Z3_API Z3_get_numeral_decimal_string(Z3_context c, Z3_ast a, unsigned precision);
 
     /**
+       \brief Return numeral as a double.
+
+       \pre Z3_get_ast_kind(c, a) == Z3_NUMERAL_AST || Z3_is_algebraic_number(c, a)
+
+       def_API('Z3_get_numeral_double', DOUBLE, (_in(CONTEXT), _in(AST)))
+    */
+    double Z3_API Z3_get_numeral_double(Z3_context c, Z3_ast a);
+
+    /**
        \brief Return the numerator (as a numeral AST) of a numeral AST of sort Real.
 
        \pre Z3_get_ast_kind(c, a) == Z3_NUMERAL_AST
@@ -4464,7 +4518,7 @@ extern "C" {
        \param num numerator.
        \param den denominator.
 
-       Return \c Z3_TRUE if the numeral value fits in 64 bit numerals, \c Z3_FALSE otherwise.
+       Return \c true if the numeral value fits in 64 bit numerals, \c false otherwise.
 
        \pre Z3_get_ast_kind(a) == Z3_NUMERAL_AST
 
@@ -4474,7 +4528,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit in a machine int. Return Z3_TRUE if the call succeeded.
+       the value can fit in a machine int. Return \c true if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4486,7 +4540,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit in a machine unsigned int. Return Z3_TRUE if the call succeeded.
+       the value can fit in a machine unsigned int. Return \c true if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4498,7 +4552,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit in a machine \c uint64_t int. Return Z3_TRUE if the call succeeded.
+       the value can fit in a machine \c uint64_t int. Return \c true if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4510,7 +4564,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit in a machine \c int64_t int. Return Z3_TRUE if the call succeeded.
+       the value can fit in a machine \c int64_t int. Return \c true if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4522,7 +4576,7 @@ extern "C" {
 
     /**
        \brief Similar to #Z3_get_numeral_string, but only succeeds if
-       the value can fit as a rational number as machine \c int64_t int. Return Z3_TRUE if the call succeeded.
+       the value can fit as a rational number as machine \c int64_t int. Return \c true if the call succeeded.
 
        \pre Z3_get_ast_kind(c, v) == Z3_NUMERAL_AST
 
@@ -4600,7 +4654,7 @@ extern "C" {
     Z3_bool Z3_API Z3_is_quantifier_exists(Z3_context c, Z3_ast a);
 
     /**
-       \brief Determine if ast is a lambda expresion.
+       \brief Determine if ast is a lambda expression.
 
        \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
 
@@ -4799,12 +4853,12 @@ extern "C" {
 
     /**
        \brief Evaluate the AST node \c t in the given model.
-       Return \c Z3_TRUE if succeeded, and store the result in \c v.
+       Return \c true if succeeded, and store the result in \c v.
 
-       If \c model_completion is Z3_TRUE, then Z3 will assign an interpretation for any constant or function that does
+       If \c model_completion is \c true, then Z3 will assign an interpretation for any constant or function that does
        not have an interpretation in \c m. These constants and functions were essentially don't cares.
 
-       If \c model_completion is Z3_FALSE, then Z3 will not assign interpretations to constants for functions that do
+       If \c model_completion is \c false, then Z3 will not assign interpretations to constants for functions that do
        not have interpretations in \c m. Evaluation behaves as the identify function in this case.
 
        The evaluation may fail for the following reasons:
@@ -4941,7 +4995,7 @@ extern "C" {
     /**
        \brief The \ccode{(_ as-array f)} AST node is a construct for assigning interpretations for arrays in Z3.
        It is the array such that forall indices \c i we have that \ccode{(select (_ as-array f) i)} is equal to \ccode{(f i)}.
-       This procedure returns Z3_TRUE if the \c a is an \c as-array AST node.
+       This procedure returns \c true if the \c a is an \c as-array AST node.
 
        Z3 current solvers have minimal support for \c as_array nodes.
 
@@ -5527,7 +5581,7 @@ extern "C" {
        \brief Convert a goal into a DIMACS formatted string.
        The goal must be in CNF. You can convert a goal to CNF
        by applying the tseitin-cnf tactic. Bit-vectors are not automatically
-       converted to Booleans either, so the caller intends to 
+       converted to Booleans either, so if the caller intends to
        preserve satisfiability, it should apply bit-blasting tactics.
        Quantifiers and theory atoms will not be encoded.
 
@@ -5898,9 +5952,9 @@ extern "C" {
        on how it is used and how its parameters are set.
 
        If the solver is used in a non incremental way (i.e. no calls to
-       `Z3_solver_push()` or `Z3_solver_pop()`, and no calls to
-       `Z3_solver_assert()` or `Z3_solver_assert_and_track()` after checking
-       satisfiability without an intervening `Z3_solver_reset()`) then solver1
+       #Z3_solver_push() or #Z3_solver_pop(), and no calls to
+       #Z3_solver_assert() or #Z3_solver_assert_and_track() after checking
+       satisfiability without an intervening #Z3_solver_reset()) then solver1
        will be used. This solver will apply Z3's "default" tactic.
 
        The "default" tactic will attempt to probe the logic used by the
@@ -5934,13 +5988,13 @@ extern "C" {
 
        This is equivalent to applying the "smt" tactic.
 
-       Unlike `Z3_mk_solver()` this solver
+       Unlike #Z3_mk_solver() this solver
          - Does not attempt to apply any logic specific tactics.
          - Does not change its behaviour based on whether it used
            incrementally/non-incrementally.
 
        Note that these differences can result in very different performance
-       compared to `Z3_mk_solver()`.
+       compared to #Z3_mk_solver().
 
        The function #Z3_solver_get_model retrieves a model if the
        assertions is satisfiable (i.e., the result is \c
@@ -5987,7 +6041,7 @@ extern "C" {
     Z3_solver Z3_API Z3_solver_translate(Z3_context source, Z3_solver s, Z3_context target);
 
     /**
-       \brief Ad-hoc method for importing model convertion from solver.
+       \brief Ad-hoc method for importing model conversion from solver.
        
        def_API('Z3_solver_import_model_converter', VOID, (_in(CONTEXT), _in(SOLVER), _in(SOLVER)))
      */
@@ -6143,6 +6197,8 @@ extern "C" {
        generation was enabled when the context was created, and the
        assertions are unsatisfiable (i.e., the result is \c Z3_L_FALSE).
 
+       \sa Z3_solver_check_assumptions
+
        def_API('Z3_solver_check', INT, (_in(CONTEXT), _in(SOLVER)))
     */
     Z3_lbool Z3_API Z3_solver_check(Z3_context c, Z3_solver s);
@@ -6206,7 +6262,7 @@ extern "C" {
        The third argument is a vector of variables that may be used for cubing.
        The contents of the vector is only used in the first call. The initial list of variables
        is used in subsequent calls until it returns the unsatisfiable cube. 
-       The vector is modified to contain a set of Autarky variables that occor in clauses that
+       The vector is modified to contain a set of Autarky variables that occur in clauses that
        are affected by the (last literal in the) cube. These variables could be used by a different
        cuber (on a different solver object) for further recursive cubing. 
 
@@ -6314,7 +6370,7 @@ extern "C" {
     Z3_string Z3_API Z3_stats_get_key(Z3_context c, Z3_stats s, unsigned idx);
 
     /**
-       \brief Return Z3_TRUE if the given statistical data is a unsigned integer.
+       \brief Return \c true if the given statistical data is a unsigned integer.
 
        \pre idx < Z3_stats_size(c, s)
 
@@ -6323,7 +6379,7 @@ extern "C" {
     Z3_bool Z3_API Z3_stats_is_uint(Z3_context c, Z3_stats s, unsigned idx);
 
     /**
-       \brief Return Z3_TRUE if the given statistical data is a double.
+       \brief Return \c true if the given statistical data is a double.
 
        \pre idx < Z3_stats_size(c, s)
 

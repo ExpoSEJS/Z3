@@ -718,8 +718,8 @@ def mk_install_tactic_cpp_internal(h_files_full_path, path):
                             _logger.error("Failed processing ADD_PROBE command at '{}'\n{}".format(
                                 fullname, line))
                             raise e
-        except e:
-           _loggeer.error("Failed to read file {}\n".format(h_file))
+        except Exception as e:
+           _logger.error("Failed to read file {}\n".format(h_file))
            raise e
     # First pass will just generate the tactic factories
     fout.write('#define ADD_TACTIC_CMD(NAME, DESCR, CODE) ctx.insert(alloc(tactic_cmd, symbol(NAME), DESCR, [](ast_manager &m, const params_ref &p) { return CODE; }))\n')

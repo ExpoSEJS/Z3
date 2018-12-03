@@ -241,15 +241,8 @@ void * memory::allocate(char const* file, int line, char const* obj, size_t s) {
 // when the local counter > SYNCH_THRESHOLD 
 #define SYNCH_THRESHOLD 100000
 
-#ifdef _WINDOWS
-// Actually this is VS specific instead of Windows specific.
-__declspec(thread) long long g_memory_thread_alloc_size    = 0;
-__declspec(thread) long long g_memory_thread_alloc_count   = 0;
-#else
-// GCC style
-__thread long long g_memory_thread_alloc_size    = 0;
-__thread long long g_memory_thread_alloc_count  = 0;
-#endif
+thread_local long long g_memory_thread_alloc_size    = 0;
+thread_local long long g_memory_thread_alloc_count   = 0;
 
 static void synchronize_counters(bool allocating) {
 #ifdef PROFILE_MEMORY
@@ -292,8 +285,10 @@ void memory::deallocate(void * p) {
 void * memory::allocate(size_t s) {
     s = s + sizeof(size_t); // we allocate an extra field!
     void * r = malloc(s);
-    if (r == 0) 
+    if (r == 0) {
         throw_out_of_memory();
+        return nullptr;
+    }
     *(static_cast<size_t*>(r)) = s;
     g_memory_thread_alloc_size += s;
     g_memory_thread_alloc_count += 1;
@@ -317,8 +312,10 @@ void* memory::reallocate(void *p, size_t s) {
     }
 
     void *r = realloc(real_p, s);
-    if (r == 0)
+    if (r == 0) {
         throw_out_of_memory();
+        return nullptr;
+    }
     *(static_cast<size_t*>(r)) = s;
     return static_cast<size_t*>(r) + 1; // we return a pointer to the location after the extra field
 }
@@ -361,8 +358,10 @@ void * memory::allocate(size_t s) {
     if (counts_exceeded)
         throw_alloc_counts_exceeded();
     void * r = malloc(s);
-    if (r == nullptr)
+    if (r == nullptr) {
         throw_out_of_memory();
+        return nullptr;
+    }
     *(static_cast<size_t*>(r)) = s;
     return static_cast<size_t*>(r) + 1; // we return a pointer to the location after the extra field
 }
@@ -389,8 +388,10 @@ void* memory::reallocate(void *p, size_t s) {
     if (counts_exceeded)
         throw_alloc_counts_exceeded();
     void *r = realloc(real_p, s);
-    if (r == nullptr)
+    if (r == nullptr) {
         throw_out_of_memory();
+        return nullptr;
+    }
     *(static_cast<size_t*>(r)) = s;
     return static_cast<size_t*>(r) + 1; // we return a pointer to the location after the extra field
 }

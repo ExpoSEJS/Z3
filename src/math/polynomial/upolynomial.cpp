@@ -96,7 +96,7 @@ namespace upolynomial {
 
     void core_manager::factors::display(std::ostream & out) const {
         out << nm().to_string(m_constant);
-        if (m_factors.size() > 0) {
+        if (!m_factors.empty()) {
             for (unsigned i = 0; i < m_factors.size(); ++ i) {
                 out << " * (";
                 m_upm.display(out, m_factors[i]);
@@ -1339,12 +1339,10 @@ namespace upolynomial {
     // Return the number of sign changes in the coefficients of p
     unsigned manager::sign_changes(unsigned sz, numeral const * p) {
         unsigned r = 0;
-        int sign, prev_sign;
-        sign = 0;
-        prev_sign = 0;
+        int prev_sign = 0;
         unsigned i = 0;
         for (; i < sz; i++) {
-            sign = sign_of(p[i]);
+            int sign = sign_of(p[i]);
             if (sign == 0)
                 continue;
             if (sign != prev_sign && prev_sign != 0)

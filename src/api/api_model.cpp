@@ -79,11 +79,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_model_has_interp(c, m, a);
         CHECK_NON_NULL(m, 0);
-        if (to_model_ref(m)->has_interpretation(to_func_decl(a))) {
-            return true;
-        } else {
-            return false;
-        }
+        return to_model_ref(m)->has_interpretation(to_func_decl(a));
         Z3_CATCH_RETURN(false);
     }
 
@@ -165,7 +161,10 @@ extern "C" {
         CHECK_NON_NULL(m, false);
         CHECK_IS_EXPR(t, false);
         model * _m = to_model_ref(m);
-        expr_ref result(mk_c(c)->m());
+        params_ref p;
+        ast_manager& mgr = mk_c(c)->m();
+        _m->set_solver(alloc(api::seq_expr_solver, mgr, p));
+        expr_ref result(mgr);
         model::scoped_model_completion _scm(*_m, model_completion);
         result = (*_m)(to_expr(t));
         mk_c(c)->save_ast_trail(result.get());

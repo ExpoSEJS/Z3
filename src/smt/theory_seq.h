@@ -404,6 +404,8 @@ namespace smt {
         void init_search_eh() override;
 
         void init_model(expr_ref_vector const& es);
+        app* get_ite_value(expr* a);
+        void get_ite_concat(expr* e, ptr_vector<expr>& concats);
         
         void len_offset(expr* e, rational val);
         void prop_arith_to_len_offset();
@@ -418,12 +420,13 @@ namespace smt {
         bool reduce_length_eq();
         bool branch_unit_variable();     // branch on XYZ = abcdef
         bool branch_binary_variable();   // branch on abcX = Ydefg 
+        bool branch_variable();          // branch on 
         bool branch_ternary_variable1(); // branch on XabcY = Zdefg or XabcY = defgZ
         bool branch_ternary_variable2(); // branch on XabcY = defgZmnpq
         bool branch_quat_variable();     // branch on XabcY = ZdefgT
         bool len_based_split();          // split based on len offset
         bool branch_variable_mb();       // branch on a variable, model based on length
-        bool branch_variable();          // branch on a variable
+        bool branch_variable_eq();       // branch on a variable, by an alignment among variable boundaries.
         bool is_solved(); 
         bool check_length_coherence();
         bool check_length_coherence0(expr* e);
@@ -431,7 +434,7 @@ namespace smt {
         bool fixed_length(bool is_zero = false);
         bool fixed_length(expr* e, bool is_zero);
         void branch_unit_variable(dependency* dep, expr* X, expr_ref_vector const& units);
-        bool branch_variable(eq const& e);
+        bool branch_variable_eq(eq const& e);
         bool branch_binary_variable(eq const& e);
         bool eq_unit(expr* const& l, expr* const &r) const;       
         unsigned_vector overlap(expr_ref_vector const& ls, expr_ref_vector const& rs);
@@ -449,6 +452,7 @@ namespace smt {
                            vector<rational> const& ll, vector<rational> const& rl);
         bool set_empty(expr* x);
         bool is_complex(eq const& e);
+        lbool regex_are_equal(expr* r1, expr* r2);
 
         bool check_extensionality();
         bool check_contains();
@@ -539,8 +543,6 @@ namespace smt {
         expr_ref expand1(expr* e, dependency*& eqs);
         expr_ref try_expand(expr* e, dependency*& eqs);
         void add_dependency(dependency*& dep, enode* a, enode* b);
-
-        void get_concat(expr* e, ptr_vector<expr>& concats);
     
         // terms whose meaning are encoded using axioms.
         void enque_axiom(expr* e);
@@ -606,7 +608,7 @@ namespace smt {
         bool get_length(expr* s, rational& val) const;
 
         void mk_decompose(expr* e, expr_ref& head, expr_ref& tail);
-        expr* coalesce_chars(expr* const& str);
+        expr_ref coalesce_chars(expr* const& str);
         expr_ref mk_skolem(symbol const& s, expr* e1, expr* e2 = nullptr, expr* e3 = nullptr, expr* e4 = nullptr, sort* range = nullptr);
         bool is_skolem(symbol const& s, expr* e) const;
 

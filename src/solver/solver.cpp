@@ -208,7 +208,6 @@ void solver::assert_expr(expr* f, expr* t) {
     expr_ref fml(f, m);    
     expr_ref a(t, m);
     if (m_enforce_model_conversion) {
-        IF_VERBOSE(0, verbose_stream() << "enforce model conversion\n";);
         model_converter_ref mc = get_model_converter();
         if (mc) {
             (*mc)(fml);        
@@ -218,8 +217,17 @@ void solver::assert_expr(expr* f, expr* t) {
     assert_expr_core2(fml, a);    
 }
 
+static void insert_ctrl_c(param_descrs & r) {
+    r.insert("ctrl_c", CPK_BOOL, "enable interrupts from ctrl-c", "false");
+}
+
+
 void solver::collect_param_descrs(param_descrs & r) {
     r.insert("solver.enforce_model_conversion", CPK_BOOL, "(default: false) enforce model conversion when asserting formulas");
+    insert_timeout(r);
+    insert_rlimit(r);
+    insert_max_memory(r);
+    insert_ctrl_c(r);
 }
 
 void solver::reset_params(params_ref const & p) {

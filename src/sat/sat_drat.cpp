@@ -143,7 +143,7 @@ namespace sat {
         IF_VERBOSE(20, trace(verbose_stream(), n, c.begin(), st););
 
         if (st == status::learned) {
-            verify(n, c.begin());
+            verify(c);
         }
 
         m_status.push_back(st);
@@ -215,9 +215,61 @@ namespace sat {
         if (!m_inconsistent) {
             DEBUG_CODE(validate_propagation(););
         }
-        for (unsigned i = 0; i < m_units.size(); ++i) {
-            SASSERT(m_assignment[m_units[i].var()] != l_undef);
+        DEBUG_CODE(
+            for (literal u : m_units) {
+                SASSERT(m_assignment[u.var()] != l_undef);
+            });
+
+#if 0
+        if (!m_inconsistent) {
+            literal_vector lits(n, c);
+            IF_VERBOSE(0, verbose_stream() << "not drup " << lits << "\n");
+            for (unsigned v = 0; v < m_assignment.size(); ++v) {
+                lbool val = m_assignment[v];
+                if (val != l_undef) {
+                    IF_VERBOSE(0, verbose_stream() << literal(v, false) << " |-> " << val << "\n");
+                }
+            }
+            for (clause* cp : s.m_clauses) {
+                clause& cl = *cp;
+                bool found = false;
+                for (literal l : cl) {
+                    if (m_assignment[l.var()] != (l.sign() ? l_true : l_false)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    IF_VERBOSE(0, verbose_stream() << "Clause is false under assignment: " << cl << "\n");
+                }
+            }
+            for (clause* cp : s.m_learned) {
+                clause& cl = *cp;
+                bool found = false;
+                for (literal l : cl) {
+                    if (m_assignment[l.var()] != (l.sign() ? l_true : l_false)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    IF_VERBOSE(0, verbose_stream() << "Clause is false under assignment: " << cl << "\n");
+                }
+            }
+            svector<sat::solver::bin_clause> bin;
+            s.collect_bin_clauses(bin, true);
+            for (auto & b : bin) {
+                bool found = false;
+                if (m_assignment[b.first.var()] != (b.first.sign() ? l_true : l_false)) found = true;
+                if (m_assignment[b.second.var()] != (b.second.sign() ? l_true : l_false)) found = true;
+                if (!found) {
+                    IF_VERBOSE(0, verbose_stream() << "Bin clause is false under assignment: " << b.first << " " << b.second << "\n");
+                }
+            }
+            IF_VERBOSE(0, s.display(verbose_stream()));
+            exit(0);
         }
+#endif
 
         for (unsigned i = num_units; i < m_units.size(); ++i) {
             m_assignment[m_units[i].var()] = l_undef;
@@ -225,6 +277,7 @@ namespace sat {
         m_units.resize(num_units);
         bool ok = m_inconsistent;
         m_inconsistent = false;
+
         return ok;
     }
 
@@ -279,8 +332,18 @@ namespace sat {
     }
 
     void drat::verify(unsigned n, literal const* c) {
-        if (m_check_unsat && !is_drup(n, c) && !is_drat(n, c)) {
-            std::cout << "Verification failed\n";
+        if (!m_check_unsat) {
+            return;
+        }
+        for (unsigned i = 0; i < n; ++i) { 
+            declare(c[i]);
+        } 
+        if (!is_drup(n, c) && !is_drat(n, c)) {
+            literal_vector lits(n, c);
+            std::cout << "Verification of " << lits << " failed\n";
+            s.display(std::cout);
+            SASSERT(false);
+            exit(0);
             UNREACHABLE();
             //display(std::cout);
             TRACE("sat", 
@@ -289,6 +352,36 @@ namespace sat {
                   s.display(tout););
             UNREACHABLE();
         }
+    }
+
+    bool drat::contains(unsigned n, literal const* lits) {
+        if (!m_check) return true;
+        for (unsigned i = m_proof.size(); i-- > 0; ) {
+            clause& c = *m_proof[i];
+            status st = m_status[i];
+            if (match(n, lits, c)) {
+                return st != status::deleted;
+            }
+        }
+        return false;
+    }
+
+    bool drat::match(unsigned n, literal const* lits, clause const& c) const {
+        if (n == c.size()) {
+            for (unsigned i = 0; i < n; ++i) {
+                literal lit1 = lits[i];
+                bool found = false;
+                for (literal lit2 : c) {
+                    if (lit1 == lit2) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+            return true;
+        }
+        return false;
     }
 
     void drat::display(std::ostream& out) const {
@@ -485,9 +578,24 @@ namespace sat {
         if (m_check) 
             append(l1, l2, status::deleted);
     }
+
     void drat::del(clause& c) {
+
+#if 0
+        // check_duplicates:
+        for (literal lit : c) {
+            VERIFY(!m_seen[lit.index()]);
+            m_seen[lit.index()] = true;
+        }
+        for (literal lit : c) {
+            m_seen[lit.index()] = false;
+        }
+#endif
+
         TRACE("sat", tout << "del: " << c << "\n";);
-        if (m_out) dump(c.size(), c.begin(), status::deleted);
+        if (m_out) {
+            dump(c.size(), c.begin(), status::deleted);
+        }
         if (m_check) {
             clause* c1 = s.alloc_clause(c.size(), c.begin(), c.is_learned()); 
             append(*c1, status::deleted);

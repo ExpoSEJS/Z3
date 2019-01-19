@@ -38,7 +38,7 @@ def download_installs():
         urllib.request.urlretrieve(url, "packages/%s" % name)
 
 os_info = {"z64-ubuntu-14" : ('so', 'ubuntu.14.04-x64'),
-           'ubuntu-16' : ('so', 'ubuntu.16.04-x64'),
+           'ubuntu-16' : ('so', 'ubuntu-x64'),
            'x64-win' : ('dll', 'win-x64'),
            'x86-win' : ('dll', 'win-x86'),
            'osx' : ('dylib', 'macos'),
@@ -85,17 +85,18 @@ def create_nuget_spec():
         <id>Microsoft.Z3</id>
         <version>%s</version>
         <authors>Microsoft</authors>
-        <description>Z3 is a satisfiability modulo theories solver from Microsoft Research.</description>
+        <description>
+Z3 is a satisfiability modulo theories solver from Microsoft Research.
+
+Linux Dependencies:
+    libgomp.so.1 installed    
+        </description>
         <copyright>Copyright Microsoft Corporation. All rights reserved.</copyright>
         <tags>smt constraint solver theorem prover</tags>
         <iconUrl>https://raw.githubusercontent.com/Z3Prover/z3/master/package/icon.jpg</iconUrl>
         <projectUrl>https://github.com/Z3Prover/z3</projectUrl>
         <licenseUrl>https://raw.githubusercontent.com/Z3Prover/z3/master/LICENSE.txt</licenseUrl>
-        <repository
-            type="git"
-            url="https://github.com/Z3Prover/z3.git"
-            branch="master"
-        />
+        <repository type="git" url="https://github.com/Z3Prover/z3.git" />
         <requireLicenseAcceptance>true</requireLicenseAcceptance>
         <language>en</language>
     </metadata>

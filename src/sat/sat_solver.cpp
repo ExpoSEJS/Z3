@@ -120,6 +120,11 @@ namespace sat {
         m_qhead = 0;
         m_trail.reset();
         m_scopes.reset();
+
+        if (src.inconsistent()) {
+            set_conflict(justification());
+            return;
+        }
         
         // create new vars
         for (bool_var v = num_vars(); v < src.num_vars(); v++) {
@@ -305,7 +310,7 @@ namespace sat {
         if (c.frozen()) {
             --m_num_frozen;
         }
-        if (m_config.m_drat && !m_drat.is_cleaned(c)) {
+        if (!c.was_removed() && m_config.m_drat && !m_drat.is_cleaned(c)) {
             m_drat.del(c);
         }
         dealloc_clause(&c);        
@@ -315,10 +320,17 @@ namespace sat {
     clause * solver::mk_clause_core(unsigned num_lits, literal * lits, bool learned) {
         TRACE("sat", tout << "mk_clause: " << mk_lits_pp(num_lits, lits) << (learned?" learned":" aux") << "\n";);
         if (!learned) {
+            unsigned old_sz = num_lits;
             bool keep = simplify_clause(num_lits, lits);
             TRACE("sat_mk_clause", tout << "mk_clause (after simp), keep: " << keep << "\n" << mk_lits_pp(num_lits, lits) << "\n";);
             if (!keep) {
                 return nullptr; // clause is equivalent to true.
+            }
+            // if an input clause is simplified, then log the simplified version as learned
+            if (!learned && old_sz > num_lits && m_config.m_drat) {
+                m_lemma.reset();
+                m_lemma.append(num_lits, lits);
+                m_drat.add(m_lemma);
             }
             ++m_stats.m_non_learned_generation;
         }
@@ -343,12 +355,12 @@ namespace sat {
     }
 
     void solver::mk_bin_clause(literal l1, literal l2, bool learned) {
-        if (find_binary_watch(get_wlist(~l1), ~l2)) {
-            assign(l1, justification());
+        if (find_binary_watch(get_wlist(~l1), ~l2) && value(l1) == l_undef) {
+            assign_core(l1, 0, justification(l2));
             return;
         }
-        if (find_binary_watch(get_wlist(~l2), ~l1)) {
-            assign(l2, justification());
+        if (find_binary_watch(get_wlist(~l2), ~l1) && value(l2) == l_undef) {
+            assign_core(l2, 0, justification(l1));
             return;
         }
         watched* w0 = find_binary_watch(get_wlist(~l1), l2);
@@ -534,7 +546,7 @@ namespace sat {
     void solver::defrag_clauses() {
         if (memory_pressure()) return;
         pop(scope_lvl());
-        IF_VERBOSE(1, verbose_stream() << "(sat-defrag)\n");
+        IF_VERBOSE(2, verbose_stream() << "(sat-defrag)\n");
         clause_allocator& alloc = m_cls_allocator[!m_cls_allocator_idx];
         ptr_vector<clause> new_clauses, new_learned;
         for (clause* c : m_clauses) c->unmark_used();
@@ -701,7 +713,7 @@ namespace sat {
                 if (curr != prev) {
                     prev = curr;
                     if (i != j)
-                        lits[j] = lits[i];
+                        std::swap(lits[j], lits[i]);
                     j++;
                 }
                 break;
@@ -759,17 +771,20 @@ namespace sat {
         m_not_l    = not_l;
     }
 
-    void solver::assign_core(literal l, unsigned lvl, justification j) {
+    void solver::assign_core(literal l, unsigned _lvl, justification j) {
         SASSERT(value(l) == l_undef);
-        TRACE("sat_assign_core", tout << l << " " << j << " level: " << lvl << "\n";);
+        TRACE("sat_assign_core", tout << l << " " << j << " level: " << _lvl << "\n";);
+        if (_lvl == 0 && m_config.m_drat) {
+            m_drat.add(l, !j.is_none());
+        }
+
         if (at_base_lvl()) {
-            if (m_config.m_drat) m_drat.add(l, !j.is_none());
             j = justification(); // erase justification for level 0
         }
         m_assignment[l.index()]    = l_true;
         m_assignment[(~l).index()] = l_false;
         bool_var v = l.var();
-        m_level[v]                 = lvl;
+        m_level[v]                 = scope_lvl();
         m_justification[v]         = j;
         m_phase[v]                 = static_cast<phase>(l.sign());
         m_assigned_since_gc[v]     = true;
@@ -1623,6 +1638,8 @@ namespace sat {
         m_gc_threshold            = m_config.m_gc_initial;
         m_defrag_threshold        = 2;
         m_restarts                = 0;
+        m_last_position_log       = 0;
+        m_restart_logs            = 0;
         m_simplifications         = 0;
         m_conflicts_since_init    = 0;
         m_next_simplify           = m_config.m_simplify_delay;
@@ -1785,7 +1802,7 @@ namespace sat {
         TRACE("sat", for (bool_var v = 0; v < num; v++) tout << v << ": " << m_model[v] << "\n";);
 
         if (m_clone) {
-            IF_VERBOSE(SAT_VB_LVL, verbose_stream() << "\"checking model (on original set of clauses)\"\n";);
+            IF_VERBOSE(1, verbose_stream() << "\"checking model (on original set of clauses)\"\n";);
             if (!m_clone->check_model(m_model)) {
                 //IF_VERBOSE(0, display(verbose_stream()));
                 //IF_VERBOSE(0, display_watches(verbose_stream()));
@@ -1876,12 +1893,72 @@ namespace sat {
     void solver::restart(bool to_base) {
         m_stats.m_restart++;
         m_restarts++;
-        if (m_conflicts_since_init > m_restart_next_out + 500) {
-            m_restart_next_out = m_conflicts_since_init;
-            IF_VERBOSE(1,
-                       verbose_stream() << "(sat-restart :conflicts " << m_stats.m_conflict << " :decisions " << m_stats.m_decision
-                       << " :restarts " << m_stats.m_restart << mk_stat(*this)
-                       << " :time " << std::fixed << std::setprecision(2) << m_stopwatch.get_current_seconds() << ")\n";);
+        if (m_conflicts_since_init >= m_restart_next_out && get_verbosity_level() >= 1) {
+            m_restart_logs++;
+            if (0 == m_restart_next_out) {
+                m_restart_next_out = 1;
+            }
+            else {
+                m_restart_next_out = (3*m_restart_next_out)/2 + 1; 
+            }
+
+            std::stringstream strm;
+            strm << "(sat.stats " << std::setw(6) << m_stats.m_conflict << " " 
+                 << std::setw(6) << m_stats.m_decision << " "
+                 << std::setw(4) << m_stats.m_restart 
+                 << mk_stat(*this)
+                 << " " << std::setw(6) << std::setprecision(2) << m_stopwatch.get_current_seconds() << ")\n";
+            std::string str(strm.str());
+            svector<size_t> nums;
+            for (size_t i = 0; i < str.size(); ++i) {
+                while (i < str.size() && str[i] != ' ') ++i;
+                while (i < str.size() && str[i] == ' ') ++i;
+                // position of first character after space
+                if (i < str.size()) {
+                    nums.push_back(i);
+                }
+            }   
+            bool same = m_last_positions.size() == nums.size();
+            size_t diff = 0;
+            for (unsigned i = 0; i < nums.size() && same; ++i) {
+                if (m_last_positions[i] > nums[i]) diff += m_last_positions[i] - nums[i];
+                if (m_last_positions[i] < nums[i]) diff += nums[i] - m_last_positions[i];
+            }
+            if (m_last_positions.empty() || m_restart_logs >= 20 + m_last_position_log || (m_restart_logs >= 6 + m_last_position_log && (!same || diff > 3))) {
+                m_last_position_log = m_restart_logs;
+                //           conflicts          restarts          learned            gc               time
+                //                     decisions         clauses            units          memory
+                int adjust[9] = { -3,      -3,      -3,      -1,      -3,      -2,   -1,     -2,       -1 };
+                char const* tag[9]  = { ":conflicts ", ":decisions ", ":restarts ", ":clauses/bin ", ":learned/bin ", ":units ", ":gc ", ":memory ", ":time" };
+                std::stringstream l1, l2;
+                l1 << "(sat.stats ";
+                l2 << "(sat.stats ";
+                size_t p1 = 11, p2 = 11;
+                SASSERT(nums.size() == 9);
+                for (unsigned i = 0; i < 9 && i < nums.size(); ++i) {
+                    size_t p = nums[i];
+                    if (i & 0x1) {
+                        // odd positions
+                        for (; p2 < p + adjust[i]; ++p2) l2 << " ";
+                        p2 += strlen(tag[i]);
+                        l2 << tag[i];
+                    }
+                    else {
+                        // even positions
+                        for (; p1 < p + adjust[i]; ++p1) l1 << " ";
+                        p1 += strlen(tag[i]);
+                        l1 << tag[i];
+                    }                               
+                }
+                for (; p1 + 2 < str.size(); ++p1) l1 << " ";            
+                for (; p2 + 2 < str.size(); ++p2) l2 << " ";            
+                l1 << ")\n";
+                l2 << ")\n";
+                IF_VERBOSE(1, verbose_stream() << l1.str() << l2.str());
+                m_last_positions.reset();
+                m_last_positions.append(nums);
+            }
+            IF_VERBOSE(1, verbose_stream() << str);            
         }
         IF_VERBOSE(30, display_status(verbose_stream()););
         pop_reinit(restart_level(to_base));
@@ -2263,6 +2340,7 @@ namespace sat {
 
     bool solver::resolve_conflict_core() {
 
+
         m_conflicts_since_init++;
         m_conflicts_since_restart++;
         m_conflicts_since_gc++;
@@ -2409,7 +2487,6 @@ namespace sat {
         unsigned glue = num_diff_levels(m_lemma.size(), m_lemma.c_ptr());
         m_fast_glue_avg.update(glue);
         m_slow_glue_avg.update(glue);
-
         pop_reinit(m_scope_lvl - new_scope_lvl);
         TRACE("sat_conflict_detail", tout << new_scope_lvl << "\n"; display(tout););
         // unsound: m_asymm_branch.minimize(m_scc, m_lemma);
@@ -2665,7 +2742,7 @@ namespace sat {
         for (unsigned i = head; i < sz; i++) {
             literal l  = m_trail[i];
             bool_var v = l.var();
-            TRACE("forget_phase", tout << "forgeting phase of l: " << l << "\n";);
+            TRACE("forget_phase", tout << "forgetting phase of l: " << l << "\n";);
             m_phase[v] = PHASE_NOT_AVAILABLE;
         }
     }
@@ -2879,20 +2956,16 @@ namespace sat {
     void solver::minimize_lemma() {
         SASSERT(!m_lemma.empty());
         SASSERT(m_unmark.empty());
-        //m_unmark.reset();
         updt_lemma_lvl_set();
 
         unsigned sz   = m_lemma.size();
         unsigned i    = 1; // the first literal is the FUIP
         unsigned j    = 1;
-        //bool drop = false;
-        //unsigned bound = sz/5+10;
         for (; i < sz; i++) {
             literal l = m_lemma[i];
             if (implied_by_marked(l)) {
                 TRACE("sat", tout << "drop: " << l << "\n";);
                 m_unmark.push_back(l.var());
-                //drop = true;
             }
             else {
                 if (j != i) {
@@ -2900,12 +2973,6 @@ namespace sat {
                 }
                 j++;
             }
-#if 0
-            if (!drop && i >= bound) {
-                j = sz;
-                break;
-            }
-#endif
         }
 
         reset_unmark(0);
@@ -3510,15 +3577,38 @@ namespace sat {
     }
 
     std::ostream& solver::display_justification(std::ostream & out, justification const& js) const {
-        out << js;
-        if (js.is_clause()) {
-            out << get_clause(js);
+        switch (js.get_kind()) {
+        case justification::NONE:
+            out << "none "; // << js.level();
+            break;
+        case justification::BINARY:
+            out << "binary " << js.get_literal() << "@" << lvl(js.get_literal());
+            break;
+        case justification::TERNARY:
+            out << "ternary " << js.get_literal1() << "@" << lvl(js.get_literal1()) << " ";
+            out << js.get_literal2() << "@" << lvl(js.get_literal2());
+            break;
+        case justification::CLAUSE: {
+            out << "(";
+            bool first = true;
+            for (literal l : get_clause(js)) {
+                if (first) first = false; else out << " ";
+                out << l << "@" << lvl(l);
+            }
+            out << ")";
+            break;
         }
-        else if (js.is_ext_justification() && m_ext) {
-            m_ext->display_justification(out << " ", js.get_ext_justification_idx());
+        case justification::EXT_JUSTIFICATION:
+            if (m_ext) {
+                m_ext->display_justification(out << " ", js.get_ext_justification_idx());
+            }
+            break;
+        default:
+            break;
         }
         return out;
     }
+
 
     unsigned solver::num_clauses() const {
         unsigned num_cls = m_trail.size(); // units;
@@ -3914,7 +4004,7 @@ namespace sat {
                 m_reason_unknown = "sat.max.conflicts";
                 IF_VERBOSE(SAT_VB_LVL, verbose_stream() << "(sat \"abort: max-conflicts = " << m_conflicts_since_init << "\")\n";);
             }
-            return true;
+            return !inconsistent();
         }
         return false;
     }
@@ -4309,24 +4399,24 @@ namespace sat {
     }
 
     void stats::collect_statistics(statistics & st) const {
-        st.update("mk bool var", m_mk_var);
-        st.update("mk binary clause", m_mk_bin_clause);
-        st.update("mk ternary clause", m_mk_ter_clause);
-        st.update("mk clause", m_mk_clause);
-        st.update("gc clause", m_gc_clause);
-        st.update("del clause", m_del_clause);
-        st.update("conflicts", m_conflict);
-        st.update("propagations", m_propagate);
-        st.update("decisions", m_decision);
-        st.update("binary propagations", m_bin_propagate);
-        st.update("ternary propagations", m_ter_propagate);
-        st.update("restarts", m_restart);
-        st.update("minimized lits", m_minimized_lits);
-        st.update("dyn subsumption resolution", m_dyn_sub_res);
-        st.update("blocked correction sets", m_blocked_corr_sets);
-        st.update("units", m_units);
-        st.update("elim bool vars res", m_elim_var_res);
-        st.update("elim bool vars bdd", m_elim_var_bdd);
+        st.update("sat mk clause 2ary", m_mk_bin_clause);
+        st.update("sat mk clause 3ary", m_mk_ter_clause);
+        st.update("sat mk clause nary", m_mk_clause);
+        st.update("sat mk var", m_mk_var);
+        st.update("sat gc clause", m_gc_clause);
+        st.update("sat del clause", m_del_clause);
+        st.update("sat conflicts", m_conflict);
+        st.update("sat decisions", m_decision);
+        st.update("sat propagations 2ary", m_bin_propagate);
+        st.update("sat propagations 3ary", m_ter_propagate);
+        st.update("sat propagations nary", m_propagate);
+        st.update("sat restarts", m_restart);
+        st.update("sat minimized lits", m_minimized_lits);
+        st.update("sat subs resolution dyn", m_dyn_sub_res);
+        st.update("sat blocked correction sets", m_blocked_corr_sets);
+        st.update("sat units", m_units);
+        st.update("sat elim bool vars res", m_elim_var_res);
+        st.update("sat elim bool vars bdd", m_elim_var_bdd);
     }
 
     void stats::reset() {
@@ -4336,16 +4426,11 @@ namespace sat {
     void mk_stat::display(std::ostream & out) const {
         unsigned given, learned;
         m_solver.num_binary(given, learned);
-        if (!m_solver.m_clauses.empty())
-            out << " :clauses " << m_solver.m_clauses.size() + given << "/" << given;
-        if (!m_solver.m_learned.empty()) {
-            out << " :learned " << (m_solver.m_learned.size() + learned - m_solver.m_num_frozen) << "/" << learned;
-            if (m_solver.m_num_frozen > 0)
-                out << " :frozen " << m_solver.m_num_frozen;
-        }
-        out << " :units " << m_solver.init_trail_size();
-        out << " :gc-clause " << m_solver.m_stats.m_gc_clause;
-        out << mem_stat();
+        out << " " << std::setw(5) << m_solver.m_clauses.size() + given << "/" << given;
+        out << " " << std::setw(5) << (m_solver.m_learned.size() + learned - m_solver.m_num_frozen) << "/" << learned;
+        out << " " << std::setw(3)  << m_solver.init_trail_size();
+        out << " " << std::setw(7)  << m_solver.m_stats.m_gc_clause << " ";
+        out << " " << std::setw(7)  << mem_stat();
     }
 
     std::ostream & operator<<(std::ostream & out, mk_stat const & stat) {

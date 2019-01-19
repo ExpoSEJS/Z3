@@ -482,6 +482,7 @@ def _to_ast_ref(a, ctx):
     else:
         return _to_expr_ref(a, ctx)
 
+
 #########################################
 #
 # Sorts
@@ -3836,7 +3837,7 @@ def Extract(high, low, a):
     >>> Extract(6, 2, x).sort()
     BitVec(5)
     >>> simplify(Extract(StringVal("abcd"),2,1))
-    "c"
+    c
     """
     if isinstance(high, str):
         high = StringVal(high)
@@ -6664,17 +6665,11 @@ class Solver(Z3PPObject):
 
     def from_file(self, filename):
         """Parse assertions from a file"""
-        try:
-            Z3_solver_from_file(self.ctx.ref(), self.solver, filename)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)
+        Z3_solver_from_file(self.ctx.ref(), self.solver, filename)
 
     def from_string(self, s):
         """Parse assertions from a string"""
-        try:
-           Z3_solver_from_string(self.ctx.ref(), self.solver, s)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)        
+        Z3_solver_from_string(self.ctx.ref(), self.solver, s)
     
     def cube(self, vars = None):
         """Get set of cubes
@@ -7063,17 +7058,11 @@ class Fixedpoint(Z3PPObject):
 
     def parse_string(self, s):
         """Parse rules and queries from a string"""
-        try:
-            return AstVector(Z3_fixedpoint_from_string(self.ctx.ref(), self.fixedpoint, s), self.ctx)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)
+        return AstVector(Z3_fixedpoint_from_string(self.ctx.ref(), self.fixedpoint, s), self.ctx)
 
     def parse_file(self, f):
         """Parse rules and queries from a file"""
-        try:
-            return AstVector(Z3_fixedpoint_from_file(self.ctx.ref(), self.fixedpoint, f), self.ctx)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)
+        return AstVector(Z3_fixedpoint_from_file(self.ctx.ref(), self.fixedpoint, f), self.ctx)
 
     def get_rules(self):
         """retrieve rules that have been added to fixedpoint context"""
@@ -7410,17 +7399,11 @@ class Optimize(Z3PPObject):
 
     def from_file(self, filename):
         """Parse assertions and objectives from a file"""
-        try:
-            Z3_optimize_from_file(self.ctx.ref(), self.optimize, filename)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)
+        Z3_optimize_from_file(self.ctx.ref(), self.optimize, filename)
 
     def from_string(self, s):
         """Parse assertions and objectives from a string"""
-        try:
-            Z3_optimize_from_string(self.ctx.ref(), self.optimize, s)
-        except Z3Exception as e:
-            _handle_parse_error(e, self.ctx)
+        Z3_optimize_from_string(self.ctx.ref(), self.optimize, s)
 
     def assertions(self):
         """Return an AST vector containing all added constraints."""
@@ -9914,6 +9897,8 @@ class SeqRef(ExprRef):
 
     def as_string(self):
         """Return a string representation of sequence expression."""
+        if self.is_string_value():
+           return Z3_get_string(self.ctx_ref(), self.as_ast())
         return Z3_ast_to_string(self.ctx_ref(), self.as_ast())
 
 
@@ -9993,8 +9978,6 @@ def Strings(names, ctx=None):
 def Empty(s):
     """Create the empty sequence of the given sort
     >>> e = Empty(StringSort())
-    >>> print(e)
-    ""
     >>> e2 = StringVal("")
     >>> print(e.eq(e2))
     True
@@ -10080,7 +10063,7 @@ def Replace(s, src, dst):
     """Replace the first occurrence of 'src' by 'dst' in 's'
     >>> r = Replace("aaa", "a", "b")
     >>> simplify(r)
-    "baa"
+    baa
     """
     ctx = _get_ctx2(dst, s)
     if ctx is None and is_expr(src):

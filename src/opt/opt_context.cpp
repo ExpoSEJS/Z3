@@ -125,7 +125,7 @@ namespace opt {
         m_solver(nullptr),
         m_pareto1(false),
         m_box_index(UINT_MAX),
-        m_optsmt(m),
+        m_optsmt(m, *this),
         m_scoped_state(m),
         m_fm(alloc(generic_model_converter, m, "opt")),
         m_model_fixed(),
@@ -357,11 +357,22 @@ namespace opt {
         }
     }
 
+    void context::set_model(model_ref& m) { 
+        m_model = m; 
+        opt_params optp(m_params);
+        if (optp.dump_models()) {
+            model_ref md = m->copy();
+            fix_model(md);
+            std::cout << *md << "\n";
+        }
+    }
+
+
     void context::get_model_core(model_ref& mdl) {
         mdl = m_model;
         fix_model(mdl);
         if (mdl) mdl->set_model_completion(true);
-        TRACE("opt", tout << *mdl;);
+        CTRACE("opt", mdl, tout << *mdl;);
     }
 
     void context::get_box_model(model_ref& mdl, unsigned index) {
@@ -383,7 +394,7 @@ namespace opt {
     lbool context::execute_min_max(unsigned index, bool committed, bool scoped, bool is_max) {
         if (scoped) get_solver().push();            
         lbool result = m_optsmt.lex(index, is_max);
-        if (result == l_true) m_optsmt.get_model(m_model, m_labels);
+        if (result == l_true) { m_optsmt.get_model(m_model, m_labels); SASSERT(m_model); }
         if (scoped) get_solver().pop(1);        
         if (result == l_true && committed) m_optsmt.commit_assignment(index);
         if (result == l_true && m_optsmt.is_unbounded(index, is_max) && contains_quantifiers()) {
@@ -437,7 +448,7 @@ namespace opt {
         for (unsigned i = 0; r == l_true && i < sz; ++i) {
             objective const& o = m_objectives[i];
             bool is_last = i + 1 == sz;            
-            r = execute(o, i + 1 < sz, sc && !is_last && o.m_type != O_MAXSMT);
+            r = execute(o, i + 1 < sz, sc && !is_last);
             if (r == l_true && o.m_type == O_MINIMIZE && !get_lower_as_num(i).is_finite()) {
                 return r;
             }
@@ -854,7 +865,10 @@ namespace opt {
                             bool& neg, symbol& id, expr_ref& orig_term, unsigned& index) {
         if (!is_app(fml)) return false;
         neg = false;
+        orig_term = nullptr;
+        index = 0;
         app* a = to_app(fml);
+        
         if (m_objective_fns.find(a->get_decl(), index) && m_objectives[index].m_type == O_MAXSMT) {
             for (unsigned i = 0; i < a->get_num_args(); ++i) {
                 expr_ref arg(a->get_arg(i), m);
@@ -996,13 +1010,13 @@ namespace opt {
     void context::from_fmls(expr_ref_vector const& fmls) {
         TRACE("opt", tout << fmls << "\n";);
         m_hard_constraints.reset();
-        expr_ref orig_term(m);
         for (expr * fml : fmls) {
             app_ref tr(m);
+            expr_ref orig_term(m);
             expr_ref_vector terms(m);
             vector<rational> weights;
             rational offset(0);
-            unsigned index;
+            unsigned index = 0;
             symbol id;
             bool neg;
             if (is_maxsat(fml, terms, weights, offset, neg, id, orig_term, index)) {
@@ -1059,6 +1073,9 @@ namespace opt {
 
 
     void context::model_updated(model* md) {
+        model_ref mdl = md;
+        set_model(mdl);
+#if 0
         opt_params optp(m_params);
         symbol prefix = optp.solution_prefix();
         if (prefix == symbol::null || prefix == symbol("")) return;        
@@ -1071,6 +1088,7 @@ namespace opt {
             out << *mdl;
             out.close();
         }
+#endif
     }
 
 
@@ -1604,6 +1622,7 @@ namespace opt {
     void context::validate_lex() {
         rational r1;
         expr_ref val(m);
+        SASSERT(m_model);
         for (unsigned i = 0; i < m_objectives.size(); ++i) {
             objective const& obj = m_objectives[i];
             switch(obj.m_type) {

@@ -34,7 +34,7 @@ endif()
 ################################################################################
 set(Z3_VERSION_MAJOR 4)
 set(Z3_VERSION_MINOR 8)
-set(Z3_VERSION_PATCH 4)
+set(Z3_VERSION_PATCH 5)
 set(Z3_VERSION_TWEAK 0)
 set(Z3_VERSION "${Z3_VERSION_MAJOR}.${Z3_VERSION_MINOR}.${Z3_VERSION_PATCH}.${Z3_VERSION_TWEAK}")
 set(Z3_FULL_VERSION_STR "${Z3_VERSION}") # Note this might be modified
@@ -254,6 +254,15 @@ elseif (CYGWIN)
 elseif (WIN32)
   message(STATUS "Platform: Windows")
   list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_WINDOWS")
+elseif (EMSCRIPTEN)
+  message(STATUS "Platform: Emscripten")
+  list(APPEND Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS
+    "-Os"
+    "-s ALLOW_MEMORY_GROWTH=1"
+    "-s ASSERTIONS=0"
+    "-s DISABLE_EXCEPTION_CATCHING=0"
+    "-s ERROR_ON_UNDEFINED_SYMBOLS=1"
+  )
 else()
   message(FATAL_ERROR "Platform \"${CMAKE_SYSTEM_NAME}\" not recognised")
 endif()

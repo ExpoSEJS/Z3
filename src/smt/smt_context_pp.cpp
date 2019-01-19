@@ -160,7 +160,7 @@ namespace smt {
     }
 
     void context::display_clause(std::ostream & out, clause const * cls) const {
-        cls->display_compact(out, m_manager, m_bool_var2expr.c_ptr());
+        cls->display_smt2(out, m_manager, m_bool_var2expr.c_ptr());
     }
 
     void context::display_clauses(std::ostream & out, ptr_vector<clause> const & v) const {
@@ -185,11 +185,18 @@ namespace smt {
                         out << "binary clauses:\n";
                         first = false;
                     }
+                    expr_ref t1(m_manager), t2(m_manager);
+                    literal2expr(neg_l1, t1);
+                    literal2expr(l2, t2);
+                    expr_ref disj(m_manager.mk_or(t1, t2), m_manager);
+                    out << disj << "\n";
+#if 0
                     out << "(clause ";
                     display_literal(out, neg_l1);
                     out << " ";
                     display_literal(out, l2);
                     out << ")\n";
+#endif
                 }
             }
         }
@@ -200,6 +207,7 @@ namespace smt {
             out << "current assignment:\n";
             for (literal lit : m_assigned_literals) {
                 display_literal(out, lit);
+                if (!is_relevant(lit)) out << " n ";
                 out << ": ";
                 display_verbose(out, m_manager, 1, &lit, m_bool_var2expr.c_ptr());
                 out << "\n";
@@ -255,7 +263,7 @@ namespace smt {
             for (unsigned i = 0; i < sz; i++) {
                 expr *  n  = m_b_internalized_stack.get(i);
                 bool_var v = get_bool_var_of_id(n->get_id());
-                out << "(#" << n->get_id() << " -> p!" << v << ") ";
+                out << "(#" << n->get_id() << " -> " << literal(v, false) << ") ";
             }
             out << "\n";
         }
@@ -566,12 +574,9 @@ namespace smt {
         case b_justification::AXIOM:
             out << "axiom";
             break;
-        case b_justification::BIN_CLAUSE: {
-            literal l2 = j.get_literal();
-            out << "bin-clause ";
-            display_literal(out, l2);
+        case b_justification::BIN_CLAUSE: 
+            out << "bin " << j.get_literal();
             break;
-        }
         case b_justification::CLAUSE: {
             clause * cls = j.get_clause();
             out << "clause ";
@@ -579,10 +584,9 @@ namespace smt {
             break;
         }
         case b_justification::JUSTIFICATION: {
-            out << "justification " << j.get_justification()->get_from_theory() << ": ";
             literal_vector lits;
             const_cast<conflict_resolution&>(*m_conflict_resolution).justification2literals(j.get_justification(), lits);
-            display_literals(out, lits);
+            out << "justification " << j.get_justification()->get_from_theory() << ": " << lits;
             break;
         }
         default:

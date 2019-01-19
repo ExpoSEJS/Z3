@@ -84,11 +84,11 @@ namespace sat {
             if (s.m_inconsistent)
                 break;
             unsigned num_elim = m_elim_literals + m_tr - elim;
-            IF_VERBOSE(1, verbose_stream() << "(sat-asymm-branch-step :elim " << num_elim << ")\n";);
+            IF_VERBOSE(2, verbose_stream() << "(sat-asymm-branch-step :elim " << num_elim << ")\n";);
             if (num_elim == 0)
                 break;
         }        
-        IF_VERBOSE(1, if (m_elim_learned_literals > eliml0) 
+        IF_VERBOSE(2, if (m_elim_learned_literals > eliml0) 
                           verbose_stream() << "(sat-asymm-branch :elim " << m_elim_learned_literals - eliml0 << ")\n";);
         return m_elim_literals > elim0;
     }
@@ -98,7 +98,7 @@ namespace sat {
         unsigned elim = m_elim_literals;
         process(nullptr, s.m_clauses);
         s.propagate(false); 
-        IF_VERBOSE(1, if (m_elim_learned_literals > eliml0) 
+        IF_VERBOSE(2, if (m_elim_learned_literals > eliml0) 
                           verbose_stream() << "(sat-asymm-branch :elim " << m_elim_learned_literals - eliml0 << ")\n";);
         return m_elim_literals > elim;
     }
@@ -342,7 +342,10 @@ namespace sat {
                     break;
                 default:
                     if (!m_to_delete.contains(lit)) {
-                        c[j++] = lit;
+                        if (i != j) {
+                            std::swap(c[i], c[j]);
+                        }
+                        j++;
                     }
                     break;
                 }
@@ -406,12 +409,13 @@ namespace sat {
 
     bool asymm_branch::re_attach(scoped_detach& scoped_d, clause& c, unsigned new_sz) {
         VERIFY(s.m_trail.size() == s.m_qhead);
-        m_elim_literals += c.size() - new_sz;
+        unsigned old_sz = c.size();
+        m_elim_literals += old_sz - new_sz;
         if (c.is_learned()) {
-            m_elim_learned_literals += c.size() - new_sz; 
+            m_elim_learned_literals += old_sz - new_sz; 
         }
 
-        switch(new_sz) {
+        switch (new_sz) {
         case 0:
             s.set_conflict(justification());
             return false;
@@ -430,8 +434,12 @@ namespace sat {
             return false;
         default:
             c.shrink(new_sz);
-            if (s.m_config.m_drat) s.m_drat.add(c, true);
-            // if (s.m_config.m_drat) s.m_drat.del(c0); // TBD
+            if (s.m_config.m_drat && new_sz < old_sz) {
+                s.m_drat.add(c, true);
+                c.restore(old_sz);
+                s.m_drat.del(c);
+                c.shrink(new_sz);
+            }
             return true;
         }
     }
@@ -502,8 +510,8 @@ namespace sat {
     }
     
     void asymm_branch::collect_statistics(statistics & st) const {
-        st.update("elim literals", m_elim_literals);
-        st.update("tr", m_tr);
+        st.update("sat elim literals", m_elim_literals);
+        st.update("sat tr", m_tr);
     }
 
     void asymm_branch::reset_statistics() {

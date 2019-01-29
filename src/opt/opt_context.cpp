@@ -1614,7 +1614,7 @@ namespace opt {
                 value = obj.m_adjust_value(value);
                 rational value0 = ms.get_lower();
                 TRACE("opt", tout << "value " << value << " " << value0 << "\n";);
-                SASSERT(value == value0);
+                // TBD is this correct? SASSERT(value == value0);
             }
         }
     }
@@ -1651,7 +1651,10 @@ namespace opt {
                     }
                     // TBD: check that optimal was not changed.
                 }
-                TRACE("opt", tout << "value " << value << "\n";);
+                maxsmt& ms = *m_maxsmts.find(obj.m_id);
+                rational value0 = ms.get_lower();
+                TRACE("opt", tout << "value " << value << " other " << value0 << "\n";);
+                // TBD SASSERT(value0 == value);
                 break;
             }
             }       

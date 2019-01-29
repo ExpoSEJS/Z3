@@ -1774,7 +1774,7 @@ namespace smt {
 
     void context::set_conflict(const b_justification & js, literal not_l) {
         if (!inconsistent()) {
-            TRACE("set_conflict", display_literal_verbose(tout, not_l); display(tout << " ", js); );
+            TRACE("set_conflict", display_literal_verbose(tout << m_scope_lvl << " ", not_l); display(tout << " ", js); );
             m_conflict = js;
             m_not_l    = not_l;
         }
@@ -3244,8 +3244,13 @@ namespace smt {
                 proof * pr = m_manager.mk_asserted(curr_assumption);
                 internalize_assertion(curr_assumption, pr, 0);
                 literal l = get_literal(curr_assumption);
+                if (l == true_literal)
+                    continue;
+                if (l == false_literal) {
+                    set_conflict(b_justification::mk_axiom());
+                    break;
+                }
                 m_literal2assumption.insert(l.index(), orig_assumption);
-                // mark_as_relevant(l); <<< not needed
                 // internalize_assertion marked l as relevant.
                 SASSERT(is_relevant(l));
                 TRACE("assumptions", tout << l << ":" << curr_assumption << " " << mk_pp(orig_assumption, m_manager) << "\n";);

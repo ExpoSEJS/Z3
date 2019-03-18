@@ -1168,6 +1168,7 @@ typedef enum {
     Z3_OP_SEQ_EXTRACT,
     Z3_OP_SEQ_REPLACE,
     Z3_OP_SEQ_AT,
+    Z3_OP_SEQ_NTH,
     Z3_OP_SEQ_LENGTH,
     Z3_OP_SEQ_INDEX,
     Z3_OP_SEQ_TO_RE,
@@ -3328,6 +3329,15 @@ extern "C" {
     Z3_ast Z3_API Z3_mk_string(Z3_context c, Z3_string s);
 
     /**
+       \brief Create a string constant out of the string that is passed in
+       It takes the length of the string as well to take into account
+       0 characters.
+
+       def_API('Z3_mk_lstring' ,AST ,(_in(CONTEXT), _in(UINT), _in(STRING)))
+     */
+    Z3_ast Z3_API Z3_mk_lstring(Z3_context c, unsigned len, Z3_string s);
+
+    /**
        \brief Determine if \c s is a string constant.
 
        def_API('Z3_is_string', BOOL, (_in(CONTEXT), _in(AST)))
@@ -3411,10 +3421,19 @@ extern "C" {
 
     /**
        \brief Retrieve from \c s the unit sequence positioned at position \c index.
+       The sequence is empty if the index is out of bounds.
 
        def_API('Z3_mk_seq_at' ,AST ,(_in(CONTEXT), _in(AST), _in(AST)))
      */
     Z3_ast Z3_API Z3_mk_seq_at(Z3_context c, Z3_ast s, Z3_ast index);
+
+    /**
+       \brief Retrieve from \c s the element positioned at position \c index.
+       The function is under-specified if the index is out of bounds.
+
+       def_API('Z3_mk_seq_nth' ,AST ,(_in(CONTEXT), _in(AST), _in(AST)))
+     */
+    Z3_ast Z3_API Z3_mk_seq_nth(Z3_context c, Z3_ast s, Z3_ast index);
 
     /**
        \brief Return the length of the sequence \c s.
@@ -6213,6 +6232,13 @@ extern "C" {
     */
     Z3_ast_vector Z3_API Z3_solver_get_units(Z3_context c, Z3_solver s);
 
+    /**
+       \brief Return the trail modulo model conversion, in order of decision level
+       The decision level can be retrieved using \c Z3_solver_get_level based on the trail.
+
+       def_API('Z3_solver_get_trail', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
+    */
+    Z3_ast_vector Z3_API Z3_solver_get_trail(Z3_context c, Z3_solver s);
 
     /**
        \brief Return the set of non units in the solver state.
@@ -6220,6 +6246,21 @@ extern "C" {
        def_API('Z3_solver_get_non_units', AST_VECTOR, (_in(CONTEXT), _in(SOLVER)))
     */
     Z3_ast_vector Z3_API Z3_solver_get_non_units(Z3_context c, Z3_solver s);
+
+    /**
+       \brief retrieve the decision depth of Boolean literals (variables or their negations).
+       Assumes a check-sat call and no other calls (to extract models) have been invoked.
+       
+       def_API('Z3_solver_get_levels', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST_VECTOR), _in(UINT), _in_array(3, UINT)))
+    */
+    void Z3_API Z3_solver_get_levels(Z3_context c, Z3_solver s, Z3_ast_vector literals, unsigned sz,  unsigned levels[]);
+
+    /**
+       \brief set activity score associated with literal.
+
+       def_API('Z3_solver_set_activity', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST), _in(DOUBLE)))
+     */
+    void Z3_API Z3_solver_set_activity(Z3_context c, Z3_solver s, Z3_ast l, double activity);
 
     /**
        \brief Check whether the assertions in a given solver are consistent or not.

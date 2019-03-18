@@ -90,6 +90,7 @@ namespace sat {
         m_unit_walk       = p.unit_walk();
         m_unit_walk_threads = p.unit_walk_threads();
         m_lookahead_simplify = p.lookahead_simplify();
+        m_lookahead_double = p.lookahead_double();
         m_lookahead_simplify_bca = p.lookahead_simplify_bca();
         if (p.lookahead_reward() == symbol("heule_schur")) 
             m_lookahead_reward = heule_schur_reward;
@@ -130,9 +131,9 @@ namespace sat {
         }
 
         // These parameters are not exposed
-        m_next_simplify1  = _p.get_uint("next_simplify", 30000);
+        m_next_simplify1  = _p.get_uint("next_simplify", 90000);
         m_simplify_mult2  = _p.get_double("simplify_mult2", 1.5);
-        m_simplify_max    = _p.get_uint("simplify_max", 500000);
+        m_simplify_max    = _p.get_uint("simplify_max", 1000000);
         // --------------------------------
         m_simplify_delay  = p.simplify_delay();
 
@@ -165,6 +166,7 @@ namespace sat {
         m_drat_check_sat  = p.drat_check_sat();
         m_drat_file       = p.drat_file();
         m_drat            = (m_drat_check_unsat || m_drat_file != symbol("") || m_drat_check_sat) && p.threads() == 1;
+        m_drat_binary     = p.drat_binary();
         m_dyn_sub_res     = p.dyn_sub_res();
 
         // Parameters used in Liang, Ganesh, Poupart, Czarnecki AAAI 2016.
@@ -189,18 +191,14 @@ namespace sat {
 
         // PB parameters
         s = p.pb_solver();
-        if (s == symbol("circuit")) 
-            m_pb_solver = PB_CIRCUIT;
-        else if (s == symbol("sorting")) 
-            m_pb_solver = PB_SORTING;
-        else if (s == symbol("totalizer")) 
-            m_pb_solver = PB_TOTALIZER;
-        else if (s == symbol("solver")) 
-            m_pb_solver = PB_SOLVER;
-        else if (s == symbol("segmented")) 
-            m_pb_solver = PB_SEGMENTED;
-        else 
-            throw sat_param_exception("invalid PB solver: solver, totalizer, circuit, sorting, segmented");
+        if (s != symbol("circuit") &&
+            s != symbol("sorting") && 
+            s != symbol("totalizer") && 
+            s != symbol("solver") &&
+            s != symbol("segmented") &&
+            s != symbol("binary_merge")) {
+            throw sat_param_exception("invalid PB solver: solver, totalizer, circuit, sorting, segmented, binary_merge");
+        }
 
         s = p.pb_resolve();
         if (s == "cardinality") 

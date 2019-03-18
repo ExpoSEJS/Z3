@@ -52,14 +52,6 @@ namespace sat {
         BH_LRB
     };
 
-    enum pb_solver {
-        PB_SOLVER,
-        PB_CIRCUIT,
-        PB_SORTING,
-        PB_TOTALIZER,
-        PB_SEGMENTED
-    };
-
     enum pb_resolve {
         PB_CARDINALITY,
         PB_ROUNDING
@@ -128,6 +120,7 @@ namespace sat {
         double             m_lookahead_cube_psat_clause_base;
         double             m_lookahead_cube_psat_trigger;
         reward_t           m_lookahead_reward;
+        bool               m_lookahead_double;
         bool               m_lookahead_global_autarky;
         double             m_lookahead_delta_fraction;
         bool               m_lookahead_use_learned;
@@ -156,11 +149,11 @@ namespace sat {
         bool               m_core_minimize;
         bool               m_core_minimize_partial;
         bool               m_drat;
+        bool               m_drat_binary;
         symbol             m_drat_file;
         bool               m_drat_check_unsat;
         bool               m_drat_check_sat;
         
-        pb_solver          m_pb_solver;
         bool               m_card_solver;
         pb_resolve         m_pb_resolve;
         pb_lemma_format    m_pb_lemma_format;
@@ -180,6 +173,7 @@ namespace sat {
         config(params_ref const & p);
         void updt_params(params_ref const & p);
         static void collect_param_descrs(param_descrs & d);
+
     };
 };
 

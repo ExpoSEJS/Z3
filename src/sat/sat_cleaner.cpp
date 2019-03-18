@@ -119,11 +119,11 @@ namespace sat {
                        s.display_watches(tout););
                 switch (new_sz) {
                 case 0:
-                    s.set_conflict(justification());
+                    s.set_conflict();
                     s.del_clause(c);
                     break;
                 case 1:
-                    s.assign(c[0], justification());
+                    s.assign_unit(c[0]);
                     s.del_clause(c);
                     break;
                 case 2:
@@ -165,12 +165,11 @@ namespace sat {
         }
         ~report() {
             m_watch.stop();
-            IF_VERBOSE(SAT_VB_LVL, 
-                       verbose_stream() << " (sat-cleaner :elim-literals " << (m_cleaner.m_elim_literals - m_elim_literals)
-                       << " :elim-clauses " << (m_cleaner.m_elim_clauses - m_elim_clauses)
-                       << " :cost " << m_cleaner.m_cleanup_counter
-                       << mk_stat(m_cleaner.s)
-                       << " :time " << std::fixed << std::setprecision(2) << m_watch.get_seconds() << ")\n";);
+            IF_VERBOSE(2,
+                       verbose_stream() << " (sat-cleaner";
+                       verbose_stream() << " :elim-literals " << (m_cleaner.m_elim_literals - m_elim_literals);
+                       verbose_stream() << " :elim-clauses " << (m_cleaner.m_elim_clauses - m_elim_clauses);
+                       verbose_stream() << " :cost " << m_cleaner.m_cleanup_counter << m_watch << ")\n";);
         }
     };
 

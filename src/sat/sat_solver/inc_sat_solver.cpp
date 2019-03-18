@@ -300,11 +300,6 @@ public:
         sat_params p1(p);
         m_params.set_bool("keep_cardinality_constraints", p1.cardinality_solver());
         m_params.set_sym("pb.solver", p1.pb_solver());
-
-        m_params.set_bool("keep_pb_constraints", m_solver.get_config().m_pb_solver == sat::PB_SOLVER);
-        m_params.set_bool("pb_num_system", m_solver.get_config().m_pb_solver == sat::PB_SORTING);
-        m_params.set_bool("pb_totalizer", m_solver.get_config().m_pb_solver == sat::PB_TOTALIZER);
-
         m_params.set_bool("xor_solver", p1.xor_solver());
         m_solver.updt_params(m_params);
         m_solver.set_incremental(is_incremental() && !override_incremental());
@@ -318,6 +313,39 @@ public:
         r.reset();
         r.append(m_core.size(), m_core.c_ptr());
     }
+
+    void get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) override {
+        unsigned sz = vars.size();
+        depth.resize(sz);
+        for (unsigned i = 0; i < sz; ++i) {
+            auto bv = m_map.to_bool_var(vars[i]);
+            depth[i] = bv == sat::null_bool_var ? UINT_MAX : m_solver.lvl(bv);
+        }
+    }
+
+    expr_ref_vector get_trail() override {
+        expr_ref_vector result(m);
+        unsigned sz = m_solver.trail_size();
+        expr_ref_vector lit2expr(m);
+        lit2expr.resize(m_solver.num_vars() * 2);
+        m_map.mk_inv(lit2expr);
+        for (unsigned i = 0; i < sz; ++i) {
+            sat::literal lit = m_solver.trail_literal(i);
+            result.push_back(lit2expr[lit.index()].get());
+        }
+        return result;
+    }
+
+    void set_activity(expr* var, double activity) override {
+        m.is_not(var, var);
+        sat::bool_var v = m_map.to_bool_var(var);
+        if (v == sat::null_bool_var) {
+            v = m_solver.add_var(true);
+            m_map.insert(var, v);
+        }
+        m_solver.set_activity(v, static_cast<unsigned>(activity));
+    }
+
     proof * get_proof() override {
         UNREACHABLE();
         return nullptr;

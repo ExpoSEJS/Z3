@@ -188,7 +188,6 @@ extern "C" {
     // DIMACS files start with "p cnf" and number of variables/clauses.
     // This is not legal SMT syntax, so use the DIMACS parser.
     static bool is_dimacs_string(Z3_string c_str) {
-        std::cout << c_str << "\n";
         return c_str[0] == 'p' && c_str[1] == ' ' && c_str[2] == 'c';
     }
 
@@ -386,7 +385,7 @@ extern "C" {
         init_solver(c, s);
         Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
         mk_c(c)->save_object(v);
-        expr_ref_vector fmls = to_solver_ref(s)->get_units(mk_c(c)->m());
+        expr_ref_vector fmls = to_solver_ref(s)->get_units();
         for (expr* f : fmls) {
             v->m_ast_vector.push_back(f);
         }
@@ -401,8 +400,55 @@ extern "C" {
         init_solver(c, s);
         Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
         mk_c(c)->save_object(v);
-        expr_ref_vector fmls = to_solver_ref(s)->get_non_units(mk_c(c)->m());
+        expr_ref_vector fmls = to_solver_ref(s)->get_non_units();
         for (expr* f : fmls) {
+            v->m_ast_vector.push_back(f);
+        }
+        RETURN_Z3(of_ast_vector(v));
+        Z3_CATCH_RETURN(nullptr);
+    }
+
+    void Z3_API Z3_solver_get_levels(Z3_context c, Z3_solver s, Z3_ast_vector literals, unsigned sz, unsigned levels[]) {
+        Z3_TRY;
+        LOG_Z3_solver_get_levels(c, s, literals, sz, levels);
+        RESET_ERROR_CODE();
+        init_solver(c, s);
+        if (sz != Z3_ast_vector_size(c, literals)) {
+            SET_ERROR_CODE(Z3_IOB, nullptr);
+            return;
+        }
+        ptr_vector<expr> _vars;
+        for (unsigned i = 0; i < sz; ++i) {
+            expr* e = to_expr(Z3_ast_vector_get(c, literals, i));
+            mk_c(c)->m().is_not(e, e);
+            _vars.push_back(e);
+        }
+        unsigned_vector _levels(sz);
+        to_solver_ref(s)->get_levels(_vars, _levels);
+        for (unsigned i = 0; i < sz; ++i) {
+            levels[i] = _levels[i];
+        }
+        Z3_CATCH;
+    }
+
+    void Z3_API Z3_solver_set_activity(Z3_context c, Z3_solver s, Z3_ast a, double activity) {
+        Z3_TRY;
+        LOG_Z3_solver_set_activity(c, s, a, activity);
+        RESET_ERROR_CODE();
+        init_solver(c, s);
+        to_solver_ref(s)->set_activity(to_expr(a), activity);
+        Z3_CATCH;
+    }
+
+    Z3_ast_vector Z3_API Z3_solver_get_trail(Z3_context c, Z3_solver s) {
+        Z3_TRY;
+        LOG_Z3_solver_get_trail(c, s);
+        RESET_ERROR_CODE();
+        init_solver(c, s);
+        Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
+        mk_c(c)->save_object(v);
+        expr_ref_vector trail = to_solver_ref(s)->get_trail();
+        for (expr* f : trail) {
             v->m_ast_vector.push_back(f);
         }
         RETURN_Z3(of_ast_vector(v));

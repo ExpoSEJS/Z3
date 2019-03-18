@@ -548,11 +548,15 @@ func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_ROTATE_LEFT:
         if (arity != 1)
             m_manager->raise_exception("rotate left expects one argument");
+        if (num_parameters != 1 || !parameters[0].is_int()) 
+            m_manager->raise_exception("rotate left expects one integer parameter");
         return m_manager->mk_func_decl(m_rotate_left_sym, arity, domain, domain[0],
                                        func_decl_info(m_family_id, k, num_parameters, parameters));
     case OP_ROTATE_RIGHT:
         if (arity != 1)
             m_manager->raise_exception("rotate right expects one argument");
+        if (num_parameters != 1 || !parameters[0].is_int()) 
+            m_manager->raise_exception("rotate right expects one integer parameter");
         return m_manager->mk_func_decl(m_rotate_right_sym, arity, domain, domain[0],
                                        func_decl_info(m_family_id, k, num_parameters, parameters));
     case OP_REPEAT:
@@ -620,7 +624,7 @@ func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             if (m.get_sort(args[i]) != r->get_domain(i)) {
                 std::ostringstream buffer;
                 buffer << "Argument " << mk_pp(args[i], m) << " at position " << i << " does not match declaration " << mk_pp(r, m);
-                m.raise_exception(buffer.str().c_str());
+                m.raise_exception(buffer.str());
                 return nullptr;
             }
         }
@@ -864,7 +868,21 @@ app * bv_util::mk_numeral(rational const & val, sort* s) const {
 
 app * bv_util::mk_numeral(rational const & val, unsigned bv_size) const {
     parameter p[2] = { parameter(val), parameter(static_cast<int>(bv_size)) };
-    return m_manager.mk_app(get_fid(), OP_BV_NUM, 2, p, 0, nullptr);
+    app * r = m_manager.mk_app(get_fid(), OP_BV_NUM, 2, p, 0, nullptr);
+
+    if (m_plugin->log_constant_meaning_prelude(r)) {
+        if (bv_size % 4 == 0) {
+            m_manager.trace_stream() << "#x";
+            val.display_hex(m_manager.trace_stream(), bv_size);
+            m_manager.trace_stream() << "\n";
+        } else {
+            m_manager.trace_stream() << "#b";
+            val.display_bin(m_manager.trace_stream(), bv_size);
+            m_manager.trace_stream() << "\n";
+        }
+    }
+
+    return r;
 }
 
 sort * bv_util::mk_sort(unsigned bv_size) {

@@ -314,6 +314,25 @@ public:
             m_solver2->get_model(m);
     }
 
+    void get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) override {
+        if (m_use_solver1_results)
+            m_solver1->get_levels(vars, depth);
+        else
+            m_solver2->get_levels(vars, depth);
+    }
+
+    expr_ref_vector get_trail() override {
+        if (m_use_solver1_results)
+            return m_solver1->get_trail();
+        else
+            return m_solver2->get_trail();
+    }
+
+    void set_activity(expr* lit, double activity) override {
+        m_solver1->set_activity(lit, activity);
+        m_solver2->set_activity(lit, activity);
+    }
+
     proof * get_proof() override {
         if (m_use_solver1_results)
             return m_solver1->get_proof();

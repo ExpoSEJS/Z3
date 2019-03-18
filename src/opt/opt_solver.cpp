@@ -208,6 +208,9 @@ namespace opt {
         return m_context.preferred_sat(asms, cores);
     }
 
+    void opt_solver::get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) {
+        return m_context.get_levels(vars, depth);
+    }
 
 
     /**
@@ -230,7 +233,8 @@ namespace opt {
         get_model(m_model);
         inf_eps val2;
         m_valid_objectives[i] = true;
-        TRACE("opt", tout << (has_shared?"has shared":"non-shared") << " " << val << "\n";);
+        has_shared = true;
+        TRACE("opt", tout << (has_shared?"has shared":"non-shared") << " " << val << " " << blocker << "\n";);
         if (!m_models[i]) {
             set_model(i);
         }

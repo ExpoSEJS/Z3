@@ -178,7 +178,17 @@ public:
         return r;
     }
 
+    void get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) override {
+        m_solver->get_levels(vars, depth);
+    }
 
+    expr_ref_vector get_trail() override {
+        return m_solver->get_trail();
+    }
+
+    void set_activity(expr* var, double activity) override {
+        m_solver->set_activity(var, activity);
+    }
 
     unsigned get_num_assertions() const override {
         return m_solver->get_num_assertions();

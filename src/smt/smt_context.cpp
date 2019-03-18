@@ -59,6 +59,7 @@ namespace smt {
         m_b_internalized_stack(m),
         m_e_internalized_stack(m),
         m_final_check_idx(0),
+        m_is_auxiliary(false),
         m_cg_table(m),
         m_dyn_ack_manager(*this, p),
         m_is_diseq_tmp(nullptr),
@@ -238,6 +239,7 @@ namespace smt {
 
     context * context::mk_fresh(symbol const * l, smt_params * p, params_ref const& pa) {
         context * new_ctx = alloc(context, m_manager, p ? *p : m_fparams, pa);
+        new_ctx->m_is_auxiliary = true;
         new_ctx->set_logic(l == nullptr ? m_setup.get_logic() : *l);
         copy_plugins(*this, *new_ctx);
         return new_ctx;
@@ -1941,7 +1943,7 @@ namespace smt {
     */
     void context::push_scope() {
 
-        if (m_manager.has_trace_stream())
+        if (m_manager.has_trace_stream() && !m_is_auxiliary)
             m_manager.trace_stream() << "[push] " << m_scope_lvl << "\n";
 
         m_scope_lvl++;
@@ -2392,7 +2394,7 @@ namespace smt {
     unsigned context::pop_scope_core(unsigned num_scopes) {
 
         try {
-            if (m_manager.has_trace_stream())
+            if (m_manager.has_trace_stream() && !m_is_auxiliary)
                 m_manager.trace_stream() << "[pop] " << num_scopes << " " << m_scope_lvl << "\n";
 
             TRACE("context", tout << "backtracking: " << num_scopes << " from " << m_scope_lvl << "\n";);
@@ -3331,7 +3333,7 @@ namespace smt {
        Return true if succeeded.
     */
     bool context::check_preamble(bool reset_cancel) {
-        if (m_manager.has_trace_stream())
+        if (m_manager.has_trace_stream() && !m_is_auxiliary)
             m_manager.trace_stream() << "[begin-check] " << m_scope_lvl << "\n";
 
         if (memory::above_high_watermark()) {
@@ -3496,7 +3498,6 @@ namespace smt {
         m_case_split_queue             ->init_search_eh();
         m_next_progress_sample         = 0;
         TRACE("literal_occ", display_literal_num_occs(tout););
-        m_timer.start();
     }
 
     void context::end_search() {
@@ -3947,7 +3948,7 @@ namespace smt {
                            << mk_pp(bool_var2expr(l.var()), m_manager) << "\n";
                   });
 
-            if (m_manager.has_trace_stream()) {
+            if (m_manager.has_trace_stream() && !m_is_auxiliary) {
                 m_manager.trace_stream() << "[conflict] ";
                 display_literals(m_manager.trace_stream(), num_lits, lits);
                 m_manager.trace_stream() << "\n";
@@ -4421,6 +4422,22 @@ namespace smt {
             m = nullptr;
         else
             m = const_cast<model*>(m_model.get());
+    }
+
+    void context::get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) {
+        unsigned sz = vars.size(); 
+        depth.resize(sz);
+        for (unsigned i = 0; i < sz; ++i) {
+            expr* v = vars[i];
+            bool_var bv = m_expr2bool_var.get(v->get_id(), null_bool_var);
+            depth[i] = bv == null_bool_var ? UINT_MAX : get_assign_level(bv);            
+        }
+    }
+
+    expr_ref_vector context::get_trail() {        
+        expr_ref_vector result(get_manager());
+        get_assignments(result);
+        return result;
     }
 
     void context::get_proto_model(proto_model_ref & m) const {

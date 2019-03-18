@@ -196,7 +196,7 @@ namespace smt {
         TRACE("incompleteness_bug", tout << "[internalize-assertion]: #" << n->get_id() << "\n";);
         flet<unsigned> l(m_generation, generation);
         m_stats.m_max_generation = std::max(m_generation, m_stats.m_max_generation);
-        if (get_depth(n) > DEEP_EXPR_THRESHOLD) {
+        if (::get_depth(n) > DEEP_EXPR_THRESHOLD) {
             // if the expression is deep, then execute topological sort to avoid
             // stack overflow.
             // a caveat is that theory internalizers do rely on recursive descent so
@@ -1019,15 +1019,7 @@ namespace smt {
         sort * s    = term->get_decl()->get_range();
         theory * th = m_theories.get_plugin(s->get_family_id());
         if (th) {
-            if (m_manager.has_trace_stream()) {
-                m_manager.trace_stream() << "[theory-constraints] " << m_manager.get_family_name(s->get_family_id()) << "\n";
-            }
-
             th->apply_sort_cnstr(e, s);
-
-            if (m_manager.has_trace_stream()) {
-                m_manager.trace_stream() << "[end-theory-constraints]\n";
-            }
         }
     }
 

@@ -36,36 +36,46 @@ void array_rewriter::get_param_descrs(param_descrs & r) {
 
 br_status array_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
     SASSERT(f->get_family_id() == get_fid());
-    TRACE("array_rewriter", tout << mk_pp(f, m()) << "\n";
-          for (unsigned i = 0; i < num_args; ++i) {
-              tout << mk_pp(args[i], m()) << "\n";
-          });
+    br_status st;
     switch (f->get_decl_kind()) {
     case OP_SELECT:
-        return mk_select_core(num_args, args, result);
+        st = mk_select_core(num_args, args, result);
+        break;
     case OP_STORE:
-        return mk_store_core(num_args, args, result);
+        st = mk_store_core(num_args, args, result);
+        break;
     case OP_ARRAY_MAP:
-        SASSERT(f->get_num_parameters() == 1);
-        SASSERT(f->get_parameter(0).is_ast());
-        SASSERT(is_func_decl(f->get_parameter(0).get_ast()));
-        return mk_map_core(to_func_decl(f->get_parameter(0).get_ast()), num_args, args, result);
+        st = mk_map_core(m_util.get_map_func_decl(f), num_args, args, result);
+        break;
     case OP_SET_UNION:
-        return mk_set_union(num_args, args, result);
+        st = mk_set_union(num_args, args, result);
+        break;
     case OP_SET_INTERSECT:
-        return mk_set_intersect(num_args, args, result);
+        st = mk_set_intersect(num_args, args, result);
+        break;
     case OP_SET_SUBSET: 
         SASSERT(num_args == 2);
-        return mk_set_subset(args[0], args[1], result);
+        st = mk_set_subset(args[0], args[1], result);
+        break;
     case OP_SET_COMPLEMENT:
         SASSERT(num_args == 1);
-        return mk_set_complement(args[0], result);
+        st = mk_set_complement(args[0], result);
+        break;
     case OP_SET_DIFFERENCE:
         SASSERT(num_args == 2);
-        return mk_set_difference(args[0], args[1], result);
+        st = mk_set_difference(args[0], args[1], result);
+        break;
     default:
-        return BR_FAILED;
+        st = BR_FAILED;
+        break;
     }
+    CTRACE("array_rewriter", st != BR_FAILED, 
+           tout << mk_pp(f, m()) << "\n";
+           for (unsigned i = 0; i < num_args; ++i) {
+               tout << mk_pp(args[i], m()) << "\n";
+           }
+           tout << "\n --> " << result << "\n";);
+    return st;
 }
 
 // l_true  -- all equal
@@ -229,6 +239,14 @@ br_status array_rewriter::mk_select_core(unsigned num_args, expr * const * args,
     return BR_FAILED;
 }
 
+sort_ref array_rewriter::get_map_array_sort(func_decl* f, unsigned num_args, expr* const* args) {
+    sort* s0 = m().get_sort(args[0]);
+    unsigned sz = get_array_arity(s0);
+    ptr_vector<sort> domain;
+    for (unsigned i = 0; i < sz; ++i) domain.push_back(get_array_domain(s0, i));
+    return sort_ref(m_util.mk_array_sort(sz, domain.c_ptr(), f->get_range()), m());
+}
+
 br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
 
     app* store_expr = nullptr;
@@ -279,11 +297,7 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
         }
         else {
             expr_ref value(m().mk_app(f, values.size(), values.c_ptr()), m());
-            sort* s0 = m().get_sort(args[0]);
-            unsigned sz = get_array_arity(s0);
-            ptr_vector<sort> domain;
-            for (unsigned i = 0; i < sz; ++i) domain.push_back(get_array_domain(s0, i));
-            sort_ref s(m_util.mk_array_sort(sz, domain.c_ptr(), m().get_sort(value)), m());
+            sort_ref s = get_map_array_sort(f, num_args, args);
             result = m_util.mk_const_array(s, value);
         }
         return BR_REWRITE2;
@@ -323,6 +337,75 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
         result = m().update_quantifier(lam, result);
         return BR_REWRITE3;        
     }
+
+    if (m().is_and(f)) {
+        ast_mark mark;
+        ptr_buffer<expr> es;
+        bool change = false;
+        unsigned j = 0;
+        es.append(num_args, args);
+        for (unsigned i = 0; i < es.size(); ++i) {
+            expr* e = es[i];
+            if (mark.is_marked(e)) {
+                change = true;
+            }
+            else if (m_util.is_map(e) && m().is_and(m_util.get_map_func_decl(e))) {
+                mark.mark(e, true);                
+                es.append(to_app(e)->get_num_args(), to_app(e)->get_args());
+            }
+            else {
+                mark.mark(e, true);
+                es[j++] = es[i];
+            }
+        }
+        es.shrink(j);
+        for (expr* e : es) {
+            if (m().is_not(e, e) && mark.is_marked(e)) {
+                sort_ref s = get_map_array_sort(f, num_args, args);
+                result = m_util.mk_const_array(s, m().mk_false());
+                return BR_DONE;
+            }
+        }        
+        if (change) {
+            result = m_util.mk_map_assoc(f, es.size(), es.c_ptr());
+            return BR_DONE;
+        }
+    }
+
+    if (m().is_or(f)) {
+        ast_mark mark;
+        ptr_buffer<expr> es;
+        es.append(num_args, args);
+        unsigned j = 0;
+        bool change = false;
+        for (unsigned i = 0; i < es.size(); ++i) {
+            expr* e = es[i];
+            if (mark.is_marked(e)) {
+                change = true;
+            }
+            else if (m_util.is_map(e) && m().is_or(m_util.get_map_func_decl(e))) {
+                mark.mark(e, true);                
+                es.append(to_app(e)->get_num_args(), to_app(e)->get_args());
+            }
+            else {
+                mark.mark(e, true);
+                es[j++] = es[i];
+            }
+        }
+        es.shrink(j);
+        for (expr* e : es) {
+            if (m().is_not(e, e) && mark.is_marked(e)) {
+                sort_ref s = get_map_array_sort(f, num_args, args);
+                result = m_util.mk_const_array(s, m().mk_true());
+                return BR_DONE;
+            }
+        }        
+        if (change) {
+            result = m_util.mk_map_assoc(f, es.size(), es.c_ptr());
+            return BR_DONE;
+        }
+    }
+
 
     return BR_FAILED;
 }
@@ -456,6 +539,17 @@ bool array_rewriter::has_index_set(expr* e, expr_ref& e0, vector<expr_ref_vector
 }
 
 br_status array_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
+    TRACE("array_rewriter", tout << mk_pp(lhs, m()) << " " << mk_pp(rhs, m()) << "\n";);
+    expr* v = nullptr;
+    if (m_util.is_const(rhs) && is_lambda(lhs)) {
+        std::swap(lhs, rhs);
+    }
+    if (m_util.is_const(lhs, v) && is_lambda(rhs)) {
+        quantifier* lam = to_quantifier(rhs);
+        expr_ref e(m().mk_eq(lam->get_expr(), v), m());
+        result = m().update_quantifier(lam, quantifier_kind::forall_k, e);
+        return BR_REWRITE2; 
+    }
     if (!m_expand_store_eq) {
         return BR_FAILED;
     }

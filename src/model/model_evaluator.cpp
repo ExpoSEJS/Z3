@@ -38,6 +38,7 @@ Revision History:
 #include "ast/rewriter/var_subst.h"
 
 namespace {
+
 struct evaluator_cfg : public default_rewriter_cfg {
     ast_manager &                   m;
     model_core &                    m_model;
@@ -98,7 +99,11 @@ struct evaluator_cfg : public default_rewriter_cfg {
 
     bool evaluate(func_decl * f, unsigned num, expr * const * args, expr_ref & result) {
         func_interp * fi = m_model.get_func_interp(f);
-        return (fi != nullptr) && eval_fi(fi, num, args, result);
+        bool r = (fi != nullptr) && eval_fi(fi, num, args, result);
+        CTRACE("model_evaluator", r, tout << "reduce_app " << f->get_name() << "\n";
+               for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m) << "\n";
+               tout << "---->\n" << mk_ismt2_pp(result, m) << "\n";);
+        return r;
     }
 
     // Try to use the entries to quickly evaluate the fi
@@ -137,6 +142,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
 
 
     br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
+        TRACE("model_evaluator", tout << f->get_name() << "\n";);
         result_pr = nullptr;
         family_id fid = f->get_family_id();
         bool is_uninterp = fid != null_family_id && m.get_plugin(fid)->is_considered_uninterpreted(f);
@@ -165,7 +171,8 @@ struct evaluator_cfg : public default_rewriter_cfg {
             if (k == OP_EQ) {
                 // theory dispatch for =
                 SASSERT(num == 2);
-                family_id s_fid = m.get_sort(args[0])->get_family_id();
+                sort* s = m.get_sort(args[0]);
+                family_id s_fid = s->get_family_id();
                 if (s_fid == m_a_rw.get_fid())
                     st = m_a_rw.mk_eq_core(args[0], args[1], result);
                 else if (s_fid == m_bv_rw.get_fid())
@@ -178,12 +185,15 @@ struct evaluator_cfg : public default_rewriter_cfg {
                     st = m_seq_rw.mk_eq_core(args[0], args[1], result);
                 else if (s_fid == m_ar_rw.get_fid())
                     st = mk_array_eq(args[0], args[1], result);
+                TRACE("model_evaluator", 
+                      tout << st << " " << mk_pp(s, m) << " " << s_fid << " " << m_ar_rw.get_fid() << " " 
+                      << mk_pp(args[0], m) << " " << mk_pp(args[1], m) << " " << result << "\n";);
                 if (st != BR_FAILED)
                     return st;
             }
             return m_b_rw.mk_app_core(f, num, args, result);
         }
-
+        CTRACE("model_evaluator", st != BR_FAILED, tout << result << "\n";);
         if (fid == m_a_rw.get_fid())
             st = m_a_rw.mk_app_core(f, num, args, result);
         else if (fid == m_bv_rw.get_fid())
@@ -203,21 +213,19 @@ struct evaluator_cfg : public default_rewriter_cfg {
             st = BR_DONE;
         }
         else if (evaluate(f, num, args, result)) {
-            TRACE("model_evaluator", tout << "reduce_app " << f->get_name() << "\n";
-                  for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m) << "\n";
-                  tout << "---->\n" << mk_ismt2_pp(result, m) << "\n";);
             st = BR_REWRITE1;
         }
-        if (st == BR_FAILED && !m.is_builtin_family_id(fid))
+        CTRACE("model_evaluator", st != BR_FAILED, tout << result << "\n";);
+        if (st == BR_FAILED && !m.is_builtin_family_id(fid)) {
             st = evaluate_partial_theory_func(f, num, args, result, result_pr);
+            CTRACE("model_evaluator", st != BR_FAILED, tout << result << "\n";);
+        }
         if (st == BR_DONE && is_app(result)) {
             app* a = to_app(result);
             if (evaluate(a->get_decl(), a->get_num_args(), a->get_args(), result)) {
                 st = BR_REWRITE1;
             }
         }
-#if 1
-        TRACE("model_evaluator", tout << st << " " << num << " " << m_ar.is_as_array(f) << " " << m_model_completion << "\n";);
         if (st == BR_FAILED && num == 0 && m_ar.is_as_array(f) && m_model_completion) {
             func_decl* g = nullptr;
             VERIFY(m_ar.is_as_array(f, g));
@@ -248,7 +256,6 @@ struct evaluator_cfg : public default_rewriter_cfg {
                 return BR_DONE;
             }
         }
-#endif
 
         CTRACE("model_evaluator", st != BR_FAILED, tout << result << "\n";);
         return st;
@@ -291,7 +298,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
                     return false;
             }
             def = fi->get_interp();
-            SASSERT(def != 0);
+            SASSERT(def != nullptr);
             return true;
         }
 
@@ -315,7 +322,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
     br_status evaluate_partial_theory_func(func_decl * f,
                                            unsigned num, expr * const * args,
                                            expr_ref & result, proof_ref & result_pr) {
-        SASSERT(f != 0);
+        SASSERT(f != nullptr);
         SASSERT(!m.is_builtin_family_id(f->get_family_id()));
         result = nullptr;
         result_pr = nullptr;
@@ -348,7 +355,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
             return BR_DONE;
         }
         if (!m_array_equalities) {
-            return BR_FAILED;
+            return m_ar_rw.mk_eq_core(a, b, result);
         }
 
         vector<expr_ref_vector> stores1, stores2;
@@ -389,7 +396,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
                   );
             return BR_REWRITE_FULL;
         }
-        return BR_FAILED;
+        return m_ar_rw.mk_eq_core(a, b, result);
     }
 
     struct args_eq {
@@ -428,8 +435,7 @@ struct evaluator_cfg : public default_rewriter_cfg {
         args_table table2(DEFAULT_HASHTABLE_INITIAL_CAPACITY, ah, ae);
 
         // stores with smaller index take precedence
-        for (unsigned i = stores1.size(); i > 0; ) {
-            --i;
+        for (unsigned i = stores1.size(); i-- > 0; ) {
             table1.insert(stores1[i].c_ptr());
         }
 
@@ -688,4 +694,8 @@ bool model_evaluator::eval(expr_ref_vector const& ts, expr_ref& r, bool model_co
 
 void model_evaluator::set_solver(expr_solver* solver) {
     m_imp->m_cfg.m_seq_rw.set_solver(solver);
+}
+
+bool model_evaluator::has_solver() {
+    return m_imp->m_cfg.m_seq_rw.has_solver();
 }

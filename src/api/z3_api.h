@@ -875,6 +875,18 @@ typedef enum
       - Z3_OP_PB_EQ: Generalized Pseudo-Boolean equality constraint.
               Example  2*x + 1*y + 2*z + 1*u = 4
 
+       - Z3_OP_SPECIAL_RELATION_LO: A relation that is a total linear order
+
+       - Z3_OP_SPECIAL_RELATION_PO: A relation that is a partial order
+
+       - Z3_OP_SPECIAL_RELATION_PLO: A relation that is a piecewise linear order
+
+       - Z3_OP_SPECIAL_RELATION_TO: A relation that is a tree order
+
+       - Z3_OP_SPECIAL_RELATION_TC: Transitive closure of a relation
+
+       - Z3_OP_SPECIAL_RELATION_TRC: Transitive reflexive closure of a relation
+
       - Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN: Floating-point rounding mode RNE
 
       - Z3_OP_FPA_RM_NEAREST_TIES_TO_AWAY: Floating-point rounding mode RNA
@@ -1171,6 +1183,7 @@ typedef enum {
     Z3_OP_SEQ_NTH,
     Z3_OP_SEQ_LENGTH,
     Z3_OP_SEQ_INDEX,
+    Z3_OP_SEQ_LAST_INDEX,
     Z3_OP_SEQ_TO_RE,
     Z3_OP_SEQ_IN_RE,
 
@@ -1209,8 +1222,17 @@ typedef enum {
     Z3_OP_PB_GE,
     Z3_OP_PB_EQ,
 
+    // Special relations
+    Z3_OP_SPECIAL_RELATION_LO = 0xa000,
+    Z3_OP_SPECIAL_RELATION_PO,
+    Z3_OP_SPECIAL_RELATION_PLO,
+    Z3_OP_SPECIAL_RELATION_TO,
+    Z3_OP_SPECIAL_RELATION_TC,
+    Z3_OP_SPECIAL_RELATION_TRC,
+
+
     // Floating-Point Arithmetic
-    Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN,
+    Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN = 0xb000,
     Z3_OP_FPA_RM_NEAREST_TIES_TO_AWAY,
     Z3_OP_FPA_RM_TOWARD_POSITIVE,
     Z3_OP_FPA_RM_TOWARD_NEGATIVE,
@@ -3084,6 +3106,14 @@ extern "C" {
        def_API('Z3_mk_as_array', AST, (_in(CONTEXT), _in(FUNC_DECL)))
      */
     Z3_ast Z3_API Z3_mk_as_array(Z3_context c, Z3_func_decl f);
+
+    /**
+       \brief Create predicate that holds if Boolean array \c set has \c k elements set to true.       
+
+       def_API('Z3_mk_set_has_size', AST, (_in(CONTEXT), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_set_has_size(Z3_context c, Z3_ast set, Z3_ast k);
+
     /*@}*/
 
     /** @name Sets */
@@ -3292,6 +3322,13 @@ extern "C" {
     bool Z3_API Z3_is_seq_sort(Z3_context c, Z3_sort s);
 
     /**
+       \brief Retrieve basis sort for sequence sort.
+
+       def_API('Z3_get_seq_sort_basis', SORT, (_in(CONTEXT), _in(SORT)))
+     */
+    Z3_sort Z3_API Z3_get_seq_sort_basis(Z3_context c, Z3_sort s);
+
+    /**
        \brief Create a regular expression sort out of a sequence sort.
 
        def_API('Z3_mk_re_sort', SORT, (_in(CONTEXT), _in(SORT)))
@@ -3304,6 +3341,13 @@ extern "C" {
        def_API('Z3_is_re_sort', BOOL, (_in(CONTEXT), _in(SORT)))
      */
     bool Z3_API Z3_is_re_sort(Z3_context c, Z3_sort s);
+
+    /**
+       \brief Retrieve basis sort for regex sort.
+
+       def_API('Z3_get_re_sort_basis', SORT, (_in(CONTEXT), _in(SORT)))
+     */
+    Z3_sort Z3_API Z3_get_re_sort_basis(Z3_context c, Z3_sort s);
 
     /**
        \brief Create a sort for 8 bit strings.
@@ -3446,11 +3490,18 @@ extern "C" {
     /**
        \brief Return index of first occurrence of \c substr in \c s starting from offset \c offset.
        If \c s does not contain \c substr, then the value is -1, if \c offset is the length of \c s, then the value is -1 as well.
-       The function is under-specified if \c offset is negative or larger than the length of \c s.
+       The value is -1 if \c offset is negative or larger than the length of \c s.
 
        def_API('Z3_mk_seq_index' ,AST ,(_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
      */
     Z3_ast Z3_API Z3_mk_seq_index(Z3_context c, Z3_ast s, Z3_ast substr, Z3_ast offset);
+
+    /**
+       \brief Return the last occurrence of \c substr in \c s.
+       If \c s does not contain \c substr, then the value is -1, 
+       def_API('Z3_mk_seq_last_index', AST, (_in(CONTEXT), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_seq_last_index(Z3_context c, Z3_ast, Z3_ast substr);
 
     /**
        \brief Convert string to integer.
@@ -3573,9 +3624,54 @@ extern "C" {
      */
     Z3_ast Z3_API Z3_mk_re_full(Z3_context c, Z3_sort re);
 
-
     /*@}*/
 
+
+    /** @name Special relations */
+    /*@{*/
+    /**
+       \brief declare \c a and \c b are in linear order over a relation indexed by \c id.
+
+       \pre a and b are of same type.
+       
+
+       def_API('Z3_mk_linear_order', FUNC_DECL ,(_in(CONTEXT), _in(SORT), _in(UINT)))
+     */
+    Z3_func_decl Z3_API Z3_mk_linear_order(Z3_context c, Z3_sort a, unsigned id);
+
+    /**
+       \brief create a partial ordering relation over signature \c a and index \c id.
+
+       def_API('Z3_mk_partial_order', FUNC_DECL ,(_in(CONTEXT), _in(SORT), _in(UINT)))
+     */
+    Z3_func_decl Z3_API Z3_mk_partial_order(Z3_context c, Z3_sort a, unsigned id);
+
+    /**
+       \brief create a piecewise linear ordering relation over signature \c a and index \c id.
+
+       def_API('Z3_mk_piecewise_linear_order', FUNC_DECL ,(_in(CONTEXT), _in(SORT), _in(UINT)))
+     */
+    Z3_func_decl Z3_API Z3_mk_piecewise_linear_order(Z3_context c, Z3_sort a, unsigned id);
+
+    /**
+       \brief create a tree ordering lreation over signature \c a identified using index \c id.
+
+       def_API('Z3_mk_tree_order', FUNC_DECL, (_in(CONTEXT), _in(SORT), _in(UINT)))
+     */
+    Z3_func_decl Z3_API Z3_mk_tree_order(Z3_context c, Z3_sort a, unsigned id);
+
+    /**
+       \brief create transitive closure of binary relation.
+
+       \pre f is a binary relation, such that the two arguments have the same sorts.
+
+       The resulting relation f+ represents the transitive closure of f.
+
+       def_API('Z3_mk_transitive_closure', FUNC_DECL ,(_in(CONTEXT), _in(FUNC_DECL)))
+     */
+    Z3_func_decl Z3_API Z3_mk_transitive_closure(Z3_context c, Z3_func_decl f);
+
+    /*@}*/
 
     /** @name Quantifiers */
     /*@{*/

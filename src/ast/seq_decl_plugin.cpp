@@ -273,6 +273,21 @@ int zstring::indexof(zstring const& other, int offset) const {
     return -1;
 }
 
+int zstring::last_indexof(zstring const& other) const {
+    if (other.length() == 0) return length();
+    if (other.length() > length()) return -1;
+    for (unsigned last = length() - other.length(); last-- > 0; ) {
+        bool suffix = true;
+        for (unsigned j = 0; suffix && j < other.length(); ++j) {
+            suffix = m_buffer[last + j] == other[j];
+        }
+        if (suffix) {
+            return static_cast<int>(last);
+        }
+    }
+    return -1;
+}
+
 zstring zstring::extract(int offset, int len) const {
     zstring result(m_encoding);
     SASSERT(0 <= offset && 0 <= len);
@@ -530,6 +545,7 @@ void seq_decl_plugin::init() {
     m_sigs[OP_SEQ_EXTRACT]   = alloc(psig, m, "seq.extract",  1, 3, seqAint2T, seqA);
     m_sigs[OP_SEQ_REPLACE]   = alloc(psig, m, "seq.replace",  1, 3, seq3A, seqA);
     m_sigs[OP_SEQ_INDEX]     = alloc(psig, m, "seq.indexof",  1, 3, seq2AintT, intT);
+    m_sigs[OP_SEQ_LAST_INDEX] = alloc(psig, m, "seq.last_indexof",  1, 2, seqAseqA, intT);
     m_sigs[OP_SEQ_AT]        = alloc(psig, m, "seq.at",       1, 2, seqAintT, seqA);
     m_sigs[OP_SEQ_NTH]       = alloc(psig, m, "seq.nth",      1, 2, seqAintT, A);
     m_sigs[OP_SEQ_LENGTH]    = alloc(psig, m, "seq.len",      1, 1, &seqA, intT);
@@ -774,7 +790,13 @@ func_decl * seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, 
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, OP_SEQ_INDEX));
         }
         return mk_str_fun(k, arity, domain, range, OP_SEQ_INDEX);
-
+    case OP_SEQ_LAST_INDEX:
+        if (arity != 2) {
+            m.raise_exception("two arguments expected tin last_indexof");
+        }
+        else {
+            return mk_seq_fun(k, arity, domain, range, OP_SEQ_LAST_INDEX);
+        }
     case OP_SEQ_PREFIX:
         return mk_seq_fun(k, arity, domain, range, _OP_STRING_PREFIX);
     case _OP_STRING_PREFIX:
@@ -884,12 +906,18 @@ bool seq_decl_plugin::is_value(app* e) const {
             m_manager->is_value(e->get_arg(0))) {
             return true;
         }
-        if (is_app_of(e, m_family_id, OP_SEQ_CONCAT) &&
-            e->get_num_args() == 2 && 
-            is_app(e->get_arg(0)) &&
-            is_app(e->get_arg(1)) &&
-            is_value(to_app(e->get_arg(0)))) {
-            e = to_app(e->get_arg(1));
+        if (is_app_of(e, m_family_id, OP_SEQ_CONCAT)) {
+            bool first = true;
+            for (expr* arg : *e) {
+                if (first) {
+                    first = false;
+                }
+                else if (is_app(arg) && !is_value(to_app(arg))) {
+                    return false;
+                }
+            }
+            if (!is_app(e->get_arg(0))) return false;            
+            e = to_app(e->get_arg(0));
             continue;
         }
         return false;

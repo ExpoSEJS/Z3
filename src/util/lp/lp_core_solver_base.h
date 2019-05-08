@@ -127,9 +127,8 @@ public:
     void init();
 
     virtual ~lp_core_solver_base() {
-        if (m_factorization != nullptr)
-            delete m_factorization;
-     }
+        delete m_factorization;
+    }
 
     vector<unsigned> & non_basis() {
         return m_nbasis;
@@ -214,7 +213,7 @@ public:
             if (m_A.m_columns[bj].size() > 1)
                 return true;
             for (const auto & c : m_A.m_columns[bj]) {
-                if (m_A.get_val(c) != one_of_type<mpq>())
+                if (m_A.get_val(c) != one_of_type<T>())
                     return true;
                 else
                     break;

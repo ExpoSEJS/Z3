@@ -32,6 +32,7 @@ Notes:
 #include "ast/rewriter/var_subst.h"
 #include "ast/expr_substitution.h"
 #include "ast/ast_smt2_pp.h"
+#include "ast/ast_pp.h"
 #include "ast/ast_util.h"
 #include "ast/well_sorted.h"
 
@@ -184,7 +185,6 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                     st = m_ar_rw.mk_eq_core(args[0], args[1], result);
                 else if (s_fid == m_seq_rw.get_fid())
                     st = m_seq_rw.mk_eq_core(args[0], args[1], result);
-
                 if (st != BR_FAILED)
                     return st;
             }
@@ -583,6 +583,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             m().trace_stream() << "[instance] " << static_cast<void *>(nullptr) << " #" << tmp->get_id() << "\n";
             m().trace_stream() << "[attach-enode] #" << tmp->get_id() << " 0\n";
             m().trace_stream() << "[end-of-instance]\n";
+            m().trace_stream().flush();
         }
 
         if (st != BR_DONE && st != BR_FAILED) {

@@ -2579,36 +2579,9 @@ namespace smt2 {
 
         void parse_assumptions() {
             while (!curr_is_rparen()) {
-                bool sign;
-                expr_ref t_ref(m());
-                if (curr_is_lparen()) {
-                    next();
-                    check_id_next(m_not, "invalid check-sat command, 'not' expected, assumptions must be Boolean literals");
-                    check_identifier("invalid check-sat command, literal expected");
-                    sign = true;
-                }
-                else {
-                    check_identifier("invalid check-sat command, literal or ')' expected");
-                    sign = false;
-                }
-                symbol n = curr_id();
-                next();
-                m_ctx.mk_const(n, t_ref);
-                if (!m().is_bool(t_ref))
+                parse_expr();
+                if (!m().is_bool(expr_stack().back()))
                     throw parser_exception("invalid check-sat command, argument must be a Boolean literal");
-                if (sign) {
-                    if (!is_uninterp_const(t_ref))
-                        throw parser_exception("invalid check-sat command, argument must be a Boolean literal");
-                    t_ref = m().mk_not(t_ref.get());
-                }
-                else {
-                    expr * arg;
-                    if (!is_uninterp_const(t_ref) && !(m().is_not(t_ref, arg) && is_uninterp_const(arg)))
-                        throw parser_exception("invalid check-sat command, argument must be a Boolean literal");
-                }
-                expr_stack().push_back(t_ref.get());
-                if (sign)
-                    check_rparen_next("invalid check-sat command, ')' expected");
             }
         }
 
@@ -3110,6 +3083,23 @@ namespace smt2 {
             m_var_shifter       = nullptr;
         }
 
+        sexpr_ref parse_sexpr_ref() {
+            m_num_bindings    = 0;
+            m_num_open_paren = 0;
+
+            try {
+                scan_core();
+                parse_sexpr();
+                if (!sexpr_stack().empty()) {
+                    return sexpr_ref(sexpr_stack().back(), sm());
+                }
+            }
+            catch (z3_exception & ex) {
+                error(ex.msg());
+            }
+            return sexpr_ref(nullptr, sm());
+        }
+
         bool operator()() {
             m_num_bindings    = 0;
             unsigned found_errors = 0;
@@ -3181,4 +3171,11 @@ bool parse_smt2_commands(cmd_context & ctx, std::istream & is, bool interactive,
     smt2::parser p(ctx, is, interactive, ps, filename);
     return p();
 }
+
+sexpr_ref parse_sexpr(cmd_context& ctx, std::istream& is, params_ref const& ps, char const* filename) {
+    smt2::parser p(ctx, is, false, ps, filename);
+    return p.parse_sexpr_ref();
+    
+}
+
 

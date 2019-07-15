@@ -644,6 +644,18 @@ typedef enum
           unfolding the Boolean connectives in the axioms a small
           bounded number of steps (=3).
 
+   - Z3_OP_PR_ASSUMPTION_ADD
+     Clausal proof adding axiom
+
+   - Z3_OP_PR_LEMMA_ADD
+     Clausal proof lemma addition
+
+   - Z3_OP_PR_REDUNDANT_DEL
+     Clausal proof lemma deletion
+
+   - Z3_OP_PR_CLAUSE_TRAIL,
+     Clausal proof trail of additions and deletions
+
    - Z3_OP_PR_DEF_INTRO: Introduces a name for a formula/term.
        Suppose e is an expression with free variables x, and def-intro
        introduces the name n(x). The possible cases are:
@@ -1143,6 +1155,10 @@ typedef enum {
     Z3_OP_PR_IFF_FALSE,
     Z3_OP_PR_COMMUTATIVITY,
     Z3_OP_PR_DEF_AXIOM,
+    Z3_OP_PR_ASSUMPTION_ADD, 
+    Z3_OP_PR_LEMMA_ADD, 
+    Z3_OP_PR_REDUNDANT_DEL, 
+    Z3_OP_PR_CLAUSE_TRAIL,
     Z3_OP_PR_DEF_INTRO,
     Z3_OP_PR_APPLY_DEF,
     Z3_OP_PR_IFF_OEQ,
@@ -3375,7 +3391,7 @@ extern "C" {
     /**
        \brief Create a string constant out of the string that is passed in
        It takes the length of the string as well to take into account
-       0 characters.
+       0 characters. The string is unescaped.
 
        def_API('Z3_mk_lstring' ,AST ,(_in(CONTEXT), _in(UINT), _in(STRING)))
      */
@@ -3396,6 +3412,15 @@ extern "C" {
        def_API('Z3_get_string' ,STRING ,(_in(CONTEXT), _in(AST)))
      */
     Z3_string Z3_API Z3_get_string(Z3_context c, Z3_ast s);
+
+    /**
+       \brief Retrieve the unescaped string constant stored in \c s.
+
+       \pre  Z3_is_string(c, s)
+
+       def_API('Z3_get_lstring' ,STRING ,(_in(CONTEXT), _in(AST), _out(UINT)))
+     */
+    Z3_string Z3_API Z3_get_lstring(Z3_context c, Z3_ast s, unsigned* length);
 
     /**
        \brief Create an empty sequence of the sequence sort \c seq.
@@ -3448,6 +3473,25 @@ extern "C" {
        def_API('Z3_mk_seq_contains' ,AST ,(_in(CONTEXT), _in(AST), _in(AST)))
      */
     Z3_ast Z3_API Z3_mk_seq_contains(Z3_context c, Z3_ast container, Z3_ast containee);
+
+
+    /**
+       \brief Check if \c s1 is lexicographically strictly less than \c s2.
+
+       \pre \c s1 and \c s2 are strings
+
+       def_API('Z3_mk_str_lt' ,AST ,(_in(CONTEXT), _in(AST), _in(AST)))
+     */
+    Z3_ast Z3_API Z3_mk_str_lt(Z3_context c, Z3_ast prefix, Z3_ast s);
+
+    /**
+       \brief Check if \c s1 is equal or lexicographically strictly less than \c s2.
+
+       \pre \c s1 and \c s2 are strings
+
+       def_API('Z3_mk_str_le' ,AST ,(_in(CONTEXT), _in(AST), _in(AST)))
+     */
+    Z3_ast Z3_API Z3_mk_str_le(Z3_context c, Z3_ast prefix, Z3_ast s);
 
     /**
        \brief Extract subsequence starting at \c offset of \c length.
@@ -6350,13 +6394,6 @@ extern "C" {
        def_API('Z3_solver_get_levels', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST_VECTOR), _in(UINT), _in_array(3, UINT)))
     */
     void Z3_API Z3_solver_get_levels(Z3_context c, Z3_solver s, Z3_ast_vector literals, unsigned sz,  unsigned levels[]);
-
-    /**
-       \brief set activity score associated with literal.
-
-       def_API('Z3_solver_set_activity', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST), _in(DOUBLE)))
-     */
-    void Z3_API Z3_solver_set_activity(Z3_context c, Z3_solver s, Z3_ast l, double activity);
 
     /**
        \brief Check whether the assertions in a given solver are consistent or not.

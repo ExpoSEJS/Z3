@@ -93,9 +93,9 @@ namespace qe {
                 check_cancel();
                 init_assumptions();   
                 lbool res = m_solver.check(m_asms);
+                TRACE("qe", display(tout); );
                 switch (res) {
                 case l_true:
-                    TRACE("qe", display(tout); );
                     save_model();
                     push();
                     break;
@@ -149,8 +149,8 @@ namespace qe {
                 }
             }
             TRACE("qe", display(tout);
-                  for (unsigned i = 0; i < m_asms.size(); ++i) {
-                      m_solver.display(tout, m_asms[i]); tout << "\n";
+                  for (nlsat::literal a : m_asms) {
+                      m_solver.display(tout, a) << "\n";
                   });
             save_model();
         }
@@ -165,7 +165,7 @@ namespace qe {
                 lits.push_back(~l);
                 break;
             default:
-                UNREACHABLE();
+                lits.push_back(l);
                 break; 
             }
         }
@@ -291,7 +291,7 @@ namespace qe {
             }
             nlsat::var_vector vs;
             m_solver.vars(l, vs);
-            TRACE("qe", m_solver.display(tout, l); tout << "\n";);
+            TRACE("qe", m_solver.display(tout << vs << " ", l) << "\n";);
             for (unsigned v : vs) {
                 level.merge(m_rvar2level[v]);                
             }
@@ -306,6 +306,7 @@ namespace qe {
             }
             nlsat::literal l(v, false);
             m_preds[k].push_back(l);
+            m_solver.inc_ref(v);
             m_bvar2level.insert(v, level);            
             TRACE("qe", m_solver.display(tout, l); tout << ": " << level << "\n";);
         }
@@ -412,6 +413,7 @@ namespace qe {
             nlsat::bool_var b = m_solver.mk_bool_var();
             clause.push_back(nlsat::literal(b, true));
             m_assumptions.push_back(nlsat::literal(b, false)); 
+            m_solver.inc_ref(b);
             m_asm2fml.insert(b, fml);
             m_trail.push_back(fml);            
             m_bvar2level.insert(b, max_level());
@@ -445,7 +447,9 @@ namespace qe {
             ~div_rewriter_cfg() {}
             br_status reduce_app(func_decl* f, unsigned sz, expr* const* args, expr_ref& result, proof_ref& pr) {
                 rational r(1);
-                if (is_decl_of(f, a.get_family_id(), OP_DIV) && sz == 2 && (!a.is_numeral(args[1], r) || r.is_zero())) {                    
+                if (is_decl_of(f, a.get_family_id(), OP_DIV) && 
+                    sz == 2 && (!a.is_numeral(args[1], r) || r.is_zero()) &&
+                    is_ground(args[0]) && is_ground(args[1])) {                    
                     result = m.mk_fresh_const("div", a.mk_real());
                     m_divs.push_back(div(m, args[0], args[1], to_app(result)));
                     return BR_DONE;
@@ -492,10 +496,10 @@ namespace qe {
                     return;
                 }
                 expr* n1, *n2;
-                if (a.is_div(n, n1, n2) && a.is_numeral(n2)) {
+                rational r;
+                if (a.is_div(n, n1, n2) && a.is_numeral(n2, r) && !r.is_zero()) {
                     return;
                 }
-                rational r;
                 if (a.is_power(n, n1, n2) && a.is_numeral(n2, r) && r.is_unsigned()) {
                     return;
                 }
@@ -511,49 +515,43 @@ namespace qe {
             bool has_divs() const { return m_has_divs; }
         };
 
-        void purify(expr_ref& fml, app_ref_vector& pvars, expr_ref_vector& paxioms) {
-            is_pure_proc  is_pure(*this);
+        /*
+          Ackermanize division
+
+          For each p/q:
+             q != 0 => div_pq*q = p
+
+          For each p/q, p'/q'
+             p = p', q = q' => div_pq = div_pq'
+
+         */
+
+        void ackermanize_div(expr_ref& fml) {
+            is_pure_proc is_pure(*this);
             {
                 expr_fast_mark1 visited;
                 quick_for_each_expr(is_pure, visited, fml);
             }
             if (is_pure.has_divs()) {
                 arith_util arith(m);
-                div_rewriter_star rw(*this);
                 proof_ref pr(m);
+                expr_ref_vector paxioms(m);
+                div_rewriter_star rw(*this);
                 rw(fml, fml, pr);
+                paxioms.push_back(fml);
                 vector<div> const& divs = rw.divs();
                 for (unsigned i = 0; i < divs.size(); ++i) {
-                    pvars.push_back(divs[i].name);
-                    paxioms.push_back(
-                        m.mk_or(m.mk_eq(divs[i].den, arith.mk_numeral(rational(0), false)), 
-                                m.mk_eq(divs[i].num, arith.mk_mul(divs[i].den, divs[i].name))));                    
+                    expr_ref den_is0(m.mk_eq(divs[i].den, arith.mk_real(0)), m);
+                    paxioms.push_back(m.mk_or(den_is0, m.mk_eq(divs[i].num, arith.mk_mul(divs[i].den, divs[i].name))));
                     for (unsigned j = i + 1; j < divs.size(); ++j) {
                         paxioms.push_back(m.mk_or(m.mk_not(m.mk_eq(divs[i].den, divs[j].den)),
                                                   m.mk_not(m.mk_eq(divs[i].num, divs[j].num)), 
                                                   m.mk_eq(divs[i].name, divs[j].name)));
                     }
                 }
+                fml = mk_and(paxioms);
             }
         }
-
-        void ackermanize_div(bool is_forall, vector<app_ref_vector>& qvars, expr_ref& fml) {
-            app_ref_vector pvars(m);
-            expr_ref_vector paxioms(m);
-            purify(fml, pvars, paxioms);            
-            if (paxioms.empty()) {
-                return;
-            }
-            expr_ref ante = mk_and(paxioms);
-            qvars[qvars.size()-2].append(pvars);
-            if (!is_forall) {
-                fml = m.mk_implies(ante, fml);
-            }
-            else {
-                fml = m.mk_and(fml, ante);
-            }
-        }
-
 
         void reset() override {
             //m_solver.reset();
@@ -566,6 +564,9 @@ namespace qe {
             m_bound_rvars.reset();
             m_bound_bvars.reset();
             m_preds.reset();
+            for (auto const& kv : m_bvar2level) {
+                m_solver.dec_ref(kv.m_key);
+            }
             m_rvar2level.reset();
             m_bvar2level.reset();
             m_t2x.reset();
@@ -617,6 +618,7 @@ namespace qe {
         // expr -> nlsat::solver
 
         void hoist(expr_ref& fml) {
+            ackermanize_div(fml);
             quantifier_hoister hoist(m);
             vector<app_ref_vector> qvars;
             app_ref_vector vars(m);
@@ -646,7 +648,6 @@ namespace qe {
             while (!vars.empty());
             SASSERT(qvars.size() >= 2);
             SASSERT(qvars.back().empty()); 
-            ackermanize_div(is_forall, qvars, fml);
             init_expr2var(qvars);
             goal2nlsat g2s;
 
@@ -672,6 +673,7 @@ namespace qe {
                     if (m_a2b.is_var(v)) {
                         SASSERT(m.is_bool(v));
                         nlsat::bool_var b = m_a2b.to_var(v);
+                        TRACE("qe", tout << mk_pp(v, m) << " |-> b" << b << "\n";);
                         m_bound_bvars.back().push_back(b);
                         set_level(b, lvl);
                     }
@@ -700,14 +702,13 @@ namespace qe {
         }
 
         void init_expr2var(vector<app_ref_vector> const& qvars) {
-            for (unsigned i = 0; i < qvars.size(); ++i) {
-                init_expr2var(qvars[i]);
+            for (app_ref_vector const& qvs : qvars) {
+                init_expr2var(qvs);
             }
         }
 
         void init_expr2var(app_ref_vector const& qvars) {
-            for (unsigned i = 0; i < qvars.size(); ++i) {
-                app* v = qvars[i];
+            for (app* v : qvars) {
                 if (m.is_bool(v)) {
                     m_a2b.insert(v, m_solver.mk_bool_var());
                 }

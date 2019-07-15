@@ -124,6 +124,7 @@ class seq_rewriter {
     br_status mk_str_stoi(expr* a, expr_ref& result);
     br_status mk_str_in_regexp(expr* a, expr* b, expr_ref& result);
     br_status mk_str_to_regexp(expr* a, expr_ref& result);
+    br_status mk_str_le(expr* a, expr* b, expr_ref& result);
     br_status mk_re_concat(expr* a, expr* b, expr_ref& result);
     br_status mk_re_union(expr* a, expr* b, expr_ref& result);
     br_status mk_re_inter(expr* a, expr* b, expr_ref& result);
@@ -154,6 +155,7 @@ class seq_rewriter {
     bool is_sequence(eautomaton& aut, expr_ref_vector& seq);
     bool is_epsilon(expr* e) const;
     void split_units(expr_ref_vector& lhs, expr_ref_vector& rhs);
+    void get_lengths(expr* e, expr_ref_vector& lens, expr_ref_vector& other, rational& pos);
 
 
 public:    

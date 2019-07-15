@@ -297,6 +297,7 @@ class parallel_tactic : public tactic {
             p.set_uint("restart.max", pp.simplify_restart_max() * mult);
             p.set_bool("lookahead_simplify", true);
             p.set_bool("retain_blocked_clauses", retain_blocked);
+            p.set_uint("max_conflicts", pp.simplify_max_conflicts());
             if (m_depth > 1) p.set_uint("bce_delay", 0);
             get_solver().updt_params(p);
         }
@@ -336,7 +337,7 @@ private:
 
     void init() {
         parallel_params pp(m_params);
-        m_num_threads = std::min((unsigned)omp_get_num_procs(), pp.threads_max());
+        m_num_threads = std::min((unsigned) std::thread::hardware_concurrency(), pp.threads_max());
         m_progress = 0;
         m_has_undef = false;
         m_allsat = false;

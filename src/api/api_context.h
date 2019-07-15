@@ -42,6 +42,7 @@ Revision History:
 #include "ast/rewriter/seq_rewriter.h"
 #include "smt/smt_solver.h"
 #include "solver/solver.h"
+#include "util/mutex.h"
 
 namespace smtlib {
     class parser;
@@ -79,6 +80,7 @@ namespace api {
         scoped_ptr<ast_manager>    m_manager;
         scoped_ptr<cmd_context>    m_cmd;
         add_plugins                m_plugins;
+        mutex                      m_mux;
 
         arith_util                 m_arith_util;
         bv_util                    m_bv_util;
@@ -181,6 +183,7 @@ namespace api {
 
         // Store a copy of str in m_string_buffer, and return a reference to it.
         // This method is used to communicate local/internal strings with the "external world"
+        char * mk_external_string(char const * str, unsigned n);
         char * mk_external_string(char const * str);
         char * mk_external_string(std::string && str);
 

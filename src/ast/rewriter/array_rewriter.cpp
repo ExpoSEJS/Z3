@@ -19,6 +19,7 @@ Notes:
 #include "ast/rewriter/array_rewriter.h"
 #include "ast/rewriter/array_rewriter_params.hpp"
 #include "ast/ast_lt.h"
+#include "ast/ast_util.h"
 #include "ast/ast_pp.h"
 #include "ast/rewriter/var_subst.h"
 
@@ -218,6 +219,20 @@ br_status array_rewriter::mk_select_core(unsigned num_args, expr * const * args,
         
     }
 
+    if (m_util.is_map(args[0])) {
+        app* a = to_app(args[0]);
+        func_decl* f0 = m_util.get_map_func_decl(a);
+        expr_ref_vector args0(m());
+        for (expr* arg : *a) {
+            ptr_vector<expr> args1;
+            args1.push_back(arg);
+            args1.append(num_args-1, args + 1);
+            args0.push_back(m_util.mk_select(args1.size(), args1.c_ptr()));
+        }
+        result = m().mk_app(f0, args0.size(), args0.c_ptr());
+        return BR_REWRITE2;
+    }
+
     if (m_util.is_as_array(args[0])) {
         // select(as-array[f], I) --> f(I)
         func_decl * f = m_util.get_as_array_func_decl(to_app(args[0]));
@@ -338,6 +353,11 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
         return BR_REWRITE3;        
     }
 
+    if (m().is_not(f) && m_util.is_map(args[0]) && m().is_not(m_util.get_map_func_decl(args[0]))) {
+        result = to_app(args[0])->get_arg(0);
+        return BR_DONE;
+    }
+
     if (m().is_and(f)) {
         ast_mark mark;
         ptr_buffer<expr> es;
@@ -359,16 +379,48 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
             }
         }
         es.shrink(j);
+        j = 0;
         for (expr* e : es) {
-            if (m().is_not(e, e) && mark.is_marked(e)) {
-                sort_ref s = get_map_array_sort(f, num_args, args);
-                result = m_util.mk_const_array(s, m().mk_false());
-                return BR_DONE;
+            if (m_util.is_map(e) && m().is_not(m_util.get_map_func_decl(e))) {
+                expr * arg = to_app(e)->get_arg(0);
+                if (mark.is_marked(arg)) {
+                    sort_ref s = get_map_array_sort(f, num_args, args);
+                    result = m_util.mk_const_array(s, m().mk_false());
+                    return BR_DONE;
+                }
+                // a & (!a & b & c) -> a & !(b & c)
+                if (m_util.is_map(arg) && m().is_and(m_util.get_map_func_decl(arg))) {
+                    unsigned k = 0;
+                    ptr_buffer<expr> gs;
+                    bool and_change = false;
+                    gs.append(to_app(arg)->get_num_args(), to_app(arg)->get_args());
+                    for (unsigned i = 0; i < gs.size(); ++i) {
+                        expr* g = gs[i];
+                        if (mark.is_marked(g)) {
+                            change = true;
+                            and_change = true;
+                        }
+                        else if (m_util.is_map(g) && m().is_and(m_util.get_map_func_decl(g))) {
+                            gs.append(to_app(g)->get_num_args(), to_app(g)->get_args());
+                        }
+                        else {
+                            gs[k++] = gs[i];
+                        }                        
+                    }
+                    gs.shrink(k);
+                    if (and_change) {
+                        std::sort(gs.begin(), gs.end(), [](expr* a, expr* b) { return a->get_id() < b->get_id(); });
+                        expr* arg = m_util.mk_map_assoc(f, gs.size(), gs.c_ptr());
+                        es[j] = m_util.mk_map(m().mk_not_decl(), 1, &arg);                          
+                    }
+                }
             }
+            ++j;
         }        
         if (change) {
+            std::sort(es.begin(), es.end(), [](expr* a, expr* b) { return a->get_id() < b->get_id(); });
             result = m_util.mk_map_assoc(f, es.size(), es.c_ptr());
-            return BR_DONE;
+            return BR_REWRITE2;
         }
     }
 
@@ -394,7 +446,7 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
         }
         es.shrink(j);
         for (expr* e : es) {
-            if (m().is_not(e, e) && mark.is_marked(e)) {
+            if (m_util.is_map(e) && m().is_not(m_util.get_map_func_decl(e)) && mark.is_marked(to_app(e)->get_arg(0))) {
                 sort_ref s = get_map_array_sort(f, num_args, args);
                 result = m_util.mk_const_array(s, m().mk_true());
                 return BR_DONE;
@@ -402,7 +454,7 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
         }        
         if (change) {
             result = m_util.mk_map_assoc(f, es.size(), es.c_ptr());
-            return BR_DONE;
+            return BR_REWRITE1;
         }
     }
 
@@ -488,53 +540,92 @@ void array_rewriter::mk_eq(expr* e, expr* lhs, expr* rhs, expr_ref_vector& fmls)
     }                                                
 }
 
-bool array_rewriter::has_index_set(expr* e, expr_ref& e0, vector<expr_ref_vector>& indices) {
+bool array_rewriter::has_index_set(expr* e, expr_ref& else_case, vector<expr_ref_vector>& stores) {
     expr_ref_vector args(m());
     expr_ref a(m()), v(m());
     a = e;
     while (m_util.is_store_ext(e, a, args, v)) {
-        indices.push_back(args);
+        args.push_back(v);
+        stores.push_back(args);
         e = a;
     }
-    e0 = e;
-    if (is_lambda(e0)) {
-        quantifier* q = to_quantifier(e0);
+    if (m_util.is_const(e, e)) {
+        else_case = e;
+        return true;
+    }
+    if (is_lambda(e)) {
+        quantifier* q = to_quantifier(e);
         e = q->get_expr();
         unsigned num_idxs = q->get_num_decls();
-        expr* e1, *e2, *e3;
-        ptr_vector<expr> eqs;
-        while (!is_ground(e) && m().is_ite(e, e1, e2, e3) && is_ground(e2)) {
-            args.reset();
-            args.resize(num_idxs, nullptr);
-            eqs.reset();
-            eqs.push_back(e1);
-            for (unsigned i = 0; i < eqs.size(); ++i) {
-                expr* e = eqs[i];
-                if (m().is_and(e)) {
-                    eqs.append(to_app(e)->get_num_args(), to_app(e)->get_args());
-                }
-                else if (m().is_eq(e, e1, e2)) {
-                    if (is_var(e2)) {
-                        std::swap(e1, e2);
-                    }
-                    if (is_var(e1) && is_ground(e2)) {
-                        unsigned idx = to_var(e1)->get_idx();
-                        args[num_idxs - idx - 1] = e2;
-                    }
-                    else {
-                        return false;
-                    }
-                }                
+        expr* e1, *e3, *store_val;
+        if (!is_ground(e) && m().is_or(e)) {
+            for (expr* arg : *to_app(e)) {
+                if (!add_store(args, num_idxs, arg, m().mk_true(), stores)) {
+                    return false;
+                }                            
             }
-            for (unsigned i = 0; i < num_idxs; ++i) {
-                if (!args.get(i)) return false;
+            else_case = m().mk_false();
+            return true;
+        }
+        if (!is_ground(e) && m().is_and(e)) {
+            for (expr* arg : *to_app(e)) {
+                if (!add_store(args, num_idxs, arg, m().mk_true(), stores)) {
+                    return false;
+                }                            
             }
-            indices.push_back(args);
+            else_case = m().mk_true();
+            return true;
+        }
+        while (!is_ground(e) && m().is_ite(e, e1, store_val, e3) && is_ground(store_val)) {            
+            if (!add_store(args, num_idxs, e1, store_val, stores)) {
+                return false;
+            }            
             e = e3;
         }
-        e0 = e;
+        else_case = e;
         return is_ground(e);
     }
+    return false;
+}
+
+bool array_rewriter::add_store(expr_ref_vector& args, unsigned num_idxs, expr* e, expr* store_val, vector<expr_ref_vector>& stores) {
+
+    expr* e1, *e2;
+    ptr_vector<expr> eqs;    
+    args.reset();
+    args.resize(num_idxs + 1, nullptr);
+    bool is_not = m().is_bool(store_val) && m().is_not(e, e);
+
+    eqs.push_back(e);
+    for (unsigned i = 0; i < eqs.size(); ++i) {
+        e = eqs[i];
+        if (m().is_and(e)) {
+            eqs.append(to_app(e)->get_num_args(), to_app(e)->get_args());
+            continue;
+        }
+        if (m().is_eq(e, e1, e2)) {
+            if (is_var(e2)) {
+                std::swap(e1, e2);
+            }
+            if (is_var(e1) && is_ground(e2)) {
+                unsigned idx = to_var(e1)->get_idx();
+                args[num_idxs - idx - 1] = e2;
+            }
+            else {
+                return false;
+            }
+            continue;
+        }    
+        return false;
+    }
+    for (unsigned i = 0; i < num_idxs; ++i) {
+        if (!args.get(i)) return false;
+    }
+    if (is_not) {
+        store_val = mk_not(m(), store_val);
+    }
+    args[num_idxs] = store_val;
+    stores.push_back(args);
     return true;
 }
 
@@ -565,7 +656,8 @@ br_status array_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) 
         for (auto const& idxs : indices) {
             args.reset();
             args.push_back(lhs);
-            args.append(idxs);
+            idxs.pop_back();
+            args.append(idxs);            
             mk_select(args.size(), args.c_ptr(), tmp1);
             args[0] = rhs;
             mk_select(args.size(), args.c_ptr(), tmp2);

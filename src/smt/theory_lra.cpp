@@ -476,7 +476,7 @@ class theory_lra::imp {
                     internalize_eq(v, v1);                    
                 }
                 else if (a.is_idiv(n, n1, n2)) {
-                    if (!a.is_numeral(n2, r) || r.is_zero()) found_not_handled(n);
+                    if (!a.is_numeral(n2, r)) found_not_handled(n);
                     m_idiv_terms.push_back(n);
                     app * mod = a.mk_mod(n1, n2);
                     ctx().internalize(mod, false);
@@ -486,11 +486,11 @@ class theory_lra::imp {
                     if (!ctx().relevancy()) mk_idiv_mod_axioms(n1, n2);                    
                 }
                 else if (a.is_rem(n, n1, n2)) {
-                    if (!a.is_numeral(n2, r) || r.is_zero()) found_not_handled(n);
+                    if (!a.is_numeral(n2, r)) found_not_handled(n);
                     if (!ctx().relevancy()) mk_rem_axiom(n1, n2);                    
                 }
                 else if (a.is_div(n, n1, n2)) {
-                    if (!a.is_numeral(n2, r) || r.is_zero()) found_not_handled(n);
+                    if (!a.is_numeral(n2, r)) found_not_handled(n);
                     if (!ctx().relevancy()) mk_div_axiom(n1, n2);                    
                 }
                 else if (a.is_power(n)) {
@@ -2208,7 +2208,7 @@ public:
                 js = alloc(theory_lemma_justification, get_id(), ctx(), m_core2.size(), m_core2.c_ptr(),
                            m_params.size(), m_params.c_ptr());
             }
-            ctx().mk_clause(m_core2.size(), m_core2.c_ptr(), js, CLS_AUX_LEMMA, nullptr);
+            ctx().mk_clause(m_core2.size(), m_core2.c_ptr(), js, CLS_TH_LEMMA, nullptr);
         }
         else {
             ctx().assign(
@@ -3429,7 +3429,7 @@ public:
     }
 
     app_ref mk_obj(theory_var v) {
-        lp::var_index vi = m_theory_var2var_index[v];
+        lp::var_index vi = get_var_index(v);
         bool is_int = a.is_int(get_enode(v)->get_owner());
         if (m_solver->is_term(vi)) {           
             return mk_term(m_solver->get_term(vi), is_int);

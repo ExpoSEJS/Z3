@@ -213,7 +213,7 @@ class asserted_formulas {
     void set_eliminate_and(bool flag);
     void propagate_values();
     unsigned propagate_values(unsigned i);
-    void update_substitution(expr* n, proof* p);
+    bool update_substitution(expr* n, proof* p);
     bool is_gt(expr* lhs, expr* rhs);
     void compute_depth(expr* e);
     unsigned depth(expr* e) { return m_expr2depth[e]; }
@@ -223,6 +223,7 @@ class asserted_formulas {
 public:
     asserted_formulas(ast_manager & m, smt_params & smtp, params_ref const& p);
     ~asserted_formulas();
+    void finalize();
 
     void updt_params(params_ref const& p);
     bool has_quantifiers() const { return m_has_quantifiers; }
@@ -243,7 +244,7 @@ public:
     expr *  get_formula(unsigned idx) const { return m_formulas[idx].get_fml(); }
     proof * get_formula_proof(unsigned idx) const { return m_formulas[idx].get_proof(); }
     
-    th_rewriter & get_rewriter() { return m_rewriter; }
+    params_ref const& get_params() const { return m_params; }
     void get_assertions(ptr_vector<expr> & result) const;
     bool empty() const { return m_formulas.empty(); }
     void display(std::ostream & out) const;

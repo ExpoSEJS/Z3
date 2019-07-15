@@ -27,6 +27,7 @@ Revision History:
 #include "smt/smt_eq_justification.h"
 #include "smt/smt_justification.h"
 #include "smt/smt_bool_var_data.h"
+#include "smt/smt_clause_proof.h"
 #include "smt/smt_theory.h"
 #include "smt/smt_quantifier.h"
 #include "smt/smt_quantifier_stat.h"
@@ -67,6 +68,7 @@ namespace smt {
 
     class context {
         friend class model_generator;
+        friend class lookahead;
     public:
         statistics                  m_stats;
 
@@ -83,6 +85,7 @@ namespace smt {
         setup                       m_setup;
         timer                       m_timer;
         asserted_formulas           m_asserted_formulas;
+        th_rewriter                 m_rewriter;
         scoped_ptr<quantifier_manager>   m_qmanager;
         scoped_ptr<model_generator>      m_model_generator;
         scoped_ptr<relevancy_propagator> m_relevancy_propagator;
@@ -91,6 +94,7 @@ namespace smt {
         mutable unsigned            m_lemma_id;
         progress_callback *         m_progress_callback;
         unsigned                    m_next_progress_sample;
+        clause_proof                m_clause_proof;
 
         region                      m_region;
 
@@ -258,7 +262,7 @@ namespace smt {
         }
 
         th_rewriter & get_rewriter() {
-            return m_asserted_formulas.get_rewriter();
+            return m_rewriter;
         }
 
         smt_params & get_fparams() {
@@ -418,7 +422,7 @@ namespace smt {
             return m_activity[v];
         }
 
-        void set_activity(bool_var v, double const & act) {
+        void set_activity(bool_var v, double act) {
             m_activity[v] = act;
         }
 
@@ -522,6 +526,12 @@ namespace smt {
                 result = m_manager.mk_not(bool_var2expr(l.var()));
             else
                 result = bool_var2expr(l.var());
+        }
+
+        expr_ref literal2expr(literal l) const {
+            expr_ref result(m_manager);
+            literal2expr(l, result);
+            return result;
         }
 
         bool is_true(enode const * n) const {
@@ -651,7 +661,7 @@ namespace smt {
 
         void remove_cls_occs(clause * cls);
 
-        void del_clause(clause * cls);
+        void del_clause(bool log, clause * cls);
 
         void del_clauses(clause_vector & v, unsigned old_size);
 
@@ -679,9 +689,6 @@ namespace smt {
         // \brief exposed for PB solver to participate in GC
 
         void remove_watch(bool_var v);
-
-        void mark_as_deleted(clause * cls);
-
 
         // -----------------------------------
         //
@@ -858,6 +865,9 @@ namespace smt {
 
         void add_lit_occs(clause * cls);
     public:
+
+        void ensure_internalized(expr* e);
+
         void internalize(expr * n, bool gate_ctx);
 
         void internalize(expr * n, bool gate_ctx, unsigned generation);
@@ -1074,8 +1084,6 @@ namespace smt {
 
         enode * get_enode_eq_to(func_decl * f, unsigned num_args, enode * const * args);
 
-        expr* next_decision();
-
     protected:
         bool decide();
 
@@ -1102,7 +1110,7 @@ namespace smt {
             m_bvar_inc *= m_fparams.m_inv_decay;
         }
 
-        bool simplify_clause(clause * cls);
+        bool simplify_clause(clause& cls);
 
         unsigned simplify_clauses(clause_vector & clauses, unsigned starting_at);
 
@@ -1114,7 +1122,7 @@ namespace smt {
         bool is_justifying(clause * cls) const {
             for (unsigned i = 0; i < 2; i++) {
                 b_justification js;
-                js = get_justification(cls->get_literal(i).var());
+                js = get_justification((*cls)[i].var());
                 if (js.get_kind() == b_justification::CLAUSE && js.get_clause() == cls)
                     return true;
             }
@@ -1561,6 +1569,8 @@ namespace smt {
         failure get_last_search_failure() const;
 
         proof * get_proof();
+
+        conflict_resolution& get_cr() { return *m_conflict_resolution.get(); }
 
         void get_relevant_labels(expr* cnstr, buffer<symbol> & result);
 

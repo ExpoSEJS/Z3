@@ -150,7 +150,7 @@ extern "C" {
         Z3_CATCH_RETURN("");
     }
 
-    Z3_string Z3_API Z3_get_lstring(Z3_context c, Z3_ast s, unsigned* length) {
+    Z3_char_ptr Z3_API Z3_get_lstring(Z3_context c, Z3_ast s, unsigned* length) {
         Z3_TRY;
         LOG_Z3_get_lstring(c, s, length);
         RESET_ERROR_CODE();
@@ -163,9 +163,12 @@ extern "C" {
             SET_ERROR_CODE(Z3_INVALID_ARG, "expression is not a string literal");
             return "";
         }
-        std::string s = str.as_string();        
-        *length = (unsigned)(s.size());
-        return mk_c(c)->mk_external_string(s.c_str(), *length);
+        mk_c(c)->m_char_buffer.reset();
+        for (unsigned i = 0; i < str.length(); ++i) {
+            mk_c(c)->m_char_buffer.push_back((char)str[i]);
+        }
+        *length = str.length();
+        return mk_c(c)->m_char_buffer.c_ptr();
         Z3_CATCH_RETURN("");
     }
 
@@ -193,7 +196,7 @@ extern "C" {
     MK_TERNARY(Z3_mk_seq_extract, mk_c(c)->get_seq_fid(), OP_SEQ_EXTRACT, SKIP);
     MK_TERNARY(Z3_mk_seq_replace, mk_c(c)->get_seq_fid(), OP_SEQ_REPLACE, SKIP);
     MK_BINARY(Z3_mk_seq_at, mk_c(c)->get_seq_fid(), OP_SEQ_AT, SKIP);
-    MK_BINARY(Z3_mk_seq_nth, mk_c(c)->get_seq_fid(), OP_SEQ_AT, SKIP);
+    MK_BINARY(Z3_mk_seq_nth, mk_c(c)->get_seq_fid(), OP_SEQ_NTH, SKIP);
     MK_UNARY(Z3_mk_seq_length, mk_c(c)->get_seq_fid(), OP_SEQ_LENGTH, SKIP);
     MK_TERNARY(Z3_mk_seq_index, mk_c(c)->get_seq_fid(), OP_SEQ_INDEX, SKIP);
     MK_BINARY(Z3_mk_seq_last_index, mk_c(c)->get_seq_fid(), OP_SEQ_LAST_INDEX, SKIP);

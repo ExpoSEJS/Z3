@@ -55,7 +55,7 @@ namespace sat {
         solver&           s;
         local_search      m_ls;
         random_gen        m_rand;
-        svector<bool>     m_phase;
+        bool_vector     m_phase;
         svector<ema>      m_phase_tf;
         var_priority      m_priorities;
         unsigned          m_luby_index;
@@ -71,6 +71,7 @@ namespace sat {
         bool              m_inconsistent;
         literal_vector    m_decisions;
         unsigned          m_conflict_offset;
+        svector<lbool>    m_model;
 
         bool should_restart();
         void do_pop();
@@ -81,12 +82,12 @@ namespace sat {
         void restart();
         void pop();
         void pop_decision();
-        void init_runs();
+        bool init_runs();
         lbool update_priority(unsigned level);
         void update_pqueue();
         void init_phase();
         void init_propagation();
-        void refresh_solver();
+        bool refresh_solver();
         void update_max_trail();
         void flip_phase(literal l); 
         void propagate();

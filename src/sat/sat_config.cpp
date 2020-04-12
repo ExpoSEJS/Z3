@@ -65,6 +65,8 @@ namespace sat {
 
         m_rephase_base      = p.rephase_base();
         m_reorder_base      = p.reorder_base();
+        m_reorder_itau      = p.reorder_itau();
+        m_activity_scale  = p.reorder_activity_scale();
         m_search_sat_conflicts = p.search_sat_conflicts();
         m_search_unsat_conflicts = p.search_unsat_conflicts();
         m_phase_sticky      = p.phase_sticky();
@@ -72,9 +74,9 @@ namespace sat {
         m_restart_initial = p.restart_initial();
         m_restart_factor  = p.restart_factor();
         m_restart_max     = p.restart_max();
-        m_activity_scale  = 100;
         m_propagate_prefetch = p.propagate_prefetch();
         m_inprocess_max   = p.inprocess_max();
+        m_inprocess_out   = p.inprocess_out();
 
         m_random_freq     = p.random_freq();
         m_random_seed     = p.random_seed();
@@ -98,7 +100,20 @@ namespace sat {
         m_local_search_dbg_flips = p.local_search_dbg_flips();
         m_unit_walk       = p.unit_walk();
         m_unit_walk_threads = p.unit_walk_threads();
-        m_binspr            = false; // unsound :-( p.binspr();
+        m_binspr            = p.binspr();
+        m_binspr            = false;     // prevent adventurous users from trying feature that isn't ready
+        m_anf_simplify      = p.anf();
+        m_anf_delay         = p.anf_delay();
+        m_anf_exlin         = p.anf_exlin();
+        m_cut_simplify      = p.cut();
+        m_cut_delay         = p.cut_delay();
+        m_cut_aig           = p.cut_aig();
+        m_cut_lut           = p.cut_lut();
+        m_cut_xor           = p.cut_xor();
+        m_cut_npn3          = p.cut_npn3();
+        m_cut_dont_cares    = p.cut_dont_cares();
+        m_cut_redundancies  = p.cut_redundancies();
+        m_cut_force         = p.cut_force();
         m_lookahead_simplify = p.lookahead_simplify();
         m_lookahead_double = p.lookahead_double();
         m_lookahead_simplify_bca = p.lookahead_simplify_bca();
@@ -180,6 +195,7 @@ namespace sat {
         m_drat_file       = p.drat_file();
         m_drat            = (m_drat_check_unsat || m_drat_file != symbol("") || m_drat_check_sat) && p.threads() == 1;
         m_drat_binary     = p.drat_binary();
+        m_drat_activity   = p.drat_activity();
         m_dyn_sub_res     = p.dyn_sub_res();
 
         // Parameters used in Liang, Ganesh, Poupart, Czarnecki AAAI 2016.
@@ -188,10 +204,8 @@ namespace sat {
             m_branching_heuristic = BH_VSIDS;
         else if (p.branching_heuristic() == symbol("chb")) 
             m_branching_heuristic = BH_CHB;
-        else if (p.branching_heuristic() == symbol("lrb")) 
-            m_branching_heuristic = BH_LRB;
         else 
-            throw sat_param_exception("invalid branching heuristic: accepted heuristics are 'vsids', 'lrb' or 'chb'");
+            throw sat_param_exception("invalid branching heuristic: accepted heuristics are 'vsids' or 'chb'");
 
         m_anti_exploration = p.branching_anti_exploration();
         m_step_size_init = 0.40;

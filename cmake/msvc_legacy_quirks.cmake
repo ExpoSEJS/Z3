@@ -57,10 +57,10 @@ endif()
 # Note we don't set WIN32 or _WINDOWS because
 # CMake provides that for us. As a sanity check make sure the option
 # is present.
-if (NOT "${CMAKE_CXX_FLAGS}" MATCHES "/D[ ]*WIN32")
+if (NOT "${CMAKE_CXX_FLAGS}" MATCHES "[-/]D[ ]*WIN32")
   message(FATAL_ERROR "\"/D WIN32\" is missing")
 endif()
-if (NOT "${CMAKE_CXX_FLAGS}" MATCHES "/D[ ]*_WINDOWS")
+if (NOT "${CMAKE_CXX_FLAGS}" MATCHES "[-/]D[ ]*_WINDOWS")
   message(FATAL_ERROR "\"/D _WINDOWS\" is missing")
 endif()
 
@@ -97,6 +97,8 @@ if (("${TARGET_ARCHITECTURE}" STREQUAL "x86_64") OR ("${TARGET_ARCHITECTURE}" ST
   # See https://msdn.microsoft.com/en-us/library/46t77ak2.aspx
   z3_add_cxx_flag("/Gd" REQUIRED)
 endif()
+
+z3_add_cxx_flag("/EHsc" REQUIRED)
 
 ################################################################################
 # Linker flags
@@ -166,17 +168,6 @@ foreach (_build_type ${_build_types_as_upper})
     # See https://msdn.microsoft.com/en-us/library/b1kw34cb.aspx
     string(APPEND CMAKE_EXE_LINKER_FLAGS_${_build_type} " /TLBID:1")
     string(APPEND CMAKE_SHARED_LINKER_FLAGS_${_build_type} " /TLBID:1")
-
-    # FIXME: This is not necessary. This is MSVC's default.
-    # Address space layout randomization
-    # See https://msdn.microsoft.com/en-us/library/bb384887.aspx
-    string(APPEND CMAKE_EXE_LINKER_FLAGS_${_build_type} " /DYNAMICBASE")
-    if(ENABLE_CFI)
-      # CFI requires /DYNAMICBASE to be enabled.
-      string(APPEND CMAKE_SHARED_LINKER_FLAGS_${_build_type} " /DYNAMICBASE")
-    else()
-      string(APPEND CMAKE_SHARED_LINKER_FLAGS_${_build_type} " /DYNAMICBASE:NO")
-    endif()
 
     # FIXME: This is not necessary. This is MSVC's default.
     # Indicate that the executable is compatible with DEP

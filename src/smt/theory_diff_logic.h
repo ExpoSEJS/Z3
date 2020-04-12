@@ -27,15 +27,15 @@ Revision History:
 #include "util/inf_int_rational.h"
 #include "util/s_integer.h"
 #include "util/inf_s_integer.h"
+#include "util/map.h"
+#include "ast/arith_decl_plugin.h"
+#include "model/numeral_factory.h"
 #include "smt/smt_theory.h"
 #include "smt/diff_logic.h"
-#include "ast/arith_decl_plugin.h"
 #include "smt/smt_justification.h"
-#include "util/map.h"
 #include "smt/params/smt_params.h"
 #include "smt/arith_eq_adapter.h"
 #include "smt/smt_model_generator.h"
-#include "smt/proto_model/numeral_factory.h"
 #include "smt/smt_clause.h"
 #include "smt/theory_opt.h"
 #include "math/simplex/simplex.h"
@@ -169,13 +169,13 @@ namespace smt {
         arith_eq_adapter               m_arith_eq_adapter;
         theory_diff_logic_statistics   m_stats;
         Graph                          m_graph;
-        theory_var                     m_zero; // cache the variable representing the zero variable.
+        theory_var                     m_izero, m_rzero; // cache the variable representing the zero variable.
         int_vector                     m_scc_id;                  // Cheap equality propagation
         eq_prop_info_set               m_eq_prop_info_set;        // set of existing equality prop infos
         ptr_vector<eq_prop_info>       m_eq_prop_infos;
 
         app_ref_vector                 m_terms;
-        svector<bool>                  m_signs;
+        bool_vector                  m_signs;
 
         ptr_vector<atom>               m_atoms;
         ptr_vector<atom>               m_asserted_atoms;   // set of asserted atoms
@@ -226,7 +226,8 @@ namespace smt {
             m_params(params),
             m_util(m),
             m_arith_eq_adapter(*this, params, m_util),
-            m_zero(null_theory_var),
+            m_izero(null_theory_var),
+            m_rzero(null_theory_var),
             m_terms(m),
             m_asserted_qhead(0),
             m_num_core_conflicts(0),
@@ -307,8 +308,6 @@ namespace smt {
         void init_model(model_generator & m) override;
         
         model_value_proc * mk_value(enode * n, model_generator & mg) override;
-
-        bool validate_eq_in_model(theory_var v1, theory_var v2, bool is_true) const override;
                 
         void display(std::ostream & out) const override;
         
@@ -338,7 +337,7 @@ namespace smt {
 
         virtual void new_diseq_eh(theory_var v1, theory_var v2, justification& j);
 
-        bool decompose_linear(app_ref_vector& args, svector<bool>& signs);
+        bool decompose_linear(app_ref_vector& args, bool_vector& signs);
 
         bool is_sign(expr* n, bool& sign);
 
@@ -376,7 +375,9 @@ namespace smt {
 
         void get_implied_bound_antecedents(edge_id bridge_edge, edge_id subsumed_edge, conflict_resolution & cr);
 
-        theory_var get_zero() const { return m_zero; }
+        void init_zero();
+
+        theory_var get_zero(bool is_int) { return is_int ? m_izero : m_rzero; }
 
         void inc_conflicts();
 

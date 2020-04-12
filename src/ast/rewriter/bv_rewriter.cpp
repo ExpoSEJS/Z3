@@ -273,13 +273,13 @@ bool bv_rewriter::are_eq_upto_num(expr * _a, expr * _b,
         }
     }
     if (!aadd && badd) {
-        if (to_app(_a)->get_num_args() != 2 || !has_num_a || to_app(_a)->get_arg(0) != _b)
+        if (!is_app(_a) || to_app(_a)->get_num_args() != 2 || !has_num_a || to_app(_a)->get_arg(0) != _b)
             return false;
         common = _b;
         return true;
     }
     if (aadd && !badd) {
-        if (to_app(_b)->get_num_args() != 2 || !has_num_b || to_app(_b)->get_arg(0) != _a)
+        if (!is_app(_b) || to_app(_b)->get_num_args() != 2 || !has_num_b || to_app(_b)->get_arg(0) != _a)
             return false;
         common = _a;
         return true;
@@ -1737,6 +1737,9 @@ br_status bv_rewriter::mk_bv_or(unsigned num, expr * const * args, expr_ref & re
     default:
         if (m_bv_sort_ac)
             std::sort(new_args.begin(), new_args.end(), ast_to_lt());
+        if (distribute_concat(OP_BOR, new_args.size(), new_args.c_ptr(), result)) {
+            return BR_REWRITE3;
+        }
         result = m_util.mk_bv_or(new_args.size(), new_args.c_ptr());
         return BR_DONE;
     }
@@ -1863,8 +1866,12 @@ br_status bv_rewriter::mk_bv_xor(unsigned num, expr * const * args, expr_ref & r
     }
 
     if (!merged && !flattened && (num_coeffs == 0 || (num_coeffs == 1 && !v1.is_zero() && v1 != (rational::power_of_two(sz) - numeral(1)))) &&
-        (!m_bv_sort_ac || is_sorted(num, args)))
+        (!m_bv_sort_ac || is_sorted(num, args))) {
+        if (distribute_concat(OP_BXOR, num, args, result)) {
+            return BR_REWRITE3;
+        }
         return BR_FAILED;
+    }
 
     ptr_buffer<expr> new_args;
     expr_ref c(m()); // may not be used
@@ -1906,9 +1913,33 @@ br_status bv_rewriter::mk_bv_xor(unsigned num, expr * const * args, expr_ref & r
     default:
         if (m_bv_sort_ac)
             std::sort(new_args.begin(), new_args.end(), ast_to_lt());
+        if (distribute_concat(OP_BXOR, new_args.size(), new_args.c_ptr(), result)) {
+            return BR_REWRITE3;
+        }
         result = m_util.mk_bv_xor(new_args.size(), new_args.c_ptr());
         return BR_DONE;
     }
+}
+
+bool bv_rewriter::distribute_concat(decl_kind k, unsigned n, expr* const* args, expr_ref& result) {
+    for (unsigned i = 0; i < n; ++i) {
+        expr* arg = args[i];
+        if (m_util.is_concat(arg)) {
+            expr* e = to_app(arg)->get_arg(0);
+            unsigned sz1 = get_bv_size(e);
+            unsigned sz2 = get_bv_size(arg);
+            expr_ref_vector args1(m()), args2(m());
+            for (unsigned j = 0; j < n; ++j) {
+                args1.push_back(m_mk_extract(sz2 - 1, sz2 - sz1, args[j]));
+                args2.push_back(m_mk_extract(sz2 - sz1 - 1, 0, args[j]));
+            }
+            expr* arg1 = m().mk_app(get_fid(), k, args1.size(), args1.c_ptr());
+            expr* arg2 = m().mk_app(get_fid(), k, args2.size(), args2.c_ptr());
+            result = m_util.mk_concat(arg1, arg2);
+            return true;
+        }
+    }
+    return false;
 }
 
 br_status bv_rewriter::mk_bv_not(expr * arg, expr_ref & result) {
@@ -1925,17 +1956,14 @@ br_status bv_rewriter::mk_bv_not(expr * arg, expr_ref & result) {
         return BR_DONE;
     }
 
-#if 1
     if (m_util.is_concat(arg)) {
         ptr_buffer<expr> new_args;
-        unsigned num = to_app(arg)->get_num_args();
-        for (unsigned i = 0; i < num; i++) {
-            new_args.push_back(m_util.mk_bv_not(to_app(arg)->get_arg(i)));
+        for (expr* a : *to_app(arg)) {
+            new_args.push_back(m_util.mk_bv_not(a));
         }
         result = m_util.mk_concat(new_args.size(), new_args.c_ptr());
         return BR_REWRITE2;
     }
-#endif
 
     if (m_bvnot2arith) {
         // (bvnot x) --> (bvsub -1 x)
@@ -1950,14 +1978,8 @@ br_status bv_rewriter::mk_bv_not(expr * arg, expr_ref & result) {
         if (m_util.is_bv_mul(arg, s, t)) {
             // ~(-1 * x) --> (x - 1)
             bv_size = m_util.get_bv_size(s);
-            if (m_util.is_allone(s)) {
-                rational minus_one = (rational::power_of_two(bv_size) - rational::one());
-                result = m_util.mk_bv_add(m_util.mk_numeral(minus_one, bv_size), t);
-                return BR_REWRITE1;
-            }
-            if (m_util.is_allone(t)) {
-                rational minus_one = (rational::power_of_two(bv_size) - rational::one());
-                result = m_util.mk_bv_add(m_util.mk_numeral(minus_one, bv_size), s);
+            if (m_util.is_allone(s) || m_util.is_allone(t)) {
+                result = m_util.mk_bv_add(s, t);
                 return BR_REWRITE1;
             }
         }
@@ -1996,13 +2018,24 @@ br_status bv_rewriter::mk_bv_nand(unsigned num, expr * const * args, expr_ref & 
     return BR_REWRITE2;
 }
 
-br_status bv_rewriter::mk_bv_nor(unsigned num, expr * const * args, expr_ref & result) {
-    result = m_util.mk_bv_not(m_util.mk_bv_or(num, args));
+br_status bv_rewriter::mk_bv_nor(unsigned num_args, expr * const * args, expr_ref & result) {
+    result = m_util.mk_bv_not(m_util.mk_bv_or(num_args, args));
     return BR_REWRITE2;
 }
 
 br_status bv_rewriter::mk_bv_xnor(unsigned num_args, expr * const * args, expr_ref & result) {
-    result = m_util.mk_bv_not(m_util.mk_bv_xor(num_args, args));
+    switch (num_args) {
+    case 0: result = m().mk_true(); break;
+    case 1: result = m_util.mk_bv_not(args[0]); break;
+    case 2: result = m_util.mk_bv_not(m_util.mk_bv_xor(num_args, args)); break;
+    default:
+        mk_bv_xnor(2, args, result);
+        for (unsigned i = 2; i < num_args; ++i) {
+            expr* _args[2] = { result, args[i] };
+            mk_bv_xnor(2, _args, result);
+        }
+        return BR_REWRITE_FULL;
+    }
     return BR_REWRITE2;
 }
 
@@ -2084,8 +2117,10 @@ br_status bv_rewriter::mk_bv_comp(expr * arg1, expr * arg2, expr_ref & result) {
 
 br_status bv_rewriter::mk_bv_add(unsigned num_args, expr * const * args, expr_ref & result) {
     br_status st = mk_add_core(num_args, args, result);
-    if (st != BR_FAILED && st != BR_DONE)
+    if (st != BR_FAILED && st != BR_DONE) {
+        TRACE("bv", tout << result << "\n";);
         return st;
+    }
 #if 0
     expr * x;
     expr * y;
@@ -2214,6 +2249,10 @@ br_status bv_rewriter::mk_bv_mul(unsigned num_args, expr * const * args, expr_re
 br_status bv_rewriter::mk_bit2bool(expr * n, int idx, expr_ref & result) {
     rational v, bit;
     unsigned sz = 0;
+    if (m_util.is_mkbv(n)) {
+        result = to_app(n)->get_arg(idx);
+        return BR_DONE;
+    }
     if (!is_numeral(n, v, sz)) 
         return BR_FAILED;
     if (idx < 0 || idx >= static_cast<int>(sz)) 
@@ -2563,7 +2602,7 @@ br_status bv_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
             return st;
     }
 
-    if (m_trailing) {
+    if (m_trailing) {        
         st = m_rm_trailing.eq_remove_trailing(lhs, rhs, result);
         m_rm_trailing.reset_cache(1 << 12);
         if (st != BR_FAILED) {
@@ -2699,7 +2738,6 @@ br_status bv_rewriter::mk_ite_core(expr * c, expr * t, expr * e, expr_ref & resu
                 result = e;
                 return BR_REWRITE1;
             }
-
             const unsigned sz = m_util.get_bv_size(rhs);
             if (sz == 1) { // detect (lhs = N) ? C : D, where N, C, D are 1 bit numerals
                 numeral rhs_n, e_n, t_n;
@@ -2712,12 +2750,24 @@ br_status bv_rewriter::mk_ite_core(expr * c, expr * t, expr * e, expr_ref & resu
                         result = m().are_equal(rhs, t) ? lhs : m_util.mk_bv_not(lhs);
                         return BR_REWRITE1;
                     }
+                    if (rhs_n.is_one() && t_n.is_one() && e_n.is_zero()) {
+                        return mk_zero_extend(t_sz - 1, lhs, result);
+                    }
+                    if (rhs_n.is_zero() && t_n.is_one() && e_n.is_zero()) {
+                        return mk_zero_extend(t_sz - 1, m_util.mk_bv_not(lhs), result);
+                    }
+                    if (rhs_n.is_zero() && t_n.is_zero() && e_n.is_one()) {
+                        return mk_zero_extend(t_sz - 1, lhs, result);
+                    }
+                    if (rhs_n.is_one() && t_n.is_zero() && e_n.is_one()) {
+                        return mk_zero_extend(t_sz - 1, m_util.mk_bv_not(lhs), result);
+                    }
                 }
-            }
+            }    
+        
         }
-
-
     }
+    
     return BR_FAILED;
 }
 

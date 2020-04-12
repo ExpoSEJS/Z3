@@ -24,10 +24,10 @@ release_data = json.loads(urllib.request.urlopen("https://api.github.com/repos/Z
 release_tag_name = release_data['tag_name']
 release_tag_ref_data = json.loads(urllib.request.urlopen("https://api.github.com/repos/Z3Prover/z3/git/refs/tags/%s" % release_tag_name).read().decode())
 release_tag_sha = release_tag_ref_data['object']['sha']
-release_tag_data = json.loads(urllib.request.urlopen("https://api.github.com/repos/Z3Prover/z3/git/tags/%s" % release_tag_sha).read().decode())
+#release_tag_data = json.loads(urllib.request.urlopen("https://api.github.com/repos/Z3Prover/z3/commits/%s" % release_tag_sha).read().decode())
 
 release_version = release_tag_name[3:]
-release_commit = release_tag_data['object']['sha']
+release_commit = release_tag_sha # release_tag_data['object']['sha']
 
 print(release_version)
 
@@ -105,7 +105,7 @@ Linux Dependencies:
         </description>
         <copyright>&#169; Microsoft Corporation. All rights reserved.</copyright>
         <tags>smt constraint solver theorem prover</tags>
-        <iconUrl>https://raw.githubusercontent.com/Z3Prover/z3/{1}/package/icon.jpg</iconUrl>
+        <iconUrl>https://raw.githubusercontent.com/Z3Prover/z3/{1}/resources/icon.jpg</iconUrl>
         <projectUrl>https://github.com/Z3Prover/z3</projectUrl>
         <licenseUrl>https://raw.githubusercontent.com/Z3Prover/z3/{1}/LICENSE.txt</licenseUrl>
         <repository
@@ -125,55 +125,6 @@ Linux Dependencies:
 def create_nuget_package():
     subprocess.call(["nuget", "pack"], cwd="out")
 
-nuget_sign_input = """
-{
-  "Version": "1.0.0",
-  "SignBatches"
-  :
-  [
-   {
-    "SourceLocationType": "UNC",
-    "SourceRootDirectory": "%s",
-    "DestinationLocationType": "UNC",
-    "DestinationRootDirectory": "%s",
-    "SignRequestFiles": [
-     {
-      "CustomerCorrelationId": "42fc9577-af9e-4ac9-995d-1788d8721d17",
-      "SourceLocation": "Microsoft.Z3.x64.%s.nupkg",
-      "DestinationLocation": "Microsoft.Z3.x64.%s.nupkg"
-     }
-    ],
-    "SigningInfo": {
-     "Operations": [
-      {
-       "KeyCode" : "CP-401405",
-       "OperationCode" : "NuGetSign",
-       "Parameters" : {},
-       "ToolName" : "sign",
-       "ToolVersion" : "1.0"
-      },
-      {
-       "KeyCode" : "CP-401405",
-       "OperationCode" : "NuGetVerify",
-       "Parameters" : {},
-       "ToolName" : "sign",
-       "ToolVersion" : "1.0"
-      }
-     ]
-    }
-   }
-  ]
-}"""
-
-def sign_nuget_package():
-    package_name = "Microsoft.Z3.x64.%s.nupkg" % release_version
-    input_file = "out/nuget_sign_input.json"
-    output_path = os.path.abspath("out").replace("\\","\\\\") 
-    with open(input_file, 'w') as f:
-        f.write(nuget_sign_input % (output_path, output_path, release_version, release_version))
-    subprocess.call(["EsrpClient.exe", "sign", "-a", "authorization.json", "-p", "policy.json", "-i", input_file, "-o", "out\\diagnostics.json"])
-    
-    
 def main():
     mk_dir("packages")
     download_installs()
@@ -181,7 +132,5 @@ def main():
     mk_targets()
     create_nuget_spec()
     create_nuget_package()
-    sign_nuget_package()
-
 
 main()

@@ -75,6 +75,9 @@ namespace smt {
             bool_var v = ctx().mk_bool_var(atom);
             ctx().set_var_theory(v, get_id());
         }
+        if (!ctx().relevancy() && u().is_defined(atom)) {
+            push_case_expand(alloc(case_expansion, u(), atom));
+        }
         return true;
     }
 
@@ -305,7 +308,7 @@ namespace smt {
      */
     void theory_recfun::assert_macro_axiom(case_expansion & e) {
         m_stats.m_macro_expansions++;
-        TRACEFN("case expansion         " << pp_case_expansion(e, m) << "\n");
+        TRACEFN("case expansion " << pp_case_expansion(e, m) << "\n");
         SASSERT(e.m_def->is_fun_macro());
         auto & vars = e.m_def->get_vars();
         expr_ref lhs(e.m_lhs, m);

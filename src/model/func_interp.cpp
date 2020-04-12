@@ -344,13 +344,14 @@ expr * func_interp::get_interp_core() const {
         expr * cond = mk_and(m_manager, eqs.size(), eqs.c_ptr());
         expr * th = curr->get_result();
         if (m_manager.is_true(th)) {
-            r = m_manager.mk_or(cond, r);
+            r = m_manager.is_false(r) ? cond : m_manager.mk_or(cond, r);
         }
         else if (m_manager.is_false(th)) {
-            r = m_manager.mk_and(m_manager.mk_not(cond), r);
+            expr* ncond = m_manager.mk_not(cond);
+            r = m_manager.is_true(r) ? ncond : m_manager.mk_and(ncond, r);
         }
         else {
-            r = m_manager.mk_ite(cond, th, r);
+            r = th == r ? r : m_manager.mk_ite(cond, th, r);
         }
     }
     return r;
@@ -401,7 +402,7 @@ expr* func_interp::get_array_interp_core(func_decl * f) const {
             args.push_back(curr->get_arg(i));
         }
         args.push_back(res);
-        r = autil.mk_store(args.size(), args.c_ptr());
+        r = autil.mk_store(args);
     }
     return r;    
 }

@@ -24,7 +24,8 @@ namespace smt2 {
     void scanner::next() {
         if (m_cache_input)
             m_cache.push_back(m_curr);
-        SASSERT(!m_at_eof);
+        if (m_at_eof)
+            throw scanner_exception("unexpected end of file");
         if (m_interactive) {
             m_curr = m_stream.get();
             if (m_stream.eof())
@@ -260,7 +261,7 @@ namespace smt2 {
                 throw scanner_exception("invalid empty bit-vector literal", m_line, m_spos);
             return BV_TOKEN;
         }
-        else if ('|') {
+        else if (c == '|') {
             read_multiline_comment();
             return NULL_TOKEN;
         }
@@ -318,6 +319,7 @@ namespace smt2 {
         m_normalized[static_cast<int>('.')] = 'a';
         m_normalized[static_cast<int>('?')] = 'a';
         m_normalized[static_cast<int>('/')] = 'a';
+        m_normalized[static_cast<int>(',')] = 'a';
         next();
     }
 
@@ -378,7 +380,7 @@ namespace smt2 {
 
     char const * scanner::cached_str(unsigned begin, unsigned end) {
         m_cache_result.reset();
-        while (isspace(m_cache[begin]) && begin < end)
+        while (begin < end && isspace(m_cache[begin]))
             begin++;
         while (begin < end && isspace(m_cache[end-1]))
             end--;

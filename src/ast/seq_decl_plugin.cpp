@@ -206,31 +206,45 @@ static const char esc_table[32][6] =
 std::string zstring::encode() const {
     SASSERT(m_encoding == ascii);
     std::ostringstream strm;
+    char buffer[100];
+    unsigned offset = 0;
+#define _flush() if (offset > 0) { buffer[offset] = 0; strm << buffer; offset = 0; }
     for (unsigned i = 0; i < m_buffer.size(); ++i) {
         unsigned char ch = m_buffer[i];
         if (0 <= ch && ch < 32) {
+            _flush();
             strm << esc_table[ch];
         }
         else if (ch == '\\') {
+            _flush();
             strm << "\\\\";
         }
         else if (ch >= 128) {
+            _flush();
             strm << "\\x" << std::hex << (unsigned)ch << std::dec; 
         }
         else {
-            strm << (char)(ch);
+            if (offset == 99) { 
+                _flush();
+            }
+            buffer[offset++] = (char)ch;
         }
     }
+    _flush();
     return strm.str();
 }
 
 std::string zstring::as_string() const {
     SASSERT(m_encoding == ascii);
     std::ostringstream strm;
+    char buffer[100];
+    unsigned offset = 0;
     for (unsigned i = 0; i < m_buffer.size(); ++i) {
+        if (offset == 99) { _flush(); }
         unsigned char ch = m_buffer[i];
-        strm << (char)(ch);        
+        buffer[offset++] = (char)(ch);        
     }
+    _flush();
     return strm.str();
 }
 
@@ -266,13 +280,13 @@ bool zstring::contains(zstring const& other) const {
     return cont;
 }
 
-int zstring::indexof(zstring const& other, int offset) const {
-    SASSERT(offset >= 0);
-    if (static_cast<unsigned>(offset) <= length() && other.length() == 0) return offset;
-    if (static_cast<unsigned>(offset) == length()) return -1;
+int zstring::indexofu(zstring const& other, unsigned offset) const {
+    if (offset <= length() && other.length() == 0) return offset;
+    if (offset == length()) return -1;
+    if (offset > other.length() + offset) return -1;
     if (other.length() + offset > length()) return -1;
     unsigned last = length() - other.length();
-    for (unsigned i = static_cast<unsigned>(offset); i <= last; ++i) {
+    for (unsigned i = offset; i <= last; ++i) {
         bool prefix = true;
         for (unsigned j = 0; prefix && j < other.length(); ++j) {
             prefix = m_buffer[i + j] == other[j];
@@ -299,10 +313,10 @@ int zstring::last_indexof(zstring const& other) const {
     return -1;
 }
 
-zstring zstring::extract(int offset, int len) const {
+zstring zstring::extract(unsigned offset, unsigned len) const {
     zstring result(m_encoding);
-    SASSERT(0 <= offset && 0 <= len);
-    int last = std::min(offset+len, static_cast<int>(length()));
+    if (offset + len < offset) return result;
+    int last = std::min(offset+len, length());
     for (int i = offset; i < last; ++i) {
         result.m_buffer.push_back(m_buffer[i]);
     }
@@ -365,11 +379,13 @@ seq_decl_plugin::seq_decl_plugin(): m_init(false),
                                     m_string(nullptr),
                                     m_char(nullptr),
                                     m_re(nullptr),
-                                    m_has_re(false) {}
+                                    m_has_re(false),
+                                    m_has_seq(false) {}
 
 void seq_decl_plugin::finalize() {
-    for (unsigned i = 0; i < m_sigs.size(); ++i)
-        dealloc(m_sigs[i]);
+    for (psig* s : m_sigs) {
+        dealloc(s);
+    }
     m_manager->dec_ref(m_string);
     m_manager->dec_ref(m_char);
     m_manager->dec_ref(m_re);
@@ -518,10 +534,10 @@ sort* seq_decl_plugin::apply_binding(ptr_vector<sort> const& binding, sort* s) {
 
 
 void seq_decl_plugin::init() {
-    if(m_init) return;
+    if (m_init) return;
     ast_manager& m = *m_manager;
     m_init = true;
-    sort* A = m.mk_uninterpreted_sort(symbol((unsigned)0));
+    sort* A = m.mk_uninterpreted_sort(symbol(0u));
     sort* strT = m_string;
     parameter paramA(A);
     parameter paramS(strT);
@@ -559,6 +575,8 @@ void seq_decl_plugin::init() {
     m_sigs[OP_SEQ_LAST_INDEX] = alloc(psig, m, "seq.last_indexof",  1, 2, seqAseqA, intT);
     m_sigs[OP_SEQ_AT]        = alloc(psig, m, "seq.at",       1, 2, seqAintT, seqA);
     m_sigs[OP_SEQ_NTH]       = alloc(psig, m, "seq.nth",      1, 2, seqAintT, A);
+    m_sigs[OP_SEQ_NTH_I]     = alloc(psig, m, "seq.nth_i",    1, 2, seqAintT, A);
+    m_sigs[OP_SEQ_NTH_U]     = alloc(psig, m, "seq.nth_u",    1, 2, seqAintT, A);
     m_sigs[OP_SEQ_LENGTH]    = alloc(psig, m, "seq.len",      1, 1, &seqA, intT);
     m_sigs[OP_RE_PLUS]       = alloc(psig, m, "re.+",         1, 1, &reA, reA);
     m_sigs[OP_RE_STAR]       = alloc(psig, m, "re.*",         1, 1, &reA, reA);
@@ -665,12 +683,14 @@ func_decl* seq_decl_plugin::mk_assoc_fun(decl_kind k, unsigned arity, sort* cons
     match_right_assoc(*m_sigs[k], arity, domain, range, rng);
     func_decl_info info(m_family_id, k_seq);
     info.set_right_associative(true);
+    info.set_left_associative(true);
     return m.mk_func_decl(m_sigs[(rng == m_string)?k_string:k_seq]->m_name, rng, rng, rng, info);
 }
 
 func_decl * seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, parameter const * parameters,
                                           unsigned arity, sort * const * domain, sort * range) {
     init();
+    m_has_seq = true;
     ast_manager& m = *m_manager;
     sort_ref rng(m);
     switch(k) {
@@ -852,6 +872,8 @@ func_decl * seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, 
         return mk_str_fun(k, arity, domain, range, OP_SEQ_AT);
 
     case OP_SEQ_NTH:
+    case OP_SEQ_NTH_I:
+    case OP_SEQ_NTH_U:
         match(*m_sigs[k], arity, domain, range, rng);
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
 
@@ -908,6 +930,11 @@ app* seq_decl_plugin::mk_string(zstring const& s) {
     return m_manager->mk_const(f);
 }
 
+
+bool seq_decl_plugin::is_considered_uninterpreted(func_decl * f) {
+    seq_util util(*m_manager);
+    return util.str.is_nth_u(f);
+}
 
 bool seq_decl_plugin::is_value(app* e) const {
     while (true) {
@@ -994,8 +1021,7 @@ app* seq_util::str::mk_string(zstring const& s) const {
 }
 
 app*  seq_util::str::mk_char(zstring const& s, unsigned idx) const {
-    bv_util bvu(m);
-    return bvu.mk_numeral(s[idx], s.num_bits());
+    return u.bv().mk_numeral(s[idx], s.num_bits());
 }
 
 app*  seq_util::str::mk_char(char ch) const {
@@ -1003,26 +1029,27 @@ app*  seq_util::str::mk_char(char ch) const {
     return mk_char(s, 0);
 }
 
+bv_util& seq_util::bv() const {
+    if (!m_bv) m_bv = alloc(bv_util, m);
+    return *m_bv.get();
+}
+
 bool seq_util::is_const_char(expr* e, unsigned& c) const {
-    bv_util bv(m);
     rational r;    
     unsigned sz;
-    return bv.is_numeral(e, r, sz) && sz == 8 && r.is_unsigned() && (c = r.get_unsigned(), true);
+    return bv().is_numeral(e, r, sz) && sz == 8 && r.is_unsigned() && (c = r.get_unsigned(), true);
 }
 
 app* seq_util::mk_char(unsigned ch) const {
-    bv_util bv(m);
-    return bv.mk_numeral(rational(ch), 8);
+    return bv().mk_numeral(rational(ch), 8);
 }
 
 app* seq_util::mk_le(expr* ch1, expr* ch2) const {
-    bv_util bv(m);
-    return bv.mk_ule(ch1, ch2);
+    return bv().mk_ule(ch1, ch2);
 }
 
 app* seq_util::mk_lt(expr* ch1, expr* ch2) const {
-    bv_util bv(m);
-    return m.mk_not(bv.mk_ule(ch2, ch1));
+    return m.mk_not(bv().mk_ule(ch2, ch1));
 }
 
 bool seq_util::str::is_string(expr const* n, zstring& s) const {
@@ -1035,14 +1062,14 @@ bool seq_util::str::is_string(expr const* n, zstring& s) const {
     }
 }
 
-bool seq_util::str::is_nth(expr const* n, expr*& s, unsigned& idx) const {
+bool seq_util::str::is_nth_i(expr const* n, expr*& s, unsigned& idx) const {
     expr* i = nullptr;
-    if (!is_nth(n, s, i)) return false;
+    if (!is_nth_i(n, s, i)) return false;
     return arith_util(m).is_unsigned(i, idx);
 }
 
-app* seq_util::str::mk_nth(expr* s, unsigned i) const {
-    return mk_nth(s, arith_util(m).mk_int(i));
+app* seq_util::str::mk_nth_i(expr* s, unsigned i) const {
+    return mk_nth_i(s, arith_util(m).mk_int(i));
 }
 
 void seq_util::str::get_concat(expr* e, expr_ref_vector& es) const {
@@ -1079,6 +1106,12 @@ app* seq_util::str::mk_is_empty(expr* s) const {
 }
 
 
+sort* seq_util::re::to_seq(sort* re) {
+    (void)u;
+    SASSERT(u.is_re(re));
+    return to_sort(re->get_parameter(0).get_ast());
+}
+
 app* seq_util::re::mk_loop(expr* r, unsigned lo) {
     parameter param(lo);
     return m.mk_app(m_fid, OP_RE_LOOP, 1, &param, 1, &r);
@@ -1087,6 +1120,16 @@ app* seq_util::re::mk_loop(expr* r, unsigned lo) {
 app* seq_util::re::mk_loop(expr* r, unsigned lo, unsigned hi) {
     parameter params[2] = { parameter(lo), parameter(hi) };
     return m.mk_app(m_fid, OP_RE_LOOP, 2, params, 1, &r);
+}
+
+app* seq_util::re::mk_loop(expr* r, expr* lo) {
+    expr* rs[2] = { r, lo };
+    return m.mk_app(m_fid, OP_RE_LOOP, 0, nullptr, 2, rs);
+}
+
+app* seq_util::re::mk_loop(expr* r, expr* lo, expr* hi) {
+    expr* rs[3] = { r, lo, hi };
+    return m.mk_app(m_fid, OP_RE_LOOP, 0, nullptr, 3, rs);
 }
 
 app* seq_util::re::mk_full_char(sort* s) {
@@ -1120,6 +1163,31 @@ bool seq_util::re::is_loop(expr const* n, expr*& body, unsigned& lo)  {
         if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 1) {
             body = a->get_arg(0);
             lo = a->get_decl()->get_parameter(0).get_int();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::re::is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi)  {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 3) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
+            hi = a->get_arg(2);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::re::is_loop(expr const* n, expr*& body, expr*& lo)  {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 2) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
             return true;
         }
     }

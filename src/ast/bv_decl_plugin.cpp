@@ -151,7 +151,7 @@ void bv_decl_plugin::mk_bv_sort(unsigned bv_size) {
         else {
             sz = sort_size(rational::power_of_two(bv_size));
         }
-        m_bv_sorts[bv_size] = m_manager->mk_sort(symbol("bv"), sort_info(m_family_id, BV_SORT, sz, 1, &p));
+        m_bv_sorts[bv_size] = m_manager->mk_sort(m_bv_sym, sort_info(m_family_id, BV_SORT, sz, 1, &p));
         m_manager->inc_ref(m_bv_sorts[bv_size]);
     }
 }
@@ -163,7 +163,7 @@ inline sort * bv_decl_plugin::get_bv_sort(unsigned bv_size) {
     }
     parameter p(bv_size);
     sort_size sz(sort_size::mk_very_big());
-    return m_manager->mk_sort(symbol("bv"), sort_info(m_family_id, BV_SORT, sz, 1, &p));
+    return m_manager->mk_sort(m_bv_sym, sort_info(m_family_id, BV_SORT, sz, 1, &p));
 }
 
 sort * bv_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, parameter const * parameters) {
@@ -326,7 +326,7 @@ func_decl * bv_decl_plugin::mk_func_decl(decl_kind k, unsigned bv_size) {
     case OP_BXOR:     return mk_binary(m_bv_xor, k, "bvxor", bv_size, true);
     case OP_BNAND:    return mk_binary(m_bv_nand, k, "bvnand", bv_size, false);
     case OP_BNOR:     return mk_binary(m_bv_nor, k, "bvnor", bv_size, false);
-    case OP_BXNOR:    return mk_binary(m_bv_xnor, k, "bvxnor", bv_size, false);
+    case OP_BXNOR:    return mk_binary(m_bv_xnor, k, "bvxnor", bv_size, true);
 
     case OP_BREDOR:   return mk_reduction(m_bv_redor, k, "bvredor", bv_size);
     case OP_BREDAND:  return mk_reduction(m_bv_redand, k, "bvredand", bv_size);
@@ -855,9 +855,9 @@ bool bv_recognizers::mult_inverse(rational const & n, unsigned bv_size, rational
 bv_util::bv_util(ast_manager & m):
     bv_recognizers(m.mk_family_id(symbol("bv"))),
     m_manager(m) {
-    SASSERT(m.has_plugin(symbol("bv")));
     m_plugin = static_cast<bv_decl_plugin*>(m.get_plugin(m.mk_family_id("bv")));
-}
+    SASSERT(m.has_plugin(symbol("bv")));
+    }
 
 app * bv_util::mk_numeral(rational const & val, sort* s) const {
     if (!is_bv_sort(s)) {

@@ -70,6 +70,7 @@ PYTHON_COMPONENT='python'
 #####################
 IS_WINDOWS=False
 IS_LINUX=False
+IS_HURD=False
 IS_OSX=False
 IS_FREEBSD=False
 IS_NETBSD=False
@@ -90,7 +91,6 @@ VS_PROJ = False
 TRACE = False
 PYTHON_ENABLED=False
 DOTNET_CORE_ENABLED=False
-ESRP_SIGN=False
 DOTNET_KEY_FILE=getenv("Z3_DOTNET_KEY_FILE", None)
 JAVA_ENABLED=False
 ML_ENABLED=False
@@ -144,6 +144,9 @@ def is_windows():
 
 def is_linux():
     return IS_LINUX
+
+def is_hurd():
+    return IS_HURD
 
 def is_freebsd():
     return IS_FREEBSD
@@ -588,9 +591,10 @@ if os.name == 'nt':
 elif os.name == 'posix':
     if os.uname()[0] == 'Darwin':
         IS_OSX=True
-        PREFIX="/usr/local"
     elif os.uname()[0] == 'Linux':
         IS_LINUX=True
+    elif os.uname()[0] == 'GNU':
+        IS_HURD=True
     elif os.uname()[0] == 'FreeBSD':
         IS_FREEBSD=True
     elif os.uname()[0] == 'NetBSD':
@@ -673,14 +677,14 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_CORE_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, JS_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED, ESRP_SIGN
+    global DOTNET_CORE_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, JS_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, LOG_SYNC, SINGLE_THREADED
     global GUARD_CF, ALWAYS_DYNAMIC_BASE
     try:
         options, remainder = getopt.gnu_getopt(sys.argv[1:],
                                                'b:df:sxhmcvtnp:gj',
                                                ['build=', 'debug', 'silent', 'x64', 'help', 'makefiles', 'showcpp', 'vsproj', 'guardcf',
-                                                'trace', 'dotnet', 'dotnet-key=', 'esrp', 'staticlib', 'prefix=', 'gmp', 'java', 'parallel=', 'gprof', 'js',
+                                                'trace', 'dotnet', 'dotnet-key=', 'staticlib', 'prefix=', 'gmp', 'java', 'parallel=', 'gprof', 'js',
                                                 'githash=', 'git-describe', 'x86', 'ml', 'optimize', 'pypkgdir=', 'python', 'staticbin', 'log-sync', 'single-threaded'])
     except:
         print("ERROR: Invalid command line option")
@@ -716,8 +720,6 @@ def parse_options():
             DOTNET_CORE_ENABLED = True
         elif opt in ('--dotnet-key'):
             DOTNET_KEY_FILE = arg
-        elif opt in ('--esrp'):
-            ESRP_SIGN = True
         elif opt in ('--staticlib'):
             STATIC_LIB = True
         elif opt in ('--staticbin'):
@@ -1257,7 +1259,7 @@ def get_so_ext():
     sysname = os.uname()[0]
     if sysname == 'Darwin':
         return 'dylib'
-    elif sysname == 'Linux' or sysname == 'FreeBSD' or sysname == 'NetBSD' or sysname == 'OpenBSD':
+    elif sysname == 'Linux' or sysname == 'GNU' or sysname == 'FreeBSD' or sysname == 'NetBSD' or sysname == 'OpenBSD':
         return 'so'
     elif sysname == 'CYGWIN' or sysname.startswith('MSYS_NT') or sysname.startswith('MINGW'):
         return 'dll'
@@ -1405,6 +1407,8 @@ class DLLComponent(Component):
             mk_dir(os.path.join(dist_path, INSTALL_BIN_DIR))
             shutil.copy('%s.dll' % os.path.join(build_path, self.dll_name),
                         '%s.dll' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
+            shutil.copy('%s.pdb' % os.path.join(build_path, self.dll_name),
+                        '%s.pdb' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             shutil.copy('%s.lib' % os.path.join(build_path, self.dll_name),
                         '%s.lib' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
 
@@ -1658,6 +1662,7 @@ class DotNetDLLComponent(Component):
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Microsoft</Authors>
     <Company>Microsoft</Company>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Description>Z3 is a satisfiability modulo theories solver from Microsoft Research.</Description>
     <Copyright>Copyright Microsoft Corporation. All rights reserved.</Copyright>
     <PackageTags>smt constraint solver theorem prover</PackageTags>
@@ -1665,7 +1670,7 @@ class DotNetDLLComponent(Component):
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\%s\*.cs" Exclude="bin\**;obj\**;**\*.xproj;packages\**" />
+    <Compile Include="..\%s\*.cs;*.cs" Exclude="bin\**;obj\**;**\*.xproj;packages\**" />
   </ItemGroup>
 
 </Project>""" % (version, key, self.to_src_dir)
@@ -1687,78 +1692,8 @@ class DotNetDLLComponent(Component):
         dotnetCmdLine.extend(['-o', path])
             
         MakeRuleCmd.write_cmd(out, ' '.join(dotnetCmdLine))
-        self.sign_esrp(out)
         out.write('\n')        
         out.write('%s: %s\n\n' % (self.name, dllfile))
-
-    def sign_esrp(self, out):
-        global ESRP_SIGNx
-        print("esrp-sign", ESRP_SIGN)
-        if not ESRP_SIGN:
-            return
-        
-        import uuid
-        guid = str(uuid.uuid4())
-        path = os.path.abspath(BUILD_DIR).replace("\\","\\\\")        
-        assemblySignStr = """
-{
-  "Version": "1.0.0",
-  "SignBatches"
-  :
-  [
-   {
-    "SourceLocationType": "UNC",
-    "SourceRootDirectory": "%s",
-    "DestinationLocationType": "UNC",
-    "DestinationRootDirectory": "c:\\\\ESRP\\\\output",
-    "SignRequestFiles": [
-     {
-      "CustomerCorrelationId": "%s",
-      "SourceLocation": "libz3.dll",
-      "DestinationLocation": "libz3.dll"
-     },
-     {
-      "CustomerCorrelationId": "%s",
-      "SourceLocation": "Microsoft.Z3.dll",
-      "DestinationLocation": "Microsoft.Z3.dll"
-     }
-    ],
-    "SigningInfo": {
-     "Operations": [
-      {
-       "KeyCode" : "CP-230012",
-       "OperationCode" : "SigntoolSign",
-       "Parameters" : {
-        "OpusName": "Microsoft",
-        "OpusInfo": "http://www.microsoft.com",
-        "FileDigest": "/fd \\"SHA256\\"",
-        "PageHash": "/NPH",
-        "TimeStamp": "/tr \\"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\\" /td sha256"
-       },
-       "ToolName" : "sign",
-       "ToolVersion" : "1.0"
-      },
-      {
-       "KeyCode" : "CP-230012",
-       "OperationCode" : "SigntoolVerify",
-       "Parameters" : {},
-       "ToolName" : "sign",
-       "ToolVersion" : "1.0"
-      }
-     ]
-    }
-   }
-  ]
-}       """ % (path, guid, guid)
-        assemblySign = os.path.join(os.path.abspath(BUILD_DIR), 'dotnet', 'assembly-sign-input.json')
-        with open(assemblySign, 'w') as ous:
-            ous.write(assemblySignStr)
-        outputFile = os.path.join(os.path.abspath(BUILD_DIR), 'dotnet', "esrp-out.json")
-        esrpCmdLine = ["esrpclient.exe", "sign", "-a", "C:\\esrp\\config\\authorization.json", "-p", "C:\\esrp\\config\\policy.json", "-i", assemblySign, "-o", outputFile]
-        MakeRuleCmd.write_cmd(out, ' '.join(esrpCmdLine))
-        MakeRuleCmd.write_cmd(out, "move /Y C:\\esrp\\output\\libz3.dll .")
-        MakeRuleCmd.write_cmd(out, "move /Y C:\\esrp\\output\\Microsoft.Z3.dll .")
-
 
     def main_component(self):
         return is_dotnet_core_enabled()
@@ -1773,6 +1708,8 @@ class DotNetDLLComponent(Component):
             mk_dir(os.path.join(dist_path, INSTALL_BIN_DIR))
             shutil.copy('%s.dll' % os.path.join(build_path, self.dll_name),
                         '%s.dll' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
+            shutil.copy('%s.pdb' % os.path.join(build_path, self.dll_name),
+                        '%s.pdb' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             shutil.copy('%s.deps.json' % os.path.join(build_path, self.dll_name),
                         '%s.deps.json' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             if DEBUG_MODE:
@@ -1817,8 +1754,10 @@ class JavaDLLComponent(Component):
             t = '\t$(CXX) $(CXXFLAGS) $(CXX_OUT_FLAG)api/java/Native$(OBJ_EXT) -I"%s" -I"%s/PLATFORM" -I%s %s/Native.cpp\n' % (JNI_HOME, JNI_HOME, get_component('api').to_src_dir, self.to_src_dir)
             if IS_OSX:
                 t = t.replace('PLATFORM', 'darwin')
-            elif IS_LINUX:
+            elif is_linux():
                 t = t.replace('PLATFORM', 'linux')
+            elif is_hurd():
+                t = t.replace('PLATFORM', 'hurd')
             elif IS_FREEBSD:
                 t = t.replace('PLATFORM', 'freebsd')
             elif IS_NETBSD:
@@ -1954,9 +1893,8 @@ class MLComponent(Component):
                 OCAML_FLAGS += '-g'
 
             if OCAMLFIND:
-                # Load Big_int, which is no longer part of the standard library, via the num package: https://github.com/ocaml/num
-                OCAMLCF = OCAMLFIND + ' ' + 'ocamlc -package num' + ' ' + OCAML_FLAGS
-                OCAMLOPTF = OCAMLFIND + ' ' + 'ocamlopt -package num' + ' ' + OCAML_FLAGS
+                OCAMLCF = OCAMLFIND + ' ' + 'ocamlc -package zarith' + ' ' + OCAML_FLAGS
+                OCAMLOPTF = OCAMLFIND + ' ' + 'ocamlopt -package zarith' + ' ' + OCAML_FLAGS
             else:
                 OCAMLCF = OCAMLC + ' ' + OCAML_FLAGS
                 OCAMLOPTF = OCAMLOPT + ' ' + OCAML_FLAGS
@@ -1970,12 +1908,7 @@ class MLComponent(Component):
             else:
                 out.write('CXXFLAGS_OCAML=$(subst -std=c++11,,$(CXXFLAGS))\n')
 
-            if IS_WINDOWS:
-                prefix_lib = '-L' + os.path.abspath(BUILD_DIR).replace('\\', '\\\\')
-            else:
-                prefix_lib = '-L' + PREFIX + '/lib'
-            substitutions = { 'LEXTRA': prefix_lib,
-                              'VERSION': "{}.{}.{}.{}".format(VER_MAJOR, VER_MINOR, VER_BUILD, VER_TWEAK) }
+            substitutions = { 'VERSION': "{}.{}.{}.{}".format(VER_MAJOR, VER_MINOR, VER_BUILD, VER_TWEAK) }
 
             configure_file(os.path.join(self.src_dir, 'META.in'),
                            os.path.join(BUILD_DIR, self.sub_dir, 'META'),
@@ -2281,10 +2214,10 @@ class MLExampleComponent(ExampleComponent):
             for mlfile in get_ml_files(self.ex_dir):
                 out.write(' %s' % os.path.join(self.to_ex_dir, mlfile))
             out.write('\n')
-            out.write('\t%s ' % OCAMLC)
+            out.write('\tocamlfind %s ' % OCAMLC)
             if DEBUG_MODE:
                 out.write('-g ')
-            out.write('-custom -o ml_example.byte -I api/ml -cclib "-L. -lz3" nums.cma z3ml.cma')
+            out.write('-custom -o ml_example.byte -package zarith -I api/ml -cclib "-L. -lpthread -lstdc++ -lz3" -linkpkg z3ml.cma')
             for mlfile in get_ml_files(self.ex_dir):
                 out.write(' %s/%s' % (self.to_ex_dir, mlfile))
             out.write('\n')
@@ -2292,10 +2225,10 @@ class MLExampleComponent(ExampleComponent):
             for mlfile in get_ml_files(self.ex_dir):
                 out.write(' %s' % os.path.join(self.to_ex_dir, mlfile))
             out.write('\n')
-            out.write('\t%s ' % OCAMLOPT)
+            out.write('\tocamlfind %s ' % OCAMLOPT)
             if DEBUG_MODE:
                 out.write('-g ')
-            out.write('-o ml_example$(EXE_EXT) -I api/ml -cclib "-L. -lz3" nums.cmxa z3ml.cmxa')
+            out.write('-o ml_example$(EXE_EXT) -package zarith -I api/ml -cclib "-L. -lpthread -lstdc++ -lz3" -linkpkg z3ml.cmxa')
             for mlfile in get_ml_files(self.ex_dir):
                 out.write(' %s/%s' % (self.to_ex_dir, mlfile))
             out.write('\n')
@@ -2553,6 +2486,11 @@ def mk_config():
             SO_EXT         = '.so'
             SLIBFLAGS      = '-shared'
             SLIBEXTRAFLAGS = '%s -Wl,-soname,libz3.so' % SLIBEXTRAFLAGS
+        elif sysname == 'GNU':
+            CXXFLAGS       = '%s -D_HURD_' % CXXFLAGS
+            OS_DEFINES     = '-D_HURD_'
+            SO_EXT         = '.so'
+            SLIBFLAGS      = '-shared'
         elif sysname == 'FreeBSD':
             CXXFLAGS       = '%s -D_FREEBSD_' % CXXFLAGS
             OS_DEFINES     = '-D_FREEBSD_'
@@ -2618,7 +2556,10 @@ def mk_config():
         config.write('LINK=%s\n' % CXX)
         config.write('LINK_FLAGS=\n')
         config.write('LINK_OUT_FLAG=-o \n')
-        config.write('LINK_EXTRA_FLAGS=-lpthread %s\n' % LDFLAGS)
+        if is_linux() and (build_static_lib() or build_static_bin()):
+            config.write('LINK_EXTRA_FLAGS=-Wl,--whole-archive -lrt -lpthread -Wl,--no-whole-archive %s\n' % LDFLAGS)
+        else:
+            config.write('LINK_EXTRA_FLAGS=-lpthread %s\n' % LDFLAGS)
         config.write('SO_EXT=%s\n' % SO_EXT)
         config.write('SLINK=%s\n' % CXX)
         config.write('SLINK_FLAGS=%s\n' % SLIBFLAGS)

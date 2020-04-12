@@ -38,6 +38,7 @@ Notes:
 #include "tactic/arith/eq2bv_tactic.h"
 #include "tactic/bv/dt2bv_tactic.h"
 #include "tactic/generic_model_converter.h"
+#include "ackermannization/ackermannize_bv_tactic.h"
 #include "sat/sat_solver/inc_sat_solver.h"
 #include "qe/qsat.h"
 #include "opt/opt_context.h"
@@ -163,6 +164,7 @@ namespace opt {
     }
 
     void context::pop(unsigned n) {
+        n = std::min(n, m_scoped_state.num_scopes());
         for (unsigned i = 0; i < n; ++i) {
             m_scoped_state.pop();
         }
@@ -216,7 +218,7 @@ namespace opt {
             break;
         case O_MAXIMIZE:
             result = o.m_term;
-            if (m_arith.is_arith_expr(result)) {
+            if (m_arith.is_int_real(result)) {
                 result = m_arith.mk_uminus(result);
             }
             else if (m_bv.is_bv(result)) {
@@ -372,10 +374,9 @@ namespace opt {
     void context::set_model(model_ref& m) { 
         m_model = m; 
         opt_params optp(m_params);
-        if (optp.dump_models()) {
+        if (optp.dump_models() && m) {
             model_ref md = m->copy();
             fix_model(md);
-            std::cout << *md << "\n";
         }
     }
 
@@ -614,7 +615,7 @@ namespace opt {
 
 
     std::string context::reason_unknown() const { 
-        if (m.canceled()) {
+        if (!m.inc()) {
             return Z3_CANCELED_MSG;
         }
         if (m_solver.get()) {
@@ -707,7 +708,7 @@ namespace opt {
             if (fid != m.get_basic_family_id() &&
                 fid != pb.get_family_id() &&
                 fid != bv.get_family_id() &&
-                !is_uninterp_const(n)) {
+                (!is_uninterp_const(n) || (!m.is_bool(n) && !bv.is_bv(n)))) {
                 throw found();
             }
         }        
@@ -804,11 +805,13 @@ namespace opt {
             and_then(mk_simplify_tactic(m, m_params), 
                      mk_propagate_values_tactic(m),
                      mk_solve_eqs_tactic(m),
+                     // NB: cannot ackermannize because max/min objectives would disappear
+                     // mk_ackermannize_bv_tactic(m, m_params), 
                      // NB: mk_elim_uncstr_tactic(m) is not sound with soft constraints
                      mk_simplify_tactic(m));   
         opt_params optp(m_params);
         tactic_ref tac1, tac2, tac3, tac4;
-        if (optp.elim_01()) {
+        if (optp.elim_01() && m_logic.is_null()) {
             tac1 = mk_dt2bv_tactic(m);
             tac2 = mk_lia2card_tactic(m);
             tac3 = mk_eq2bv_tactic(m);
@@ -826,6 +829,7 @@ namespace opt {
         SASSERT(result.size() == 1);
         goal* r = result[0];
         m_model_converter = r->mc();
+        CTRACE("opt", r->mc(), r->mc()->display(tout););
         fmls.reset();
         expr_ref tmp(m);
         for (unsigned i = 0; i < r->size(); ++i) {
@@ -1167,7 +1171,7 @@ namespace opt {
     app* context::purify(generic_model_converter_ref& fm, expr* term) {
        std::ostringstream out;
        out << mk_pp(term, m);
-       app* q = m.mk_fresh_const(out.str().c_str(), m.get_sort(term));
+       app* q = m.mk_fresh_const(out.str(), m.get_sort(term));
        if (!fm) fm = alloc(generic_model_converter, m, "opt");
        if (m_arith.is_int_real(term)) {
            m_hard_constraints.push_back(m_arith.mk_ge(q, term));
@@ -1651,7 +1655,8 @@ namespace opt {
             case O_MINIMIZE:
             case O_MAXIMIZE: {
                 inf_eps n = m_optsmt.get_lower(obj.m_index);
-                if (m_optsmt.objective_is_model_valid(obj.m_index) && 
+                if (false && // theory_lra doesn't produce infinitesimals
+                    m_optsmt.objective_is_model_valid(obj.m_index) && 
                     n.get_infinity().is_zero() &&
                     n.get_infinitesimal().is_zero() &&
                     is_numeral((*m_model)(obj.m_term), r1)) {

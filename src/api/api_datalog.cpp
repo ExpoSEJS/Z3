@@ -350,7 +350,7 @@ extern "C" {
         unsigned num_queries,
         Z3_ast _queries[]) {
         Z3_TRY;
-        expr*const* queries = to_exprs(_queries);        
+        expr*const* queries = to_exprs(num_queries, _queries);        
         LOG_Z3_fixedpoint_to_string(c, d, num_queries, _queries);
         RESET_ERROR_CODE();
         return mk_c(c)->mk_external_string(to_fixedpoint_ref(d)->to_string(num_queries, queries));
@@ -679,8 +679,8 @@ extern "C" {
         for (unsigned i = 0; i < names.size(); ++i) {
             ss << ";" << names[i].str();
         }
-        RETURN_Z3(of_symbol(symbol(ss.str().substr(1).c_str())));
-        Z3_CATCH_RETURN(nullptr);
+        return of_symbol(symbol(ss.str().substr(1).c_str()));
+        Z3_CATCH_RETURN(of_symbol(symbol::null));
     }
 
     void Z3_API Z3_fixedpoint_add_invariant(Z3_context c, Z3_fixedpoint d, Z3_func_decl pred, Z3_ast property) {

@@ -47,6 +47,7 @@ namespace recfun {
 
     class replace {
     public:
+        virtual ~replace() {}
         virtual void reset() = 0;
         virtual void insert(expr* d, expr* r) = 0;
         virtual expr_ref operator()(expr* e) = 0;
@@ -111,10 +112,11 @@ namespace recfun {
         def(ast_manager &m, family_id fid, symbol const & s, unsigned arity, sort *const * domain, sort* range, bool is_generated);
 
         // compute cases for a function, given its RHS (possibly containing `ite`).
-        void compute_cases(replace& subst, is_immediate_pred &, 
+        void compute_cases(util& u, replace& subst, is_immediate_pred &, 
                            unsigned n_vars, var *const * vars, expr* rhs);
         void add_case(std::string & name, unsigned case_index, expr_ref_vector const& conditions, expr* rhs, bool is_imm = false);
-        bool contains_ite(expr* e); // expression contains a test?
+        bool contains_ite(util& u, expr* e); // expression contains a test over a def?
+        bool contains_def(util& u, expr* e); // expression contains a def
     public:
         symbol const & get_name() const { return m_name; }
         vars const & get_vars() const { return m_vars; }
@@ -154,6 +156,9 @@ namespace recfun {
             case_def_map             m_case_defs;  // case_pred->def
             
             ast_manager & m() { return *m_manager; }
+
+            void compute_scores(expr* e, obj_map<expr, unsigned>& scores);
+
         public:
             plugin();
             ~plugin() override;
@@ -193,10 +198,13 @@ namespace recfun {
                 for (auto& kv : m_defs) result.push_back(kv.m_key);
                 return result;
             }
+
+            expr_ref redirect_ite(replace& subst, unsigned n, var * const* vars, expr * e);
+
         };
     }
 
-    // Varus utils for recursive functions
+    // Various utils for recursive functions
     class util {
         friend class decl::plugin;
         

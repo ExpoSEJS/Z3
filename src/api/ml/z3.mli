@@ -1159,7 +1159,7 @@ sig
     val mk_sort : context -> Sort.sort
 
     (** Get a big_int from an integer numeral *)
-    val get_big_int : Expr.expr -> Big_int.big_int
+    val get_big_int : Expr.expr -> Z.t
 
     (** Returns a string representation of a numeral. *)
     val numeral_to_string : Expr.expr -> string
@@ -1217,7 +1217,7 @@ sig
     val get_denominator : Expr.expr -> Expr.expr
 
     (** Get a ratio from a real numeral *)
-    val get_ratio : Expr.expr -> Ratio.ratio
+    val get_ratio : Expr.expr -> Q.t
 
     (** Returns a string representation in decimal notation.
         The result has at most as many decimal places as indicated by the int argument.*)
@@ -1611,7 +1611,8 @@ sig
 
       It is defined as the floor of [t1/t2] if \c t2 is
       different from zero. If [t2] is zero, then the result
-      is undefined.
+      is not uniquely specified. It can be set to any value
+      that satisfies the constraints where unsigned division is used.
       The arguments must have the same bit-vector sort. *)
   val mk_udiv : context -> Expr.expr -> Expr.expr -> Expr.expr
 
@@ -1623,14 +1624,18 @@ sig
 
       - The \c ceiling of [t1/t2] if \c t2 is different from zero, and [t1*t2 < 0].
 
-      If [t2] is zero, then the result is undefined.
+      If [t2] is zero, then the result is is not uniquely specified. 
+      It can be set to any value that satisfies the constraints 
+      where signed division is used.
       The arguments must have the same bit-vector sort. *)
   val mk_sdiv : context -> Expr.expr -> Expr.expr -> Expr.expr
 
   (** Unsigned remainder.
 
       It is defined as [t1 - (t1 /u t2) * t2], where [/u] represents unsigned division.
-      If [t2] is zero, then the result is undefined.
+      If [t2] is zero, then the result is not uniquely specified. 
+      It can be set to any value that satisfies the constraints 
+      where unsigned remainder is used.
       The arguments must have the same bit-vector sort. *)
   val mk_urem : context -> Expr.expr -> Expr.expr -> Expr.expr
 
@@ -1639,13 +1644,17 @@ sig
       It is defined as [t1 - (t1 /s t2) * t2], where [/s] represents signed division.
       The most significant bit (sign) of the result is equal to the most significant bit of \c t1.
 
-      If [t2] is zero, then the result is undefined.
+      If [t2] is zero, then the result is not uniquely specified. 
+      It can be set to any value that satisfies the constraints 
+      where signed remainder is used.
       The arguments must have the same bit-vector sort. *)
   val mk_srem : context -> Expr.expr -> Expr.expr -> Expr.expr
 
   (** Two's complement signed remainder (sign follows divisor).
 
-      If [t2] is zero, then the result is undefined.
+      If [t2] is zero, then the result is not uniquely specified. 
+      It can be set to any value that satisfies the constraints 
+      where two's complement signed remainder is used.
       The arguments must have the same bit-vector sort. *)
   val mk_smod : context -> Expr.expr -> Expr.expr -> Expr.expr
 

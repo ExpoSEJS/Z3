@@ -53,11 +53,11 @@ extern "C" {
         RESET_ERROR_CODE();
         if (i < 0 || (size_t)i >= (SIZE_MAX >> PTR_ALIGNMENT)) {
             SET_ERROR_CODE(Z3_IOB, nullptr);
-            return nullptr;
+            return of_symbol(symbol::null);
         }
-        Z3_symbol result = of_symbol(symbol(i));
+        Z3_symbol result = of_symbol(symbol((unsigned)i));
         return result;
-        Z3_CATCH_RETURN(nullptr);
+        Z3_CATCH_RETURN(of_symbol(symbol::null));
     }
 
     Z3_symbol Z3_API Z3_mk_string_symbol(Z3_context c, char const * str) {
@@ -71,7 +71,7 @@ extern "C" {
             s = symbol(str);
         Z3_symbol result = of_symbol(s);
         return result;
-        Z3_CATCH_RETURN(nullptr);
+        Z3_CATCH_RETURN(of_symbol(symbol::null));
     }
 
     bool Z3_API Z3_is_eq_sort(Z3_context c, Z3_sort s1, Z3_sort s2) {
@@ -202,7 +202,7 @@ extern "C" {
         func_decl* d = mk_c(c)->m().mk_fresh_func_decl(prefix,
                                                        domain_size,
                                                        reinterpret_cast<sort*const*>(domain),
-                                                       to_sort(range));
+                                                       to_sort(range), false);
 
         mk_c(c)->save_ast_trail(d);
         RETURN_Z3(of_func_decl(d));
@@ -216,7 +216,7 @@ extern "C" {
         if (prefix == nullptr) {
             prefix = "";
         }
-        app* a = mk_c(c)->m().mk_fresh_const(prefix, to_sort(ty));
+        app* a = mk_c(c)->m().mk_fresh_const(prefix, to_sort(ty), false);
         mk_c(c)->save_ast_trail(a);
         RETURN_Z3(of_ast(a));
         Z3_CATCH_RETURN(nullptr);
@@ -437,7 +437,7 @@ extern "C" {
     Z3_symbol Z3_API Z3_get_decl_name(Z3_context c, Z3_func_decl d) {
         LOG_Z3_get_decl_name(c, d);
         RESET_ERROR_CODE();
-        CHECK_VALID_AST(d, nullptr);
+        CHECK_VALID_AST(d, of_symbol(symbol::null));
         return of_symbol(to_func_decl(d)->get_name());
     }
 
@@ -521,18 +521,18 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_get_decl_symbol_parameter(c, d, idx);
         RESET_ERROR_CODE();
-        CHECK_VALID_AST(d, nullptr);
+        CHECK_VALID_AST(d, of_symbol(symbol::null));
         if (idx >= to_func_decl(d)->get_num_parameters()) {
             SET_ERROR_CODE(Z3_IOB, nullptr);
-            return nullptr;
+            return of_symbol(symbol::null);
         }
         parameter const& p = to_func_decl(d)->get_parameters()[idx];
         if (!p.is_symbol()) {
             SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
-            return nullptr;
+            return of_symbol(symbol::null);
         }
         return of_symbol(p.get_symbol());
-        Z3_CATCH_RETURN(nullptr);
+        Z3_CATCH_RETURN(of_symbol(symbol::null));
     }
 
     Z3_sort Z3_API Z3_get_decl_sort_parameter(Z3_context c, Z3_func_decl d, unsigned idx) {
@@ -612,9 +612,9 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_get_sort_name(c, t);
         RESET_ERROR_CODE();
-        CHECK_VALID_AST(t, nullptr);
+        CHECK_VALID_AST(t, of_symbol(symbol::null));
         return of_symbol(to_sort(t)->get_name());
-        Z3_CATCH_RETURN(nullptr);
+        Z3_CATCH_RETURN(of_symbol(symbol::null));
     }
 
     Z3_sort Z3_API Z3_get_sort(Z3_context c, Z3_ast a) {
@@ -804,7 +804,7 @@ extern "C" {
         RESET_ERROR_CODE();
         ast_manager& m = mk_c(c)->m();
         expr* a = to_expr(_a);
-        expr* const* args = to_exprs(_args);
+        expr* const* args = to_exprs(num_args, _args);
         switch(a->get_kind()) {
         case AST_APP: {
             app* e = to_app(a);
@@ -843,8 +843,8 @@ extern "C" {
         RESET_ERROR_CODE();
         ast_manager & m = mk_c(c)->m();
         expr * a = to_expr(_a);
-        expr * const * from = to_exprs(_from);
-        expr * const * to   = to_exprs(_to);
+        expr * const * from = to_exprs(num_exprs, _from);
+        expr * const * to   = to_exprs(num_exprs, _to);
         expr * r = nullptr;
         for (unsigned i = 0; i < num_exprs; i++) {
             if (m.get_sort(from[i]) != m.get_sort(to[i])) {
@@ -875,7 +875,7 @@ extern "C" {
         RESET_ERROR_CODE();
         ast_manager & m = mk_c(c)->m();
         expr * a = to_expr(_a);
-        expr * const * to   = to_exprs(_to);
+        expr * const * to   = to_exprs(num_exprs, _to);
         var_subst subst(m, false);
         expr_ref new_a = subst(a, num_exprs, to);
         mk_c(c)->save_ast_trail(new_a);
@@ -1051,6 +1051,8 @@ extern "C" {
             case OP_SET_SUBSET: return Z3_OP_SET_SUBSET;
             case OP_AS_ARRAY: return Z3_OP_AS_ARRAY;
             case OP_ARRAY_EXT: return Z3_OP_ARRAY_EXT;
+            case OP_SET_CARD: return Z3_OP_SET_CARD;
+            case OP_SET_HAS_SIZE: return Z3_OP_SET_HAS_SIZE;
             default:
                 return Z3_OP_INTERNAL;
             }

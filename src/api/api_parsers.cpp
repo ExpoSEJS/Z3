@@ -25,7 +25,6 @@ Revision History:
 #include "smt/smt_solver.h"
 #include "parsers/smt2/smt2parser.h"
 #include "solver/solver_na2as.h"
-#include "tactic/portfolio/smt_strategic_solver.h"
 
 
 extern "C" {
@@ -101,7 +100,7 @@ extern "C" {
             SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str().c_str());
             return of_ast_vector(v);
         }
-        for (expr * e : ctx->assertions()) {
+        for (expr* e : ctx->tracked_assertions()) {
             v->m_ast_vector.push_back(e);
         }
         return of_ast_vector(v);

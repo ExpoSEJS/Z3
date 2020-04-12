@@ -34,11 +34,14 @@ struct tactic_report::imp {
         m_goal(g),
         m_start_memory(static_cast<double>(memory::get_allocation_size())/static_cast<double>(1024*1024)) {
         m_watch.start();
+        TRACE("tactic", g.display_with_proofs(tout << id << "\n"););
+        SASSERT(g.is_well_formed());
     }
         
     ~imp() {
         m_watch.stop();
         double end_memory = static_cast<double>(memory::get_allocation_size())/static_cast<double>(1024*1024);
+        TRACE("tactic", m_goal.display(tout););
         IF_VERBOSE(0, 
                    verbose_stream() << "(" << m_id
                    << " :num-exprs " << m_goal.num_exprs()
@@ -47,6 +50,7 @@ struct tactic_report::imp {
                    << " :before-memory " << std::fixed << std::setprecision(2) << m_start_memory
                    << " :after-memory " << std::fixed << std::setprecision(2) << end_memory
                    << ")" << std::endl);
+        SASSERT(m_goal.is_well_formed());
     }
 };
 
@@ -163,7 +167,7 @@ lbool check_sat(tactic & t, goal_ref & g, model_ref & md, labels_vec & labels, p
     try {
         exec(t, g, r);
     }
-    catch (tactic_exception & ex) {
+    catch (z3_exception & ex) {
         reason_unknown = ex.msg();
         if (r.size() > 0) pr = r[0]->pr(0);
         return l_undef;
@@ -174,7 +178,7 @@ lbool check_sat(tactic & t, goal_ref & g, model_ref & md, labels_vec & labels, p
 
     if (r.size() > 0) {
         pr = r[0]->pr(0);
-        TRACE("tactic", tout << pr << "\n";);
+        CTRACE("tactic", pr, tout << pr << "\n";);
     }
     
 
@@ -231,4 +235,18 @@ void fail_if_model_generation(char const * tactic_name, goal_ref const & in) {
         msg += " does not generate models";
         throw tactic_exception(std::move(msg));
     }
+}
+
+void fail_if_has_quantifiers(char const* tactic_name, goal_ref const& g) {
+    for (unsigned i = 0; i < g->size(); ++i)
+        if (has_quantifiers(g->form(i))) {
+            std::string msg = tactic_name;
+            msg += " does not apply to quantified goals";
+            throw tactic_exception(std::move(msg));
+        }
+}
+
+void tactic::checkpoint(ast_manager& m) {
+    if (!m.inc())
+        throw tactic_exception(m.limit().get_cancel_msg());
 }

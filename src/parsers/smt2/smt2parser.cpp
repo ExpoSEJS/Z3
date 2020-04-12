@@ -411,6 +411,7 @@ namespace smt2 {
 
         bool curr_id_is_underscore() const { SASSERT(curr_is_identifier()); return curr_id() == m_underscore; }
         bool curr_id_is_as() const { SASSERT(curr_is_identifier()); return curr_id() == m_as; }
+        bool curr_id_is_reserved() const { return curr_id_is_underscore() || curr_id_is_as(); }
         bool curr_id_is_match() const { SASSERT(curr_is_identifier()); return curr_id() == m_match; }
         bool curr_id_is_case() const { return curr_id() == m_case; }
         bool curr_id_is_forall() const { SASSERT(curr_is_identifier()); return curr_id() == m_forall; }
@@ -427,10 +428,11 @@ namespace smt2 {
             if (!curr_is_identifier() || curr_id() != id)
                 throw parser_exception(msg);
             next();
-        }
+        }        
         void check_underscore_next(char const * msg) { check_id_next(m_underscore, msg); }
         void check_as_next(char const * msg) { check_id_next(m_as, msg); }
         void check_identifier(char const * msg) { if (!curr_is_identifier()) throw parser_exception(msg); }
+        void check_nonreserved_identifier(char const * msg) { if (!curr_is_identifier() || curr_id_is_reserved()) throw parser_exception(msg); }
         void check_keyword(char const * msg) { if (!curr_is_keyword()) throw parser_exception(msg); }
         void check_string(char const * msg) { if (!curr_is_string()) throw parser_exception(msg); }
         void check_int(char const * msg) { if (!curr_is_int()) throw parser_exception(msg); }
@@ -1951,7 +1953,7 @@ namespace smt2 {
                 // the resultant expression is on the top of the stack
                 TRACE("let_frame", tout << "let result expr: " << mk_pp(expr_stack().back(), m()) << "\n";);
                 expr_ref r(m());
-                if (expr_stack().empty())
+                if (expr_stack().size() < fr->m_expr_spos + 1)
                     throw parser_exception("invalid let expression");
                 r = expr_stack().back();
                 expr_stack().pop_back();
@@ -1998,7 +2000,7 @@ namespace smt2 {
             TRACE("skid", tout << "fr->m_skid: " << fr->m_skid << "\n";);
             TRACE("parse_quantifier", tout << "body:\n" << mk_pp(expr_stack().back(), m()) << "\n";);
             if (fr->m_qid == symbol::null)
-                fr->m_qid = symbol(m_scanner.get_line());
+                fr->m_qid = symbol((unsigned)m_scanner.get_line());
             if (fr->m_kind != lambda_k && !m().is_bool(expr_stack().back()))
                 throw parser_exception("quantifier body must be a Boolean expression");
             quantifier* new_q = m().mk_quantifier(fr->m_kind,
@@ -2032,7 +2034,8 @@ namespace smt2 {
             process_last_symbol(fr);
             TRACE("consume_attributes", tout << "pop_attr_expr_frame, expr_stack.size(): " << expr_stack().size() << "\n";);
             // the resultant expression is already on the top of the stack.
-            SASSERT(expr_stack().size() == fr->m_expr_spos + 1);
+            if (expr_stack().size() != fr->m_expr_spos + 1)
+                throw parser_exception("invalid expression");
             m_stack.deallocate(fr);
             m_num_expr_frames--;
         }
@@ -2163,7 +2166,7 @@ namespace smt2 {
             check_lparen_next("invalid sort declaration, parameters missing");
             unsigned i = 0;
             while (!curr_is_rparen()) {
-                check_identifier("invalid sort parameter, symbol or ')' expected");
+                check_nonreserved_identifier("invalid sort parameter, symbol or ')' expected");
                 m_sort_id2param_idx.insert(curr_id(), i);
                 i++;
                 next();
@@ -2214,7 +2217,7 @@ namespace smt2 {
             SASSERT(curr_id() == m_declare_sort);
             next();
 
-            check_identifier("invalid sort declaration, symbol expected");
+            check_nonreserved_identifier("invalid sort declaration, symbol expected");
             symbol id = curr_id();
             if (m_ctx.find_psort_decl(id) != nullptr)
                 throw parser_exception("invalid sort declaration, sort already declared/defined");
@@ -2239,7 +2242,7 @@ namespace smt2 {
             SASSERT(curr_is_identifier());
             SASSERT(curr_id() == m_define_sort);
             next();
-            check_identifier("invalid sort definition, symbol expected");
+            check_nonreserved_identifier("invalid sort definition, symbol expected");
             symbol id = curr_id();
             if (m_ctx.find_psort_decl(id) != nullptr)
                 throw parser_exception("invalid sort definition, sort already declared/defined");
@@ -2260,7 +2263,7 @@ namespace smt2 {
             SASSERT(curr_id() == (is_fun ? m_define_fun : m_model_add));
             SASSERT(m_num_bindings == 0);
             next();
-            check_identifier("invalid function/constant definition, symbol expected");
+            check_nonreserved_identifier("invalid function/constant definition, symbol expected");
             symbol id = curr_id();
             next();
             unsigned sym_spos  = symbol_stack().size();
@@ -2336,10 +2339,9 @@ namespace smt2 {
             func_decl_ref_vector decls(m());
             vector<expr_ref_vector> bindings;
             vector<svector<symbol> > ids;
-            expr_ref_vector bodies(m());
             parse_rec_fun_decls(decls, bindings, ids);
-            for (unsigned i = 0; i < decls.size(); ++i) {
-                m_ctx.insert(decls[i].get());
+            for (func_decl* d : decls) {
+                m_ctx.insert(d);
             }
             parse_rec_fun_bodies(decls, bindings, ids);
 
@@ -2461,7 +2463,7 @@ namespace smt2 {
             SASSERT(curr_is_identifier());
             SASSERT(curr_id() == m_declare_fun);
             next();
-            check_identifier("invalid function declaration, symbol expected");
+            check_nonreserved_identifier("invalid function declaration, symbol expected");
             symbol id = curr_id();
             next();
             unsigned spos = sort_stack().size();
@@ -2480,7 +2482,7 @@ namespace smt2 {
             SASSERT(curr_is_identifier());
             SASSERT(curr_id() == m_declare_const);
             next();
-            check_identifier("invalid constant declaration, symbol expected");
+            check_nonreserved_identifier("invalid constant declaration, symbol expected");
             symbol id = curr_id();
             next();
             parse_sort("Invalid constant declaration");
@@ -2642,6 +2644,11 @@ namespace smt2 {
 
             check_rparen("invalid get-value command, ')' expected");
             model_ref md;
+            if (m_ctx.ignore_check()) {
+                expr_stack().shrink(spos);
+                next();
+                return;
+            }
             if (!m_ctx.is_model_available(md) || m_ctx.get_check_sat_result() == nullptr)
                 throw cmd_exception("model is not available");
             if (index != 0) {
@@ -2650,7 +2657,7 @@ namespace smt2 {
             m_ctx.regular_stream() << "(";
             expr ** expr_it  = expr_stack().c_ptr() + spos;
             expr ** expr_end = expr_it + m_cached_strings.size();
-            // md->compress();
+            md->compress();
             for (unsigned i = 0; expr_it < expr_end; expr_it++, i++) {
                 model::scoped_model_completion _scm(md, true);
                 expr_ref v = (*md)(*expr_it);

@@ -11,7 +11,7 @@ if (POLICY CMP0042)
 endif()
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE_CXX "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cxx_compiler_flags_overrides.cmake")
-project(Z3 VERSION 4.8.6.0 LANGUAGES CXX)
+project(Z3 VERSION 4.8.8.0 LANGUAGES CXX)
 
 ################################################################################
 # Project version
@@ -57,16 +57,16 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 ################################################################################
 include(${PROJECT_SOURCE_DIR}/cmake/git_utils.cmake)
 macro(disable_git_describe)
-  message(WARNING "Disabling INCLUDE_GIT_DESCRIBE")
-  set(INCLUDE_GIT_DESCRIBE OFF CACHE BOOL "Include git describe output in version output" FORCE)
+  message(WARNING "Disabling Z3_INCLUDE_GIT_DESCRIBE")
+  set(Z3_INCLUDE_GIT_DESCRIBE OFF CACHE BOOL "Include git describe output in version output" FORCE)
 endmacro()
 macro(disable_git_hash)
-  message(WARNING "Disabling INCLUDE_GIT_HASH")
-  set(INCLUDE_GIT_HASH OFF CACHE BOOL "Include git hash in version output" FORCE)
+  message(WARNING "Disabling Z3_INCLUDE_GIT_HASH")
+  set(Z3_INCLUDE_GIT_HASH OFF CACHE BOOL "Include git hash in version output" FORCE)
   unset(Z3GITHASH) # Used in configure_file()
 endmacro()
-option(INCLUDE_GIT_HASH "Include git hash in version output" ON)
-option(INCLUDE_GIT_DESCRIBE "Include git describe output in version output" ON)
+option(Z3_INCLUDE_GIT_HASH "Include git hash in version output" ON)
+option(Z3_INCLUDE_GIT_DESCRIBE "Include git describe output in version output" ON)
 
 set(GIT_DIR "${PROJECT_SOURCE_DIR}/.git")
 if (EXISTS "${GIT_DIR}")
@@ -74,7 +74,7 @@ if (EXISTS "${GIT_DIR}")
   # a re-configure is triggered when the HEAD changes.
   add_git_dir_dependency("${PROJECT_SOURCE_DIR}" ADD_GIT_DEP_SUCCESS)
   if (ADD_GIT_DEP_SUCCESS)
-    if (INCLUDE_GIT_HASH)
+    if (Z3_INCLUDE_GIT_HASH)
       get_git_head_hash("${GIT_DIR}" Z3GITHASH)
       if (NOT Z3GITHASH)
         message(WARNING "Failed to get Git hash")
@@ -87,7 +87,7 @@ if (EXISTS "${GIT_DIR}")
       message(STATUS "Not using Git hash in version output")
       unset(Z3GITHASH) # Used in configure_file()
     endif()
-    if (INCLUDE_GIT_DESCRIBE)
+    if (Z3_INCLUDE_GIT_DESCRIBE)
       get_git_head_describe("${GIT_DIR}" Z3_GIT_DESCRIPTION)
       if (NOT Z3_GIT_DESCRIPTION)
         message(WARNING "Failed to get Git description")
@@ -114,6 +114,7 @@ endif()
 # Useful CMake functions/Macros
 ################################################################################
 include(CheckCXXSourceCompiles)
+include(CMakeDependentOption)
 
 ################################################################################
 # Compiler flags for Z3 components.
@@ -199,6 +200,9 @@ if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   if ("${TARGET_ARCHITECTURE}" STREQUAL "x86_64")
     list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_USE_THREAD_LOCAL")
   endif()
+elseif ("${CMAKE_SYSTEM_NAME}" MATCHES "GNU")
+  message(STATUS "Platform: GNU/Hurd")
+  list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_HURD_")
 elseif ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
   # Does macOS really not need any special flags?
   message(STATUS "Platform: Darwin")
@@ -238,8 +242,8 @@ list(APPEND Z3_COMPONENT_EXTRA_INCLUDE_DIRS
 ################################################################################
 # GNU multiple precision library support
 ################################################################################
-option(USE_LIB_GMP "Use GNU Multiple Precision Library" OFF)
-if (USE_LIB_GMP)
+option(Z3_USE_LIB_GMP "Use GNU Multiple Precision Library" OFF)
+if (Z3_USE_LIB_GMP)
   # Because this is off by default we will make the configure fail if libgmp
   # can't be found
   find_package(GMP REQUIRED)
@@ -256,25 +260,25 @@ endif()
 ################################################################################
 # API Log sync
 ################################################################################
-option(API_LOG_SYNC
+option(Z3_API_LOG_SYNC
   "Use locking when logging Z3 API calls (experimental)"
   OFF
 )
-if (API_LOG_SYNC)
+if (Z3_API_LOG_SYNC)
   list(APPEND Z3_COMPONENT_CXX_DEFINES "-DZ3_LOG_SYNC")
-  message(STATUS "Using API_LOG_SYNC")
+  message(STATUS "Using Z3_API_LOG_SYNC")
 else()
-  message(STATUS "Not using API_LOG_SYNC")
+  message(STATUS "Not using Z3_API_LOG_SYNC")
 endif()
 
 ################################################################################
 # Thread safe or not?
 ################################################################################
-option(SINGLE_THREADED
+option(Z3_SINGLE_THREADED
   "Non-thread-safe build"
   OFF
 )
-if (SINGLE_THREADED)
+if (Z3_SINGLE_THREADED)
   list(APPEND Z3_COMPONENT_CXX_DEFINES "-DSINGLE_THREAD")
   message(STATUS "Non-thread-safe build")
 else()
@@ -322,9 +326,9 @@ include(${PROJECT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 ################################################################################
 # Save Clang optimization records
 ################################################################################
-option(SAVE_CLANG_OPTIMIZATION_RECORDS "Enable saving Clang optimization records." OFF)
+option(Z3_SAVE_CLANG_OPTIMIZATION_RECORDS "Enable saving Clang optimization records." OFF)
 
-if (SAVE_CLANG_OPTIMIZATION_RECORDS)
+if (Z3_SAVE_CLANG_OPTIMIZATION_RECORDS)
   z3_add_cxx_flag("-fsave-optimization-record" REQUIRED)
 endif()
 
@@ -345,7 +349,7 @@ endif()
 ################################################################################
 # Option to control what type of library we build
 ################################################################################
-option(BUILD_LIBZ3_SHARED "Build libz3 as a shared library if true, otherwise build a static library" ON)
+option(Z3_BUILD_LIBZ3_SHARED "Build libz3 as a shared library if true, otherwise build a static library" ON)
 
 
 ################################################################################
@@ -358,8 +362,8 @@ endif()
 ################################################################################
 # Tracing
 ################################################################################
-option(ENABLE_TRACING_FOR_NON_DEBUG "Enable tracing in non-debug builds." OFF)
-if (ENABLE_TRACING_FOR_NON_DEBUG)
+option(Z3_ENABLE_TRACING_FOR_NON_DEBUG "Enable tracing in non-debug builds." OFF)
+if (Z3_ENABLE_TRACING_FOR_NON_DEBUG)
   list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_TRACE")
 else()
   # Tracing is always enabled in debug builds
@@ -372,7 +376,7 @@ endif()
 # This is required because code built in the components will end up in a shared
 # library. If not building a shared library ``-fPIC`` isn't needed and would add
 # unnecessary overhead.
-if (BUILD_LIBZ3_SHARED)
+if (Z3_BUILD_LIBZ3_SHARED)
   # Avoid adding -fPIC compiler switch if we compile with MSVC (which does not
   # support the flag) or if we target Windows, which generally does not use
   # position independent code for native code shared libraries (DLLs).
@@ -389,12 +393,12 @@ include(${PROJECT_SOURCE_DIR}/cmake/compiler_lto.cmake)
 ################################################################################
 # Control flow integrity
 ################################################################################
-option(ENABLE_CFI "Enable control flow integrity checking" OFF)
-if (ENABLE_CFI)
+option(Z3_ENABLE_CFI "Enable control flow integrity checking" OFF)
+if (Z3_ENABLE_CFI)
   set(build_types_with_cfi "RELEASE" "RELWITHDEBINFO")
-  if (NOT LINK_TIME_OPTIMIZATION)
+  if (NOT Z3_LINK_TIME_OPTIMIZATION)
     message(FATAL_ERROR "Cannot enable control flow integrity checking without link-time optimization."
-      "You should set LINK_TIME_OPTIMIZATION to ON or ENABLE_CFI to OFF.")
+      "You should set Z3_LINK_TIME_OPTIMIZATION to ON or Z3_ENABLE_CFI to OFF.")
   endif()
   if (DEFINED CMAKE_CONFIGURATION_TYPES)
     # Multi configuration generator
@@ -414,7 +418,7 @@ if (ENABLE_CFI)
     endforeach()
   else()
     message(FATAL_ERROR "Can't enable control flow integrity for compiler \"${CMAKE_CXX_COMPILER_ID}\"."
-      "You should set ENABLE_CFI to OFF or use Clang or MSVC to compile.")
+      "You should set Z3_ENABLE_CFI to OFF or use Clang or MSVC to compile.")
   endif()
 endif()
 
@@ -610,16 +614,18 @@ install(
 ################################################################################
 # Examples
 ################################################################################
-option(ENABLE_EXAMPLE_TARGETS "Build Z3 api examples" ON)
-if (ENABLE_EXAMPLE_TARGETS)
+cmake_dependent_option(Z3_ENABLE_EXAMPLE_TARGETS 
+    "Build Z3 api examples" ON
+    "CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR" OFF)
+if (Z3_ENABLE_EXAMPLE_TARGETS)
   add_subdirectory(examples)
 endif()
 
 ################################################################################
 # Documentation
 ################################################################################
-option(BUILD_DOCUMENTATION "Build API documentation" OFF)
-if (BUILD_DOCUMENTATION)
+option(Z3_BUILD_DOCUMENTATION "Build API documentation" OFF)
+if (Z3_BUILD_DOCUMENTATION)
   message(STATUS "Building documentation enabled")
   add_subdirectory(doc)
 else()

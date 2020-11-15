@@ -58,7 +58,8 @@ asserted_formulas::asserted_formulas(ast_manager & m, smt_params & sp, params_re
     m_propagate_values(*this),
     m_nnf_cnf(*this),
     m_apply_quasi_macros(*this),
-    m_flatten_clauses(*this) {
+    m_flatten_clauses(*this),
+    m_lazy_scopes(0) {
 
     m_macro_finder = alloc(macro_finder, m, m_macro_manager);
 
@@ -137,13 +138,18 @@ void asserted_formulas::set_eliminate_and(bool flag) {
     m_params.set_bool("expand_select_store", true);
     //m_params.set_bool("expand_nested_stores", true);
     m_params.set_bool("bv_sort_ac", true);
+    // seq theory solver keeps terms in normal form and has to interact with side-effect of rewriting
+    m_params.set_bool("coalesce_chars", m_smt_params.m_string_solver != symbol("seq"));
     m_params.set_bool("som", true);
+    if (m_smt_params.m_arith_mode == arith_solver_id::AS_OLD_ARITH)
+        m_params.set_bool("flat", true);
     m_rewriter.updt_params(m_params);
     flush_cache();
 }
 
 
 void asserted_formulas::assert_expr(expr * e, proof * _in_pr) {
+    force_push();
     proof_ref  in_pr(_in_pr, m), pr(_in_pr, m);
     expr_ref   r(e, m);
 
@@ -178,15 +184,19 @@ void asserted_formulas::get_assertions(ptr_vector<expr> & result) const {
 }
 
 void asserted_formulas::push_scope() {
+    ++m_lazy_scopes;
+}
+
+void asserted_formulas::push_scope_core() {
     reduce();
     commit();
-    SASSERT(inconsistent() || m_qhead == m_formulas.size() || m.limit().get_cancel_flag());
+    SASSERT(inconsistent() || m_qhead == m_formulas.size() || m.limit().is_canceled());
     TRACE("asserted_formulas_scopes", tout << "before push: " << m_scopes.size() << "\n";);
     m_scoped_substitution.push();
     m_scopes.push_back(scope());
     scope & s = m_scopes.back();
     s.m_formulas_lim = m_formulas.size();
-    SASSERT(inconsistent() || s.m_formulas_lim == m_qhead || m.limit().get_cancel_flag());
+    SASSERT(inconsistent() || s.m_formulas_lim == m_qhead || m.limit().is_canceled());
     s.m_inconsistent_old = m_inconsistent;
     m_defined_names.push();
     m_elim_term_ite.push();
@@ -196,7 +206,19 @@ void asserted_formulas::push_scope() {
     TRACE("asserted_formulas_scopes", tout << "after push: " << m_scopes.size() << "\n";);
 }
 
+void asserted_formulas::force_push() {
+    for (; m_lazy_scopes > 0; --m_lazy_scopes)
+        push_scope_core();
+}
+
 void asserted_formulas::pop_scope(unsigned num_scopes) {
+    if (m_lazy_scopes > 0) {
+        unsigned n = std::min(num_scopes, m_lazy_scopes);
+        m_lazy_scopes -= n;
+        num_scopes -= n;
+        if (num_scopes == 0)
+            return;
+    }
     TRACE("asserted_formulas_scopes", tout << "before pop " << num_scopes << " of " << m_scopes.size() << "\n";);
     m_bv_sharing.pop_scope(num_scopes);
     m_macro_manager.pop_scope(num_scopes);
@@ -258,6 +280,8 @@ void asserted_formulas::reduce() {
     if (!invoke(m_reduce_asserted_formulas)) return;
     if (!invoke(m_pull_nested_quantifiers)) return;
     if (!invoke(m_lift_ite)) return;
+    m_lift_ite.m_functor.set_conservative(m_smt_params.m_lift_ite == LI_CONSERVATIVE);
+    m_ng_lift_ite.m_functor.set_conservative(m_smt_params.m_ng_lift_ite == LI_CONSERVATIVE);
     if (!invoke(m_ng_lift_ite)) return;
     if (!invoke(m_elim_term_ite)) return;
     if (!invoke(m_refine_inj_axiom)) return;
@@ -663,11 +687,12 @@ proof * asserted_formulas::get_inconsistency_proof() const {
         return nullptr;
     if (!m.proofs_enabled())
         return nullptr;
+    if (!m.inc())
+        return nullptr;
     for (justified_expr const& j : m_formulas) {
         if (m.is_false(j.get_fml()))
             return j.get_proof();
     }
-    UNREACHABLE();
     return nullptr;
 }
 

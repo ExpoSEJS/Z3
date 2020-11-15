@@ -81,7 +81,9 @@ namespace smt {
     };
 
     void arith_eq_adapter::mk_axioms(enode * n1, enode * n2) {
-        SASSERT(n1 != n2);
+        context & ctx = get_context();
+        if (n1 == n2)
+            return;
         ast_manager & m = get_manager();
         TRACE("arith_eq_adapter_mk_axioms", tout << "#" << n1->get_owner_id() << " #" << n2->get_owner_id() << "\n";
               tout << mk_ismt2_pp(n1->get_owner(), m) << "\n" << mk_ismt2_pp(n2->get_owner(), m) << "\n";);
@@ -89,6 +91,13 @@ namespace smt {
             std::swap(n1, n2);
         app * t1        = n1->get_owner();
         app * t2        = n2->get_owner();
+        if (m.are_distinct(t1, t2)) {
+            expr_ref eq(m.mk_eq(t1, t2), m);
+            ctx.internalize(eq, true);
+            literal lit(ctx.get_bool_var(eq));
+            ctx.assign(~lit, nullptr, false);
+            return;
+        }
         if (m.is_value(t1) && m.is_value(t2)) {
             // Nothing to be done
             // We don't need to create axioms for 2 = 3
@@ -98,7 +107,6 @@ namespace smt {
             return;
         }
         
-        context & ctx = get_context();
         CTRACE("arith_eq_adapter_relevancy", !(ctx.is_relevant(n1) && ctx.is_relevant(n2)),
                tout << "is_relevant(n1): #" << n1->get_owner_id() << " " << ctx.is_relevant(n1) << "\n";
                tout << "is_relevant(n2): #" << n2->get_owner_id() << " " << ctx.is_relevant(n2) << "\n";
@@ -110,7 +118,7 @@ namespace smt {
         // after n1 and n2 are marked as relevant.
         //
         data d;
-        if (m_already_processed.find(n1, n2, d))
+        if (m_already_processed.find(n1, n2, d)) 
             return;
         
         TRACE("arith_eq_adapter_profile", tout << "mk #" << n1->get_owner_id() << " #" << n2->get_owner_id() << " " <<
@@ -122,8 +130,7 @@ namespace smt {
               tout << "mk_detail " << mk_bounded_pp(n1->get_owner(), m, 5) << " " << 
               mk_bounded_pp(n2->get_owner(), m, 5) << "\n";);
         
-        app_ref t1_eq_t2(m);
-        
+        app_ref t1_eq_t2(m);        
         t1_eq_t2 = ctx.mk_eq_atom(t1, t2);
         SASSERT(!m.is_false(t1_eq_t2));
         
@@ -154,8 +161,8 @@ namespace smt {
         // Requires that the theory arithmetic internalizer accept non simplified terms of the form t1 - t2 
         // if t1 and t2 already have slacks (theory variables) associated with them.
         // It also accepts terms with repeated variables (Issue #429).
-        app * le = nullptr;
-        app * ge = nullptr;
+        
+        app_ref le(m), ge(m);
         if (m_util.is_numeral(t1))
             std::swap(t1, t2);
         if (m_util.is_numeral(t2)) {
@@ -210,7 +217,7 @@ namespace smt {
               << " " << mk_pp(ge, m) << ": " << ge_lit 
               << " " << mk_pp(t1_eq_t2, m) << ": " << t1_eq_t2_lit << "\n";);
 
-        if (m_params.m_arith_add_binary_bounds) {
+        if (m_owner.get_fparams().m_arith_add_binary_bounds) {
             TRACE("arith_eq_adapter", tout << "adding binary bounds...\n";);
             ctx.mk_th_axiom(tid, le_lit, ge_lit, m_proof_hint.size(), m_proof_hint.c_ptr());
         }
@@ -219,7 +226,7 @@ namespace smt {
             ctx.add_relevancy_eh(n1->get_owner(), eh);
             ctx.add_relevancy_eh(n2->get_owner(), eh);
         }
-        if (!m_params.m_arith_lazy_adapter && !ctx.at_base_level() && 
+        if (!m_owner.get_fparams().m_arith_lazy_adapter && !ctx.at_base_level() && 
             n1->get_iscope_lvl() <= ctx.get_base_level() && n2->get_iscope_lvl() <= ctx.get_base_level()) {
             m_restart_pairs.push_back(enode_pair(n1, n2));
         }
@@ -252,13 +259,13 @@ namespace smt {
         context & ctx = get_context();
         TRACE("arith_eq_adapter", tout << "restart\n";);
         enode_pair_vector tmp(m_restart_pairs);
-        enode_pair_vector::iterator it  =  tmp.begin();
-        enode_pair_vector::iterator end =  tmp.end();
         m_restart_pairs.reset();
-        for (; it != end && !ctx.inconsistent(); ++it) {
-            TRACE("arith_eq_adapter", tout << "creating arith_eq_adapter axioms at the base level #" << it->first->get_owner_id() << " #" <<
-                  it->second->get_owner_id() << "\n";);
-            mk_axioms(it->first, it->second);
+        for (auto const& p : tmp) {
+            if (ctx.inconsistent())
+                break;
+            TRACE("arith_eq_adapter", tout << "creating arith_eq_adapter axioms at the base level #" << p.first->get_owner_id() << " #" <<
+                  p.second->get_owner_id() << "\n";);
+            mk_axioms(p.first, p.second);
         }
     }
 
@@ -267,11 +274,9 @@ namespace smt {
     }
 
     void arith_eq_adapter::display_already_processed(std::ostream & out) const {
-        obj_pair_map<enode, enode, data>::iterator it  = m_already_processed.begin();
-        obj_pair_map<enode, enode, data>::iterator end = m_already_processed.end();
-        for (; it != end; ++it) {
-            enode * n1 = it->get_key1();
-            enode * n2 = it->get_key2();
+        for (auto const& d : m_already_processed) {
+            enode * n1 = d.get_key1();
+            enode * n2 = d.get_key2();
             out << "eq_adapter: #" << n1->get_owner_id() << " #" << n2->get_owner_id() << "\n";
         }
     }

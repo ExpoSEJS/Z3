@@ -227,19 +227,21 @@ interval::interval(v_dependency_manager & m, rational const & val, bool open, bo
     }
 }
 
-interval::interval(interval const & other):
-    m_manager(other.m_manager),
-    m_lower(other.m_lower),
-    m_upper(other.m_upper),
-    m_lower_open(other.m_lower_open),
-    m_upper_open(other.m_upper_open),
-    m_lower_dep(other.m_lower_dep),
-    m_upper_dep(other.m_upper_dep) {
-}
-
 interval & interval::operator=(interval const & other) {
+    SASSERT(&m_manager == &other.m_manager);
     m_lower = other.m_lower;
     m_upper = other.m_upper;
+    m_lower_open = other.m_lower_open;
+    m_upper_open = other.m_upper_open;
+    m_lower_dep  = other.m_lower_dep;
+    m_upper_dep  = other.m_upper_dep;
+    return *this;
+}
+
+interval & interval::operator=(interval && other) {
+    SASSERT(&m_manager == &other.m_manager);
+    m_lower = std::move(other.m_lower);
+    m_upper = std::move(other.m_upper);
     m_lower_open = other.m_lower_open;
     m_upper_open = other.m_upper_open;
     m_lower_dep  = other.m_lower_dep;
@@ -471,6 +473,14 @@ interval & interval::operator*=(interval const & other) {
            tout << "contains_zero1: " << contains_zero1 << ", contains_zero2: " << contains_zero2 << ", contains_zero(): " << contains_zero() << "\n";);
     SASSERT(!(contains_zero1 || contains_zero2) || contains_zero());
     return *this;
+}
+
+bool interval::empty() const {
+    if (m_lower.is_infinite() || m_upper.is_infinite())
+        return false;
+    if (m_lower < m_upper)
+        return false;
+    return m_lower > m_upper || m_lower_open || m_upper_open;
 }
 
 bool interval::contains_zero() const {

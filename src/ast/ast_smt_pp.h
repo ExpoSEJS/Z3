@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef AST_SMT_PP_H_
-#define AST_SMT_PP_H_
+#pragma once
 
 #include "ast/ast.h"
 #include<string>
@@ -80,6 +79,7 @@ public:
     void display_smt2(std::ostream& strm, expr* n);
     void display_expr_smt2(std::ostream& strm, expr* n, unsigned indent = 0, unsigned num_var_names = 0, char const* const* var_names = nullptr);
     void display_ast_smt2(std::ostream& strm, ast* n, unsigned indent = 0, unsigned num_var_names = 0, char const* const* var_names = nullptr);
+    void display_sort_decl(std::ostream& out, sort* s, ast_mark& seen);
 
 };
 
@@ -101,4 +101,3 @@ inline std::ostream& operator<<(std::ostream& out, const mk_smt_pp & p) {
 
 
 
-#endif

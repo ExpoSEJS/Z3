@@ -6,12 +6,18 @@ z3_add_component(smt
     cached_var_subst.cpp
     cost_evaluator.cpp
     dyn_ack.cpp
-    elim_term_ite.cpp
     expr_context_simplifier.cpp
     fingerprints.cpp
     mam.cpp
     old_interval.cpp
     qi_queue.cpp
+    seq_axioms.cpp
+    seq_eq_solver.cpp
+    seq_ne_solver.cpp
+    seq_offset_eq.cpp
+    seq_regex.cpp
+    seq_skolem.cpp
+    seq_unicode.cpp
     smt_almost_cg_table.cpp
     smt_arith_value.cpp
     smt_case_split_queue.cpp
@@ -29,6 +35,7 @@ z3_add_component(smt
     smt_farkas_util.cpp
     smt_for_each_relevant_expr.cpp
     smt_implied_equalities.cpp
+    smt_induction.cpp
     smt_internalizer.cpp
     smt_justification.cpp
     smt_kernel.cpp
@@ -60,7 +67,6 @@ z3_add_component(smt
     theory_dl.cpp
     theory_dummy.cpp
     theory_fpa.cpp
-    theory_jobscheduler.cpp
     theory_lra.cpp
     theory_opt.cpp
     theory_pb.cpp
@@ -72,6 +78,7 @@ z3_add_component(smt
     theory_str_regex.cpp
     theory_utvpi.cpp
     theory_wmaxsat.cpp
+    user_propagator.cpp
     uses_theory.cpp
     watch_list.cpp
   COMPONENT_DEPENDENCIES

@@ -14,8 +14,7 @@
 
  Revision History:
  --*/
-#ifndef LACKR_H_
-#define LACKR_H_
+#pragma once
 
 #include "util/lbool.h"
 #include "util/util.h"
@@ -94,6 +93,7 @@ class lackr {
         model_ref                            m_model;
         bool                                 m_eager;
         expr_mark                            m_non_select;
+        ast_mark                             m_non_funs;
         lackr_stats&                         m_st;
         bool                                 m_is_init;
 
@@ -128,4 +128,3 @@ class lackr {
         void abstract_fun(fun2terms_map const& apps);
 
 };
-#endif /* LACKR_H_ */

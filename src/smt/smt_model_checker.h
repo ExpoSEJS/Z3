@@ -18,8 +18,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_MODEL_CHECKER_H_
-#define SMT_MODEL_CHECKER_H_
+#pragma once
 
 #include "util/obj_hashtable.h"
 #include "ast/ast.h"
@@ -51,12 +50,11 @@ namespace smt {
         scoped_ptr<context>                         m_aux_context; // Auxiliary context used for model checking quantifiers.
         unsigned                                    m_max_cexs;
         unsigned                                    m_iteration_idx;
-        bool                                        m_has_rec_fun;
         proto_model *                               m_curr_model;
         obj_map<expr, expr *>                       m_value2expr;
         expr_ref_vector                             m_fresh_exprs;
 
-        friend class instantiation_set;
+        friend class model_instantiation_set;
 
         void init_aux_context();
         void init_value2expr();
@@ -67,9 +65,7 @@ namespace smt {
         void assert_neg_q_m(quantifier * q, expr_ref_vector & sks);
         bool add_blocking_clause(model * cex, expr_ref_vector & sks);
         bool check(quantifier * q);
-        bool check_rec_fun(quantifier* q, bool strict_rec_fun);
-        bool has_rec_under_quantifiers();
-        void check_quantifiers(bool strict_rec_fun, bool& found_relevant, unsigned& num_failures);
+        void check_quantifiers(bool& found_relevant, unsigned& num_failures);
 
         struct instance {
             quantifier * m_q;
@@ -111,4 +107,3 @@ namespace smt {
     };
 };
 
-#endif // _SMT_MODEL_CHECKER_H_

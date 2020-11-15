@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef PB2BV_REWRITER_H_
-#define PB2BV_REWRITER_H_
+#pragma once
 
 #include "ast/pb_decl_plugin.h"
 #include "ast/rewriter/rewriter_types.h"
@@ -41,7 +40,6 @@ public:
     void pop(unsigned num_scopes);
     void flush_side_constraints(expr_ref_vector& side_constraints);
     unsigned num_translated() const;
-    void collect_statistics(statistics & st) const;
+    void collect_statistics(::statistics & st) const;
 };
 
-#endif

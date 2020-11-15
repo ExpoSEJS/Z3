@@ -16,10 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifndef HWF_H_
-#define HWF_H_
+#pragma once
 
-#include<string>
+#include <cstring>
+#include <string>
 #include "util/mpz.h"
 #include "util/mpq.h"
 #include "util/mpf.h"
@@ -27,7 +27,6 @@ Revision History:
 class hwf {
     friend class hwf_manager;
     double value;
-    hwf & operator=(hwf const & other) { UNREACHABLE(); return *this; }
     uint64_t get_raw() const {
       uint64_t n;
       SASSERT(sizeof(n) == sizeof(value));
@@ -35,11 +34,8 @@ class hwf {
       return n;
     }
 
-public:    
-    hwf() {}
-    hwf(hwf const & other) { this->value = other.value; }
-    ~hwf() {}   
-    void swap(hwf & other) { double t = value; value = other.value; other.value = t; }
+public:
+    void swap(hwf & other) { std::swap(value, other.value); }
 };
 
 
@@ -172,5 +168,3 @@ protected:
 
 typedef _scoped_numeral<hwf_manager> scoped_hwf;
 typedef _scoped_numeral_vector<hwf_manager> scoped_hwf_vector;
-
-#endif

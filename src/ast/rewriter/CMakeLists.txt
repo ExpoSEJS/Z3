@@ -29,22 +29,16 @@ z3_add_component(rewriter
     pb2bv_rewriter.cpp
     push_app_ite.cpp
     quant_hoist.cpp
+    recfun_rewriter.cpp
     rewriter.cpp
     seq_rewriter.cpp
     th_rewriter.cpp
+    value_sweep.cpp
     var_subst.cpp
-    bv_trailing.cpp
     mk_extract_proc.cpp
   COMPONENT_DEPENDENCIES
     ast
+    params
     automata
     polynomial
-  PYG_FILES
-    arith_rewriter_params.pyg
-    array_rewriter_params.pyg
-    bool_rewriter_params.pyg
-    bv_rewriter_params.pyg
-    fpa_rewriter_params.pyg
-    poly_rewriter_params.pyg
-    rewriter_params.pyg
 )

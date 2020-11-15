@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_ARRAY_BASE_H_
-#define THEORY_ARRAY_BASE_H_
+#pragma once
 
 #include "smt/smt_theory.h"
 #include "smt/theory_array_bapa.h"
@@ -63,6 +62,7 @@ namespace smt {
         bool is_select_arg(enode* r);
 
         app * mk_select(unsigned num_args, expr * const * args);
+        app * mk_select(expr_ref_vector const& args) { return mk_select(args.size(), args.c_ptr()); }
         app * mk_store(unsigned num_args, expr * const * args);
         app * mk_default(expr* a);
 
@@ -207,11 +207,10 @@ namespace smt {
         model_value_proc * mk_value(enode * n, model_generator & m) override;
         bool include_func_interp(func_decl* f) override;
     public:
-        theory_array_base(ast_manager & m);
+        theory_array_base(context& ctx);
         ~theory_array_base() override { restore_sorts(0); }
     };
 
 };
 
-#endif /* THEORY_ARRAY_BASE_H_ */
 

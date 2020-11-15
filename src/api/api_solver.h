@@ -15,9 +15,9 @@ Author:
 Revision History:
 
 --*/
-#ifndef API_SOLVER_H_
-#define API_SOLVER_H_
+#pragma once
 
+#include "util/mutex.h"
 #include "api/api_util.h"
 #include "solver/solver.h"
 
@@ -27,7 +27,7 @@ struct solver2smt2_pp {
     expr_ref_vector m_tracked;
     unsigned_vector m_tracked_lim;
 
-    solver2smt2_pp(ast_manager& m, char const* file);
+    solver2smt2_pp(ast_manager& m, const std::string& file);
     void assert_expr(expr* e);
     void assert_expr(expr* e, expr* t);
     void push();
@@ -44,7 +44,7 @@ struct Z3_solver_ref : public api::object {
     params_ref                 m_params;
     symbol                     m_logic;
     scoped_ptr<solver2smt2_pp> m_pp;
-    std::mutex                 m_mux;
+    mutex                      m_mux;
     event_handler*             m_eh;
 
     Z3_solver_ref(api::context& c, solver_factory * f): 
@@ -62,4 +62,3 @@ inline Z3_solver_ref * to_solver(Z3_solver s) { return reinterpret_cast<Z3_solve
 inline Z3_solver of_solver(Z3_solver_ref * s) { return reinterpret_cast<Z3_solver>(s); }
 inline solver * to_solver_ref(Z3_solver s) { return to_solver(s)->m_solver.get(); }
 
-#endif

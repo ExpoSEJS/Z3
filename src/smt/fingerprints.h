@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef FINGERPRINTS_H_
-#define FINGERPRINTS_H_
+#pragma once
 
 #include "smt/smt_enode.h"
 #include "util/util.h"
@@ -26,11 +25,11 @@ namespace smt {
 
     class fingerprint {
     protected:
-        void *        m_data;
-        unsigned      m_data_hash;
-        expr*         m_def;
-        unsigned      m_num_args;
-        enode * *     m_args;
+        void*         m_data{ nullptr };
+        unsigned      m_data_hash{ 0 };
+        expr*         m_def{ nullptr };
+        unsigned      m_num_args{ 0 };
+        enode**       m_args{ nullptr };
 
         friend class fingerprint_set;
         fingerprint() {}
@@ -88,5 +87,4 @@ namespace smt {
     };
 };
 
-#endif /* FINGERPRINTS_H_ */
 

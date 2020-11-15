@@ -16,11 +16,11 @@ Author:
 Revision History:
 
 --*/
-#ifndef HEAP_H_
-#define HEAP_H_
+#pragma once
 
 #include "util/vector.h"
 #include "util/debug.h"
+#include <cstring>
 
 template<typename LT>
 class heap : private LT {
@@ -158,6 +158,10 @@ public:
         return m_value2indices.size();
     }
 
+    unsigned size() const {
+        return m_value2indices.size();
+    }
+
     void reserve(int s) {
         CASSERT("heap", check_invariant());
         if (s > static_cast<int>(m_value2indices.size()))
@@ -290,6 +294,3 @@ public:
 
   
 };
-
-#endif /* HEAP_H_ */
-

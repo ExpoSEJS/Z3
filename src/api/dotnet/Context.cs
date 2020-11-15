@@ -218,7 +218,6 @@ namespace Microsoft.Z3
         /// </summary>
         public BitVecSort MkBitVecSort(uint size)
         {
-
             return new BitVecSort(this, Native.Z3_mk_bv_sort(nCtx, size));
         }
 
@@ -2488,12 +2487,12 @@ namespace Microsoft.Z3
         /// <summary>
         /// Retrieve element at index.
         /// </summary>
-        public SeqExpr MkNth(SeqExpr s, Expr index)
+        public Expr MkNth(SeqExpr s, Expr index)
         {
             Debug.Assert(s != null);
             Debug.Assert(index != null);
             CheckContextMatch(s, index);
-            return new SeqExpr(this, Native.Z3_mk_seq_nth(nCtx, s.NativeObject, index.NativeObject));
+            return Expr.Create(this, Native.Z3_mk_seq_nth(nCtx, s.NativeObject, index.NativeObject));
         }
 
         /// <summary>

@@ -292,7 +292,7 @@ namespace algebraic_numbers {
                 return false; // we know for sure a is not a rational
             TRACE("algebraic_bug", tout << "is_rational(a):\n"; display_root(tout, a); tout << "\n"; display_interval(tout, a); tout << "\n";);
             algebraic_cell * c = a.to_algebraic();
-            save_intervals saved_a(*this, c);
+            save_intervals saved_a(*this, a);
             mpz & a_n = c->m_p[c->m_p_sz - 1];
             scoped_mpz & abs_a_n = m_is_rational_tmp;
             qm().set(abs_a_n, a_n);
@@ -449,7 +449,7 @@ namespace algebraic_numbers {
         }
 
         void copy_poly(algebraic_cell * c, unsigned sz, mpz const * p) {
-            SASSERT(c->m_p == 0);
+            SASSERT(c->m_p == nullptr);
             SASSERT(c->m_p_sz == 0);
             c->m_p_sz = sz;
             c->m_p    = static_cast<mpz*>(m_allocator.allocate(sizeof(mpz)*sz));
@@ -476,7 +476,7 @@ namespace algebraic_numbers {
             target->m_sign_lower   = source->m_sign_lower;
             target->m_not_rational = source->m_not_rational;
             target->m_i            = source->m_i;
-            SASSERT(acell_inv(*source));
+            //SASSERT(acell_inv(*source)); source could be owned by a different manager
             SASSERT(acell_inv(*target));
         }
 
@@ -965,6 +965,7 @@ namespace algebraic_numbers {
                 if (m_num.is_basic())
                     return; // m_num is not algebraic anymore
                 algebraic_cell * cell = m_num.to_algebraic();
+                
                 if (m_owner.magnitude(cell) < m_owner.m_min_magnitude) {
                     // restore old interval
                     m_owner.bqim().swap(cell->m_interval, m_old_interval);

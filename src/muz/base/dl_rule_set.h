@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_RULE_SET_H_
-#define DL_RULE_SET_H_
+#pragma once
 
 #include "util/obj_hashtable.h"
 #include "muz/base/dl_rule.h"
@@ -63,7 +62,7 @@ namespace datalog {
 
         void populate(const rule_set & rules);
         void populate(unsigned n, rule * const * rules);
-        void restrict(const item_set & allowed);
+        void restrict_dependencies(const item_set & allowed);
         void remove(func_decl * itm);
         void remove(const item_set & to_remove);
 
@@ -284,4 +283,3 @@ namespace datalog {
 
 };
 
-#endif /* DL_RULE_SET_H_ */

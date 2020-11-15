@@ -68,10 +68,9 @@ class int_solver {
     bool                m_upper;           // we have a cut m_t*x <= k if m_upper is true nad m_t*x >= k otherwise
     hnf_cutter          m_hnf_cutter;
     unsigned            m_hnf_cut_period;
-
 public:
     int_solver(lar_solver& lp);
-
+    
     // main function to check that the solution provided by lar_solver is valid for integral values,
     // or provide a way of how it can be adjusted.
     lia_move check(explanation *);
@@ -94,7 +93,6 @@ private:
     bool is_fixed(unsigned j) const;
     bool is_free(unsigned j) const;
     bool value_is_int(unsigned j) const;
-    void set_value_for_nbasic_column_ignore_old_values(unsigned j, const impq & new_val);
     bool is_feasible() const;
     bool column_is_int_inf(unsigned j) const;
     std::ostream& display_inf_rows(std::ostream&) const;
@@ -109,8 +107,8 @@ private:
     bool has_upper(unsigned j) const;
     unsigned row_of_basic_column(unsigned j) const;
     bool non_basic_columns_are_at_bounds() const;
-
-
+    bool cut_indices_are_columns() const;
+    
 public:
     std::ostream& display_column(std::ostream & out, unsigned j) const;
     constraint_index column_upper_bound_constraint(unsigned j) const;
@@ -118,8 +116,8 @@ public:
     bool current_solution_is_inf_on_cut() const;
 
     bool shift_var(unsigned j, unsigned range);
+    std::ostream&  display_row_info(std::ostream & out, unsigned row_index) const;
 private:
-    void display_row_info(std::ostream & out, unsigned row_index) const;
     unsigned random();
     bool has_inf_int() const;
 public:

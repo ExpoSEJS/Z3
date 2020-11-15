@@ -16,8 +16,7 @@
   Notes:
 
   --*/
-#ifndef _SAT_LOCAL_SEARCH_H_
-#define _SAT_LOCAL_SEARCH_H_
+#pragma once
 
 #include "util/vector.h"
 #include "sat/sat_types.h"
@@ -89,40 +88,31 @@ namespace sat {
         };
         
         struct var_info {
-            bool m_value;                        // current solution
-            unsigned m_bias;                     // bias for current solution in percentage.
+            bool m_value{ true };                        // current solution
+            unsigned m_bias{ 50 };                     // bias for current solution in percentage.
                                                  // if bias is 0, then value is always false, if 100, then always true
-            bool m_unit;                         // is this a unit literal
+            bool m_unit{ false };                         // is this a unit literal
             literal m_explain;                   // explanation for unit assignment
-            bool m_conf_change;                  // whether its configure changes since its last flip
-            bool m_in_goodvar_stack;
-            int  m_score;
-            int  m_slack_score;
-            int  m_time_stamp;                   // the flip time stamp                 
+            bool m_conf_change{ true };                  // whether its configure changes since its last flip
+            bool m_in_goodvar_stack{ false };
+            int  m_score{ 0 };
+            int  m_slack_score{ 0 };
+            int  m_time_stamp{ 0 };                   // the flip time stamp                 
             bool_var_vector m_neighbors;         // neighborhood variables
             coeff_vector m_watch[2];
             literal_vector m_bin[2];
-            unsigned m_flips;
+            unsigned m_flips{ 0 };
             ema  m_slow_break;
-            double m_break_prob;
+            double m_break_prob{ 0 };
             var_info():
-                m_value(true),
-                m_bias(50), 
-                m_unit(false),
-                m_conf_change(true),
-                m_in_goodvar_stack(false),
-                m_score(0),
-                m_slack_score(0),
-                m_flips(0),
-                m_slow_break(1e-5),
-                m_break_prob(0)
+                m_slow_break(1e-5)
             {}
         };
 
         struct constraint {
             unsigned        m_id;
             unsigned        m_k;
-            int             m_slack;
+            int64_t         m_slack;
             unsigned        m_size;
             literal_vector  m_literals;
             constraint(unsigned k, unsigned id) : m_id(id), m_k(k), m_slack(0), m_size(0) {}
@@ -196,8 +186,8 @@ namespace sat {
         inline bool is_unit(literal l) const { return m_vars[l.var()].m_unit; }
 
         unsigned num_constraints() const { return m_constraints.size(); } // constraint index from 1 to num_constraint
-
-        unsigned constraint_slack(unsigned ci) const { return m_constraints[ci].m_slack; }
+        
+        uint64_t constraint_slack(unsigned ci) const { return m_constraints[ci].m_slack; }
         
         void init();
         void reinit();
@@ -221,7 +211,7 @@ namespace sat {
         void verify_slack(constraint const& c) const;
         void verify_slack() const;
         bool verify_goodvar() const;
-        unsigned constraint_value(constraint const& c) const;
+        uint64_t constraint_value(constraint const& c) const;
         unsigned constraint_coeff(constraint const& c, literal l) const;
         void print_info(std::ostream& out);
         void extract_model();
@@ -282,4 +272,3 @@ namespace sat {
     };
 }
 
-#endif

@@ -360,7 +360,6 @@ private:
             return m_assertions.get(idx);
         }
     }
-
 };
 
 solver * mk_bounded_int2bv_solver(ast_manager & m, params_ref const & p, solver* s) {

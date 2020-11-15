@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef MODEL_H_
-#define MODEL_H_
+#pragma once
 
 #include "util/ref.h"
 #include "util/vector.h"
@@ -79,6 +78,7 @@ public:
     bool has_uninterpreted_sort(sort * s) const;
 
     expr_ref get_inlined_const_interp(func_decl* f);
+    expr_ref unfold_as_array(expr* e);
 
     //
     // Primitives for building models
@@ -127,4 +127,3 @@ public:
 };
 
 
-#endif /* MODEL_H_ */

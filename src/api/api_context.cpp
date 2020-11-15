@@ -18,8 +18,8 @@ Revision History:
 
 --*/
 #include<typeinfo>
-#include "api/api_context.h"
 #include "util/z3_version.h"
+#include "api/api_context.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_ll_pp.h"
 #include "api/api_log_macros.h"
@@ -102,7 +102,7 @@ namespace api {
         m_datalog_fid = m().mk_family_id("datalog_relation");
         m_fpa_fid   = m().mk_family_id("fpa");
         m_seq_fid   = m().mk_family_id("seq");
-        m_special_relations_fid   = m().mk_family_id("special_relations");
+        m_special_relations_fid   = m().mk_family_id("specrels");
         m_dt_plugin = static_cast<datatype_decl_plugin*>(m().get_plugin(m_dt_fid));
     
         install_tactics(*this);
@@ -116,6 +116,8 @@ namespace api {
             DEBUG_CODE(warning_msg("Uncollected memory: %d: %s", kv.m_key, typeid(*val).name()););
             dealloc(val);
         }
+        if (m_params.owns_manager())
+            m_manager.detach();
     }
 
     context::set_interruptable::set_interruptable(context & ctx, event_handler & i):
@@ -147,8 +149,12 @@ namespace api {
         }
     }
 
-    void context::reset_error_code() { 
-        m_error_code = Z3_OK; 
+    void context::set_error_code(Z3_error_code err, std::string &&opt_msg) {
+        m_error_code = err;
+        if (err != Z3_OK) {
+            m_exception_msg = std::move(opt_msg);
+            invoke_error_handler(err);
+        }
     }
 
     void context::check_searching() {
@@ -291,7 +297,8 @@ namespace api {
                     buffer << mk_bounded_pp(a->get_arg(i), m(), 3) << " of sort ";
                     buffer << mk_pp(m().get_sort(a->get_arg(i)), m()) << "\n";
                 }
-                warning_msg("%s",buffer.str().c_str());
+                auto str = buffer.str();
+                warning_msg("%s", str.c_str());
                 break;
             }
             case AST_VAR:
@@ -419,13 +426,13 @@ extern "C" {
 
     void Z3_API Z3_reset_memory(void) {
         LOG_Z3_reset_memory();
-        memory::finalize();
+        memory::finalize(false);
         memory::initialize(0);
     }
 
     void Z3_API Z3_finalize_memory(void) {
         LOG_Z3_finalize_memory();
-        memory::finalize();
+        memory::finalize(true);
     }
 
     Z3_error_code Z3_API Z3_get_error_code(Z3_context c) {

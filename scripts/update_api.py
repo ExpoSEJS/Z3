@@ -390,6 +390,27 @@ def Z3_set_error_handler(ctx, hndlr, _elems=Elementaries(_lib.Z3_set_error_handl
   _elems.Check(ctx)
   return ceh
 
+def Z3_solver_propagate_init(ctx, s, user_ctx, push_eh, pop_eh, fresh_eh, _elems = Elementaries(_lib.Z3_solver_propagate_init)):    
+    _elems.f(ctx, s, user_ctx, push_eh, pop_eh, fresh_eh)
+    _elems.Check(ctx)
+
+def Z3_solver_propagate_final(ctx, s, final_eh, _elems = Elementaries(_lib.Z3_solver_propagate_final)):
+    _elems.f(ctx, s, final_eh)
+    _elems.Check(ctx)
+
+def Z3_solver_propagate_fixed(ctx, s, fixed_eh, _elems = Elementaries(_lib.Z3_solver_propagate_fixed)):
+    _elems.f(ctx, s, fixed_eh)
+    _elems.Check(ctx)
+
+def Z3_solver_propagate_eq(ctx, s, eq_eh, _elems = Elementaries(_lib.Z3_solver_propagate_eq)):
+    _elems.f(ctx, s, eq_eh)
+    _elems.Check(ctx)
+
+def Z3_solver_propagate_diseq(ctx, s, diseq_eh, _elems = Elementaries(_lib.Z3_solver_propagate_diseq)):
+    _elems.f(ctx, s, diseq_eh)
+    _elems.Check(ctx)
+
+
 """)
 
     for sig in _API2PY:
@@ -574,8 +595,13 @@ def mk_java(java_dir, package_name):
     java_native.write('  public static native void setInternalErrorHandler(long ctx);\n\n')
 
     java_native.write('  static {\n')
-    java_native.write('    try { System.loadLibrary("z3java"); }\n')
-    java_native.write('    catch (UnsatisfiedLinkError ex) { System.loadLibrary("libz3java"); }\n')
+    java_native.write('    if (null == System.getProperty("z3.skipLibraryLoad")) {\n')
+    java_native.write('      try {\n')
+    java_native.write('        System.loadLibrary("z3java");\n')
+    java_native.write('      } catch (UnsatisfiedLinkError ex) {\n')
+    java_native.write('        System.loadLibrary("libz3java");\n')
+    java_native.write('      }\n')
+    java_native.write('    }\n')
     java_native.write('  }\n')
 
     java_native.write('\n')
@@ -1021,6 +1047,9 @@ def def_API(name, result, params):
             elif ty == BOOL:
                 log_c.write("  I(a%s);\n" % i)
                 exe_c.write("in.get_bool(%s)" % i)
+            elif ty == VOID_PTR:
+                log_c.write("  P(0);\n")
+                exe_c.write("in.get_obj_addr(%s)" % i)                
             elif ty == PRINT_MODE or ty == ERROR_CODE:
                 log_c.write("  U(static_cast<unsigned>(a%s));\n" % i)
                 exe_c.write("static_cast<%s>(in.get_uint(%s))" % (type2str(ty), i))
@@ -1872,6 +1901,30 @@ _error_handler_type  = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint)
 
 _lib.Z3_set_error_handler.restype  = None
 _lib.Z3_set_error_handler.argtypes = [ContextObj, _error_handler_type]
+
+push_eh_type  = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+pop_eh_type   = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint)
+fresh_eh_type = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+
+fixed_eh_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p)
+final_eh_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+eq_eh_type    = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint)
+
+_lib.Z3_solver_propagate_init.restype = None
+_lib.Z3_solver_propagate_init.argtypes = [ContextObj, SolverObj, ctypes.c_void_p, push_eh_type, pop_eh_type, fresh_eh_type]
+
+_lib.Z3_solver_propagate_final.restype = None
+_lib.Z3_solver_propagate_final.argtypes = [ContextObj, SolverObj, final_eh_type]
+
+_lib.Z3_solver_propagate_fixed.restype = None
+_lib.Z3_solver_propagate_fixed.argtypes = [ContextObj, SolverObj, fixed_eh_type]
+
+_lib.Z3_solver_propagate_eq.restype = None
+_lib.Z3_solver_propagate_eq.argtypes = [ContextObj, SolverObj, eq_eh_type]
+
+_lib.Z3_solver_propagate_diseq.restype = None
+_lib.Z3_solver_propagate_diseq.argtypes = [ContextObj, SolverObj, eq_eh_type]
+
 
 """
   )

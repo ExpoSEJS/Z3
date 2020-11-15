@@ -55,7 +55,7 @@ namespace sat {
         for (unsigned i = old_tr_sz; i < tr_sz; i++) {
             entry.m_lits.push_back(s.m_trail[i]);
             if (s.m_config.m_drat) {
-                s.m_drat.add(~l, s.m_trail[i], true);
+                s.m_drat.add(~l, s.m_trail[i], status::redundant());
             }
         }
     }
@@ -71,8 +71,8 @@ namespace sat {
             for (literal lit : *implied_lits) {
                 if (m_assigned.contains(lit)) {
                     if (s.m_config.m_drat) {
-                        s.m_drat.add(l, lit, true);
-                        s.m_drat.add(~l, lit, true);
+                        s.m_drat.add(l, lit, status::redundant());
+                        s.m_drat.add(~l, lit, status::redundant());
                     }
                     s.assign_scoped(lit);
                     m_num_assigned++;
@@ -82,12 +82,15 @@ namespace sat {
         else {
             m_to_assert.reset();
             s.push();
+            TRACE("sat", tout << "probing " << l << "\n";);
             s.assign_scoped(l);
             m_counter--;
             unsigned old_tr_sz = s.m_trail.size();
             s.propagate(false);
             if (s.inconsistent()) {
+                TRACE("sat", tout << "probe failed: " << ~l << "\n";);
                 // ~l must be true
+                s.drat_explain_conflict();
                 s.pop(1);
                 s.assign_scoped(~l);
                 s.propagate(false);
@@ -106,8 +109,8 @@ namespace sat {
 
             for (literal lit : m_to_assert) {
                 if (s.m_config.m_drat) {
-                    s.m_drat.add(l, lit, true);
-                    s.m_drat.add(~l, lit, true);
+                    s.m_drat.add(l, lit, status::redundant());
+                    s.m_drat.add(~l, lit, status::redundant());
                 }
                 s.assign_scoped(lit);
                 m_num_assigned++;
@@ -125,10 +128,14 @@ namespace sat {
         s.push();
         literal l(v, false);
         s.assign_scoped(l);
+        TRACE("sat", tout << "probing " << l << "\n";);
         unsigned old_tr_sz = s.m_trail.size();
         s.propagate(false);
         if (s.inconsistent()) {
             // ~l must be true
+            TRACE("sat", tout << "probe failed: " << ~l << "\n";
+                  s.display(tout););
+            s.drat_explain_conflict();
             s.pop(1);
             s.assign_scoped(~l);
             s.propagate(false);
@@ -160,9 +167,11 @@ namespace sat {
             return;
 
         if (m_probing_binary) {
-            watch_list & wlist = s.get_wlist(~l);
-            for (unsigned i = 0; i < wlist.size(); ++i) {
+            unsigned sz = s.get_wlist(~l).size();
+            for (unsigned i = 0; i < sz; ++i) {
+                watch_list& wlist = s.get_wlist(~l);
                 watched & w = wlist[i];
+                sz = wlist.size();
                 if (!w.is_binary_clause())
                     continue;
                 literal l2 = w.get_literal();
@@ -170,7 +179,8 @@ namespace sat {
                     continue;
                 if (s.value(l2) != l_undef)
                     continue;
-                // Note: that try_lit calls propagate, which may update the watch lists.
+                // Note: that try_lit calls propagate, which may update the watch lists
+                // and potentially change the set of variables.
                 if (!try_lit(l2, false))
                     return;
                 if (s.inconsistent())
@@ -227,6 +237,7 @@ namespace sat {
         if (m_probing_cache && memory::get_allocation_size() > m_probing_cache_limit)
             m_cached_bins.finalize();
 
+        flet<bool> _is_probing(s.m_is_probing, true);
         report rpt(*this);
         bool r    = true;
         m_counter = 0;

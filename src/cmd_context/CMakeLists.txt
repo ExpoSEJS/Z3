@@ -1,11 +1,9 @@
 z3_add_component(cmd_context
   SOURCES
     basic_cmds.cpp
-    check_logic.cpp
     cmd_context.cpp
     cmd_context_to_goal.cpp
     cmd_util.cpp
-    context_params.cpp
     echo_tactic.cpp
     eval_cmd.cpp
     parametric_cmd.cpp
@@ -16,6 +14,5 @@ z3_add_component(cmd_context
   COMPONENT_DEPENDENCIES
     rewriter
     solver
-  EXTRA_REGISTER_MODULE_HEADERS
-    context_params.h
+    params
 )

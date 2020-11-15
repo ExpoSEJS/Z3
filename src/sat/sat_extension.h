@@ -16,18 +16,26 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_EXTENSION_H_
-#define SAT_EXTENSION_H_
+#pragma once
 
+#include <functional>
 #include "sat/sat_types.h"
 #include "util/params.h"
 #include "util/statistics.h"
 
 namespace sat {
 
-    enum check_result {
+    enum class check_result {
         CR_DONE, CR_CONTINUE, CR_GIVEUP
     };
+
+    inline std::ostream& operator<<(std::ostream& out, check_result const& r) {
+        switch (r) {
+        case check_result::CR_DONE: return out << "done";
+        case check_result::CR_CONTINUE: return out << "continue";
+        default: return out << "giveup";
+        }
+    }
 
     class literal_occs_fun {
     public:
@@ -45,46 +53,77 @@ namespace sat {
         ext_constraint_list & get(literal l) { return m_use_list[l.index()]; }
         ext_constraint_list const & get(literal l) const { return m_use_list[l.index()]; }
         void finalize() { m_use_list.finalize(); }
+        bool contains(bool_var v) const {
+            if (m_use_list.size() <= 2*v)
+                return false;
+            literal lit(v, false);
+            return !get(lit).empty() || !get(~lit).empty();
+        }
     };
 
     class extension {
-    public:
+    protected:
+        bool m_drating { false };
+        int  m_id { 0 };
+        symbol m_name;
+        solver* m_solver { nullptr };
+    public:        
+        extension(symbol const& name, int id): m_id(id), m_name(name) {}
         virtual ~extension() {}
-        virtual void set_solver(solver* s) = 0;
-        virtual void set_lookahead(lookahead* s) = 0;
-        virtual void set_unit_walk(unit_walk* u) = 0;
-        virtual bool propagate(literal l, ext_constraint_idx idx) = 0;
-        virtual double get_reward(literal l, ext_constraint_idx idx, literal_occs_fun& occs) const = 0;
-        virtual void get_antecedents(literal l, ext_justification_idx idx, literal_vector & r) = 0;
-        virtual bool is_extended_binary(ext_justification_idx idx, literal_vector & r) = 0;
-        virtual void asserted(literal l) = 0;
+        int get_id() const { return m_id; }
+        void set_solver(solver* s) { m_solver = s; }        
+        solver& s() { return *m_solver; }
+        solver const& s() const { return *m_solver; }
+        symbol const& name() const { return m_name;  }
+
+        virtual void set_lookahead(lookahead* s) {};
+        class scoped_drating {
+            extension& ext;
+        public:
+            scoped_drating(extension& e) :ext(e) { ext.m_drating = true;  }
+            ~scoped_drating() { ext.m_drating = false;  }
+        };
+        virtual void init_search() {}
+        virtual bool propagated(sat::literal l, sat::ext_constraint_idx idx) { UNREACHABLE(); return false; }
+        virtual bool unit_propagate() = 0;        
+        virtual bool is_external(bool_var v) { return false; }
+        virtual double get_reward(literal l, ext_constraint_idx idx, literal_occs_fun& occs) const { return 0; }
+        virtual void get_antecedents(literal l, ext_justification_idx idx, literal_vector & r, bool probing) = 0;
+        virtual bool is_extended_binary(ext_justification_idx idx, literal_vector & r) { return false; }
+        virtual void asserted(literal l) {};
         virtual check_result check() = 0;
         virtual lbool resolve_conflict() { return l_undef; } // stores result in sat::solver::m_lemma
         virtual void push() = 0;
+        void push_scopes(unsigned n) { for (unsigned i = 0; i < n; ++i) push(); }
         virtual void pop(unsigned n) = 0;
-        virtual void pre_simplify() = 0;
-        virtual void simplify() = 0;
+        virtual void user_push() { push(); }
+        virtual void user_pop(unsigned n) { pop(n); }
+        virtual void pre_simplify() {}
+        virtual void simplify() {}
         // have a way to replace l by r in all constraints
         virtual bool set_root(literal l, literal r) { return false; }
         virtual void flush_roots() {}
-        virtual void clauses_modifed() = 0;
-        virtual lbool get_phase(bool_var v) = 0;
+        virtual void clauses_modifed() {}
+        virtual lbool get_phase(bool_var v) { return l_undef; }
         virtual std::ostream& display(std::ostream& out) const = 0;
         virtual std::ostream& display_justification(std::ostream& out, ext_justification_idx idx) const = 0;
         virtual std::ostream& display_constraint(std::ostream& out, ext_constraint_idx idx) const = 0;
-        virtual void collect_statistics(statistics& st) const = 0;
-        virtual extension* copy(solver* s) = 0;       
-        virtual extension* copy(lookahead* s, bool learned) = 0;       
-        virtual void find_mutexes(literal_vector& lits, vector<literal_vector> & mutexes) = 0;
-        virtual void gc() = 0;
-        virtual void pop_reinit() = 0;
-        virtual bool validate() = 0;
-        virtual void init_use_list(ext_use_list& ul) = 0;
-        virtual bool is_blocked(literal l, ext_constraint_idx) = 0;
-        virtual bool check_model(model const& m) const = 0;
-        virtual unsigned max_var(unsigned w) const = 0;
+        virtual void collect_statistics(statistics& st) const {}
+        virtual extension* copy(solver* s) { UNREACHABLE(); return nullptr; }       
+        virtual void find_mutexes(literal_vector& lits, vector<literal_vector> & mutexes) {}
+        virtual void gc() {}
+        virtual void pop_reinit() {}
+        virtual bool validate() { return true; }
+        virtual void init_use_list(ext_use_list& ul) {}
+        virtual bool is_blocked(literal l, ext_constraint_idx) { return false; }
+        virtual bool check_model(model const& m) const { return true; }
+        virtual unsigned max_var(unsigned w) const { return w; }
+
+        virtual bool extract_pb(std::function<void(unsigned sz, literal const* c, unsigned k)>& card,
+                                std::function<void(unsigned sz, literal const* c, unsigned const* coeffs, unsigned k)>& pb) {                                
+            return false;
+        }
     };
 
 };
 
-#endif

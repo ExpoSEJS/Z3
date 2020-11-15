@@ -15,12 +15,26 @@ Author:
 
 --*/
 
+
 #include "util/scoped_ptr_vector.h"
 #include "ast/ast_util.h"
 #include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
 #include "ast/ast_translation.h"
 #include "smt/smt_parallel.h"
 #include "smt/smt_lookahead.h"
+
+#ifdef SINGLE_THREAD
+
+namespace smt {
+    
+    lbool parallel::operator()(expr_ref_vector const& asms) {
+        return l_undef;
+    }
+}
+
+#else
+
 #include <thread>
 
 namespace smt {
@@ -81,7 +95,11 @@ namespace smt {
         auto cube = [](context& ctx, expr_ref_vector& lasms, expr_ref& c) {
             lookahead lh(ctx);
             c = lh.choose();
-            if (c) lasms.push_back(c);
+            if (c) {
+                if ((ctx.get_random_value() % 2) == 0) 
+                    c = c.get_manager().mk_not(c);
+                lasms.push_back(c);
+            }
         };
 
         obj_hashtable<expr> unit_set;
@@ -118,6 +136,7 @@ namespace smt {
                 }
                 unit_lim[i] = sz;
             }
+            IF_VERBOSE(1, verbose_stream() << "(smt.thread :units " << sz << ")\n");
         };
 
         std::mutex mux;
@@ -130,12 +149,12 @@ namespace smt {
                 expr_ref c(pm);
 
                 pctx.get_fparams().m_max_conflicts = std::min(thread_max_conflicts, max_conflicts);
-                if (num_rounds > 0) {
+                if (num_rounds > 0 && (pctx.get_fparams().m_threads_cube_frequency % num_rounds) == 0) {
                     cube(pctx, lasms, c);
                 }
                 IF_VERBOSE(1, verbose_stream() << "(smt.thread " << i; 
                            if (num_rounds > 0) verbose_stream() << " :round " << num_rounds;
-                           if (c) verbose_stream() << " :cube: " << mk_pp(c, pm);
+                           if (c) verbose_stream() << " :cube " << mk_bounded_pp(c, pm, 3);
                            verbose_stream() << ")\n";);
                 lbool r = pctx.check(lasms.size(), lasms.c_ptr());
                 
@@ -146,9 +165,11 @@ namespace smt {
                     return;
                 }                
                 else if (r == l_false && pctx.unsat_core().contains(c)) {
+                    IF_VERBOSE(1, verbose_stream() << "(smt.thread " << i << " :learn " << mk_bounded_pp(c, pm, 3) << ")");
                     pctx.assert_expr(mk_not(mk_and(pctx.unsat_core())));
                     return;
                 } 
+                
 
                 bool first = false;
                 {
@@ -183,7 +204,7 @@ namespace smt {
             }
         };
 
-        // num_threads = 1;
+        // for debugging:  num_threads = 1;
 
         while (true) {
             vector<std::thread> threads(num_threads);
@@ -234,3 +255,4 @@ namespace smt {
     }
 
 }
+#endif

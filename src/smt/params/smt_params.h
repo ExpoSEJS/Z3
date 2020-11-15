@@ -16,10 +16,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_PARAMS_H_
-#define SMT_PARAMS_H_
+#pragma once
 
-#include "ast/ast.h"
 #include "smt/params/dyn_ack_params.h"
 #include "smt/params/qi_params.h"
 #include "smt/params/theory_arith_params.h"
@@ -30,7 +28,7 @@ Revision History:
 #include "smt/params/theory_pb_params.h"
 #include "smt/params/theory_datatype_params.h"
 #include "smt/params/preprocessor_params.h"
-#include "cmd_context/context_params.h"
+#include "params/context_params.h"
 
 enum phase_selection {
     PS_ALWAYS_FALSE,
@@ -103,13 +101,16 @@ struct smt_params : public preprocessor_params,
     bool             m_minimize_lemmas;
     unsigned         m_max_conflicts;
     unsigned         m_restart_max;
+    unsigned         m_cube_depth;
     unsigned         m_threads;
     unsigned         m_threads_max_conflicts;
+    unsigned         m_threads_cube_frequency;
     bool             m_simplify_clauses;
     unsigned         m_tick;
     bool             m_display_features;
     bool             m_new_core2th_eq;
     bool             m_ematching;
+    bool             m_induction;
     bool             m_clause_proof;
 
     // -----------------------------------
@@ -249,21 +250,24 @@ struct smt_params : public preprocessor_params,
         m_random_var_freq(0.01),
         m_inv_decay(1.052),
         m_clause_decay(1),
-        m_random_initial_activity(IA_RANDOM_WHEN_SEARCHING),
-        m_phase_selection(PS_CACHING_CONSERVATIVE),
-        m_phase_caching_on(400),
+        m_random_initial_activity(initial_activity::IA_RANDOM_WHEN_SEARCHING),
+        m_phase_selection(phase_selection::PS_CACHING_CONSERVATIVE),
+        m_phase_caching_on(700),
         m_phase_caching_off(100),
         m_minimize_lemmas(true),
         m_max_conflicts(UINT_MAX),
+        m_cube_depth(1),
         m_threads(1),
         m_threads_max_conflicts(UINT_MAX),
+        m_threads_cube_frequency(2),
         m_simplify_clauses(true),
         m_tick(1000),
         m_display_features(false),
         m_new_core2th_eq(true),
         m_ematching(true),
+        m_induction(false),
         m_clause_proof(false),
-        m_case_split_strategy(CS_ACTIVITY_DELAY_NEW),
+        m_case_split_strategy(case_split_strategy::CS_ACTIVITY_DELAY_NEW),
         m_rel_case_split_order(0),
         m_lookahead_diseq(false),
         m_theory_case_split(false),
@@ -271,13 +275,13 @@ struct smt_params : public preprocessor_params,
         m_delay_units(false),
         m_delay_units_threshold(32),
         m_theory_resolve(false),
-        m_restart_strategy(RS_IN_OUT_GEOMETRIC),
+        m_restart_strategy(restart_strategy::RS_IN_OUT_GEOMETRIC),
         m_restart_initial(100),
         m_restart_factor(1.1),
         m_restart_adaptive(true),
         m_agility_factor(0.9999),
         m_restart_agility_threshold(0.18),
-        m_lemma_gc_strategy(LGC_FIXED),
+        m_lemma_gc_strategy(lemma_gc_strategy::LGC_FIXED),
         m_lemma_gc_half(false),
         m_recent_lemmas_size(100),
         m_lemma_gc_initial(5000),
@@ -318,5 +322,4 @@ struct smt_params : public preprocessor_params,
     void display(std::ostream & out) const;
 };
 
-#endif /* SMT_PARAMS_H_ */
 

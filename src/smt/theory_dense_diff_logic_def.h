@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_DENSE_DIFF_LOGIC_DEF_H_
-#define THEORY_DENSE_DIFF_LOGIC_DEF_H_
+#pragma once
 
 #include "smt/smt_context.h"
 #include "smt/theory_dense_diff_logic.h"
@@ -29,11 +28,11 @@ Revision History:
 namespace smt {
 
     template<typename Ext>
-    theory_dense_diff_logic<Ext>::theory_dense_diff_logic(ast_manager & m, theory_arith_params & p):
-        theory(m.mk_family_id("arith")),
-        m_params(p),
-        m_autil(m),
-        m_arith_eq_adapter(*this, p, m_autil),
+    theory_dense_diff_logic<Ext>::theory_dense_diff_logic(context& ctx):
+        theory(ctx, ctx.get_manager().mk_family_id("arith")),
+        m_params(ctx.get_fparams()),
+        m_autil(ctx.get_manager()),
+        m_arith_eq_adapter(*this, m_autil),
         m_non_diff_logic_exprs(false),
         m_var_value_table(DEFAULT_HASHTABLE_INITIAL_CAPACITY, var_value_hash(*this), var_value_eq(*this)) {
         m_edges.push_back(edge());
@@ -41,12 +40,12 @@ namespace smt {
 
     template<typename Ext>
     theory* theory_dense_diff_logic<Ext>::mk_fresh(context * new_ctx) { 
-        return alloc(theory_dense_diff_logic<Ext>, new_ctx->get_manager(), m_params); 
+        return alloc(theory_dense_diff_logic<Ext>, *new_ctx);
     }
 
     template<typename Ext>
     inline app * theory_dense_diff_logic<Ext>::mk_zero_for(expr * n) {
-        return m_autil.mk_numeral(rational(0), get_manager().get_sort(n));
+        return m_autil.mk_numeral(rational(0), m.get_sort(n));
     }
 
     template<typename Ext>
@@ -66,13 +65,12 @@ namespace smt {
         c.m_edge_id = self_edge_id;
         c.m_distance.reset();
         SASSERT(check_vector_sizes());
-        get_context().attach_th_var(n, this, v);
+        ctx.attach_th_var(n, this, v);
         return v;
     }
 
     template<typename Ext>
     theory_var theory_dense_diff_logic<Ext>::internalize_term_core(app * n) {
-        context & ctx = get_context();
         if (ctx.e_internalized(n)) {
             enode * e    = ctx.get_enode(n);
             if (is_attached_to_var(e))
@@ -125,9 +123,9 @@ namespace smt {
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::found_non_diff_logic_expr(expr * n) {
         if (!m_non_diff_logic_exprs) {
-            TRACE("non_diff_logic", tout << "found non diff logic expression:\n" << mk_pp(n, get_manager()) << "\n";);
-            get_context().push_trail(value_trail<context, bool>(m_non_diff_logic_exprs));
-            IF_VERBOSE(0, verbose_stream() << "(smt.diff_logic: non-diff logic expression " << mk_pp(n, get_manager()) << ")\n";); 
+            TRACE("non_diff_logic", tout << "found non diff logic expression:\n" << mk_pp(n, m) << "\n";);
+            ctx.push_trail(value_trail<context, bool>(m_non_diff_logic_exprs));
+            IF_VERBOSE(0, verbose_stream() << "(smt.diff_logic: non-diff logic expression " << mk_pp(n, m) << ")\n";); 
             m_non_diff_logic_exprs = true;
         }
     }
@@ -138,8 +136,7 @@ namespace smt {
             found_non_diff_logic_expr(n); // little hack... TODO: change to no_memory and return l_undef if SAT
             return false;
         }
-        TRACE("ddl", tout << "internalizing atom:\n" << mk_pp(n, get_manager()) << "\n";);
-        context & ctx = get_context();
+        TRACE("ddl", tout << "internalizing atom:\n" << mk_pp(n, m) << "\n";);
         SASSERT(!ctx.b_internalized(n));
         SASSERT(m_autil.is_le(n) || m_autil.is_ge(n));
         theory_var source, target;
@@ -170,15 +167,15 @@ namespace smt {
             s = mk_zero_for(t);
         }
         else {
-            TRACE("ddl", tout << "failed to internalize:\n" << mk_pp(n, get_manager()) << "\n";);
+            TRACE("ddl", tout << "failed to internalize:\n" << mk_pp(n, m) << "\n";);
             found_non_diff_logic_expr(n);
             return false;
         }
-        TRACE("arith", tout << expr_ref(lhs, get_manager()) << " " << expr_ref(s, get_manager()) << " " << expr_ref(t, get_manager()) << "\n";);
+        TRACE("arith", tout << expr_ref(lhs, m) << " " << expr_ref(s, m) << " " << expr_ref(t, m) << "\n";);
         source = internalize_term_core(s);
         target = internalize_term_core(t);
         if (source == null_theory_var || target == null_theory_var) {
-            TRACE("ddl", tout << "failed to internalize:\n" << mk_pp(n, get_manager()) << "\n";);
+            TRACE("ddl", tout << "failed to internalize:\n" << mk_pp(n, m) << "\n";);
             found_non_diff_logic_expr(n);
             return false;
         }
@@ -195,29 +192,29 @@ namespace smt {
         m_bv2atoms.setx(bv, a, 0);
         m_matrix[source][target].m_occs.push_back(a);
         m_matrix[target][source].m_occs.push_back(a);
-        TRACE("ddl", tout << "succeeded internalizing:\n" << mk_pp(n, get_manager()) << "\n";);
+        TRACE("ddl", tout << "succeeded internalizing:\n" << mk_pp(n, m) << "\n";);
         return true;
     }
 
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::mk_clause(literal l1, literal l2) {
-        get_context().mk_th_axiom(get_id(), l1, l2);
+        ctx.mk_th_axiom(get_id(), l1, l2);
     }
 
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::mk_clause(literal l1, literal l2, literal l3) {
-        get_context().mk_th_axiom(get_id(), l1, l2, l3);
+        ctx.mk_th_axiom(get_id(), l1, l2, l3);
     }
 
     template<typename Ext>
-    bool theory_dense_diff_logic<Ext>::internalize_term(app * term) {
+    bool theory_dense_diff_logic<Ext>::internalize_term(app * term) {        
         if (memory::above_high_watermark()) {
             found_non_diff_logic_expr(term); // little hack... TODO: change to no_memory and return l_undef if SAT
             return false;
         }
-        TRACE("ddl", tout << "internalizing term: " << mk_pp(term, get_manager()) << "\n";);
+        TRACE("ddl", tout << "internalizing term: " << mk_pp(term, m) << "\n";);
         theory_var v = internalize_term_core(term);
-        TRACE("ddl", tout << mk_pp(term, get_manager()) << "\ninternalization result: " << (v != null_theory_var) << "\n";);
+        TRACE("ddl", tout << mk_pp(term, m) << "\ninternalization result: " << (v != null_theory_var) << "\n";);
         if (v == null_theory_var)
             found_non_diff_logic_expr(term);
         return v != null_theory_var;
@@ -225,9 +222,9 @@ namespace smt {
 
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::internalize_eq_eh(app * atom, bool_var v) {
+        TRACE("ddl", tout << "eq-eh: " << mk_pp(atom, m) << "\n";);
         if (memory::above_high_watermark())
             return;
-        context & ctx  = get_context();
         app * lhs      = to_app(atom->get_arg(0));
         app * rhs      = to_app(atom->get_arg(1));
         app * s;
@@ -243,8 +240,10 @@ namespace smt {
             enode * n1 = ctx.get_enode(lhs);
             enode * n2 = ctx.get_enode(rhs);
             if (n1->get_th_var(get_id()) != null_theory_var &&
-                n2->get_th_var(get_id()) != null_theory_var)
-                m_arith_eq_adapter.mk_axioms(n1, n2);
+                n2->get_th_var(get_id()) != null_theory_var) {
+                m_arith_eq_adapter.mk_axioms(n1, n2); 
+                return;
+            }
         }
     }
     
@@ -255,13 +254,13 @@ namespace smt {
 
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::assign_eh(bool_var v, bool is_true) {
-        if (get_context().has_th_justification(v, get_id())) {
+        if (ctx.has_th_justification(v, get_id())) {
             TRACE("ddl", tout << "ignoring atom propagated by the theory.\n";);
             return;
         }
         atom * a = m_bv2atoms.get(v, 0);
         if (!a) {
-            SASSERT(get_manager().is_eq(get_context().bool_var2expr(v)));
+            SASSERT(m.is_eq(ctx.bool_var2expr(v)));
             return;
         }
         m_stats.m_num_assertions++;
@@ -537,7 +536,6 @@ namespace smt {
 
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::assign_literal(literal l, theory_var source, theory_var target) {
-        context & ctx = get_context();
         literal_vector & antecedents = m_tmp_literals;
         antecedents.reset();
         get_antecedents(source, target, antecedents);
@@ -550,7 +548,6 @@ namespace smt {
         SASSERT(c.m_edge_id != null_edge_id);
         numeral neg_dist = c.m_distance;
         neg_dist.neg();
-        context & ctx = get_context();
         typename atoms::const_iterator it  = c.m_occs.begin();
         typename atoms::const_iterator end = c.m_occs.end();
         for (; it != end; ++it) {
@@ -594,7 +591,6 @@ namespace smt {
             get_antecedents(target, source, antecedents);
             if (l != null_literal)
                 antecedents.push_back(l);
-            context & ctx = get_context();
             region & r    = ctx.get_region();
             ctx.set_conflict(ctx.mk_justification(theory_conflict_justification(get_id(), r, antecedents.size(), antecedents.c_ptr())));
 
@@ -695,7 +691,7 @@ namespace smt {
         out.width(5);
         out << std::left << get_enode(a->get_source())->get_owner_id() << " <= ";
         out.width(10);
-        out << std::left << a->get_offset() << "        assignment: " << get_context().get_assignment(a->get_bool_var()) << "\n";
+        out << std::left << a->get_offset() << "        assignment: " << ctx.get_assignment(a->get_bool_var()) << "\n";
     }
 
     template<typename Ext>
@@ -730,7 +726,7 @@ namespace smt {
         TRACE("ddl_model", 
               tout << "ddl model\n";
               for (theory_var v = 0; v < num_vars; v++) {
-                  tout << "#" << mk_pp(get_enode(v)->get_owner(), get_manager()) << " = " << m_assignment[v] << "\n";
+                  tout << "#" << mk_pp(get_enode(v)->get_owner(), m) << " = " << m_assignment[v] << "\n";
               });
     }
 
@@ -761,11 +757,17 @@ namespace smt {
 
        Therefore:
        
-       epsilon <= (n_y + n_c - n_x) / (k_x - k_y - k_c)
+       epsilon <= (n_y + n_c - n_x) / 2*(k_x - k_y - k_c)
+
+       Division by 2 is introduced to avoid introducing new equalities.
+       Consider when n_x = n_y = k_x = k_y = 0, n_c = 4, k_c = -1,
+       then n_c / -k_c = n_c, hence setting epsilon to n_c introduces a value
+       that is not smaller than the smallest integral difference.
     */
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::compute_epsilon() {
-        m_epsilon = rational(1);
+        m_epsilon = rational(1, 2);
+        TRACE("ddl", display(tout););
         typename edges::const_iterator it  = m_edges.begin();
         typename edges::const_iterator end = m_edges.end();
         // first edge is null
@@ -780,11 +782,15 @@ namespace smt {
             rational k_y = m_assignment[e.m_source].get_infinitesimal().to_rational();
             rational n_c = e.m_offset.get_rational().to_rational();
             rational k_c = e.m_offset.get_infinitesimal().to_rational();
-            TRACE("epsilon", tout << "(n_x,k_x): " << n_x << ", " << k_x << ", (n_y,k_y): " << n_y << ", " << k_y << ", (n_c,k_c): " << n_c << ", " << k_c << "\n";);
+            TRACE("ddl",
+                  tout << e.m_source << " - " << e.m_target << " <= " << e.m_offset << "\n";
+                  tout << "(n_x,k_x): " << n_x << ", " << k_x << 
+                  ", (n_y,k_y): " << n_y << ", " << k_y << 
+                  ", (n_c,k_c): " << n_c << ", " << k_c << "\n";);
             if (n_x < n_y + n_c && k_x > k_y + k_c) {
-                rational new_epsilon = (n_y + n_c - n_x) / (k_x - k_y - k_c);
+                rational new_epsilon = (n_y + n_c - n_x) / (2*(k_x - k_y - k_c));
                 if (new_epsilon < m_epsilon) {
-                    TRACE("epsilon", tout << "new epsilon: " << new_epsilon << "\n";);
+                    TRACE("ddl", tout << "new epsilon: " << new_epsilon << "\n";);
                     m_epsilon = new_epsilon;
                 }
             }
@@ -794,15 +800,15 @@ namespace smt {
     template<typename Ext>
     void theory_dense_diff_logic<Ext>::fix_zero() {
         int num_vars = get_num_vars();
-        for (int v = 0; v < num_vars; ++v) {
+        for (int v = 0; v < num_vars && v < (int)m_assignment.size(); ++v) {
             enode * n = get_enode(v);
             if (m_autil.is_zero(n->get_owner()) && !m_assignment[v].is_zero()) {
                 numeral val = m_assignment[v];
-                sort * s = get_manager().get_sort(n->get_owner());
+                sort * s = m.get_sort(n->get_owner());
                 // adjust the value of all variables that have the same sort.
                 for (int v2 = 0; v2 < num_vars; ++v2) {
                     enode * n2 = get_enode(v2);
-                    if (get_manager().get_sort(n2->get_owner()) == s) {
+                    if (m.get_sort(n2->get_owner()) == s) {
                         m_assignment[v2] -= val;
                     }
                 }
@@ -812,22 +818,26 @@ namespace smt {
         TRACE("ddl_model", 
               tout << "ddl model\n";
               for (theory_var v = 0; v < num_vars; v++) {
-                  tout << "#" << mk_pp(get_enode(v)->get_owner(), get_manager()) << " = " << m_assignment[v] << "\n";
+                  tout << "#" << mk_pp(get_enode(v)->get_owner(), m) << " = " << m_assignment[v] << "\n";
               });
     }
 
     template<typename Ext>
-    void theory_dense_diff_logic<Ext>::init_model(model_generator & m) {
-        m_factory = alloc(arith_factory, get_manager());
-        m.register_factory(m_factory);
-        fix_zero();
-        compute_epsilon();
+    void theory_dense_diff_logic<Ext>::init_model(model_generator & mg) {
+        m_factory = alloc(arith_factory, m);
+        mg.register_factory(m_factory);
+        if (!m_assignment.empty()) {
+            fix_zero();
+            compute_epsilon();
+        }
     }
 
     template<typename Ext>
     model_value_proc * theory_dense_diff_logic<Ext>::mk_value(enode * n, model_generator & mg) {
         theory_var v = n->get_th_var(get_id());
         SASSERT(v != null_theory_var);
+        if (v >= (int)m_assignment.size())
+            return alloc(expr_wrapper_proc, m_factory->mk_num_value(rational::zero(), is_int(v)));
         numeral const & val = m_assignment[v];
         rational num = val.get_rational().to_rational() +  m_epsilon *  val.get_infinitesimal().to_rational();
         return alloc(expr_wrapper_proc, m_factory->mk_num_value(num, is_int(v)));
@@ -863,7 +873,6 @@ namespace smt {
             return false;
         }
         else {
-            context& ctx = get_context();
             enode * e = nullptr;
             theory_var v = 0;
             if (ctx.e_internalized(n)) {
@@ -877,8 +886,16 @@ namespace smt {
             if (v == null_theory_var) {
                 v = mk_var(e);                
             }
-
-            objective.push_back(std::make_pair(v, m));
+            bool found = false;
+            for (auto& p : objective) {
+                if (p.first == v) {
+                    p.second += m;
+                    found = true;
+                }
+            }
+            if (!found) {
+                objective.push_back(std::make_pair(v, m));
+            }
         }
         return true;
     }
@@ -899,15 +916,13 @@ namespace smt {
     template<typename Ext>
     inf_eps_rational<inf_rational> theory_dense_diff_logic<Ext>::maximize(theory_var v, expr_ref& blocker, bool& has_shared) {
         typedef simplex::simplex<simplex::mpq_ext> Simplex;
-        ast_manager& m = get_manager();
         Simplex S(m.limit());
         objective_term const& objective = m_objectives[v];
         has_shared = false;
         
         IF_VERBOSE(4,
-                   for (unsigned i = 0; i < objective.size(); ++i) {
-                       verbose_stream() << objective[i].second 
-                                        << " * v" << objective[i].first << " ";
+                   for (auto const& o : objective) {
+                       verbose_stream() << o.second << " * v" << o.first << " ";
                    }
                    verbose_stream() << " + " << m_objective_consts[v] << "\n";);
 
@@ -963,9 +978,9 @@ namespace smt {
         // add objective function as row.
         coeffs.reset();
         vars.reset();
-        for (unsigned i = 0; i < objective.size(); ++i) {
-            coeffs.push_back(objective[i].second.to_mpq());
-            vars.push_back(objective[i].first);
+        for (auto const& o : objective) {
+            coeffs.push_back(o.second.to_mpq());
+            vars.push_back(o.first);
         }
         coeffs.push_back(mpq(1));
         vars.push_back(w);
@@ -982,6 +997,8 @@ namespace smt {
         TRACE("opt", S.display(tout); );    
         SASSERT(is_sat != l_false);
         lbool is_fin = S.minimize(w);
+
+        ensure_rational_solution(S);
         
         switch (is_fin) {
         case l_true: {
@@ -999,7 +1016,7 @@ namespace smt {
                     unsigned edge_id = v - num_nodes;
                     literal lit = m_edges[edge_id].m_justification;
                     if (lit != null_literal) {
-                        get_context().literal2expr(lit, tmp);
+                        ctx.literal2expr(lit, tmp);
                         core.push_back(tmp);
                     }
                 }
@@ -1007,10 +1024,10 @@ namespace smt {
             }
             for (unsigned i = 0; i < num_nodes; ++i) {
                 mpq_inf const& val = S.get_value(i);
-                rational q(val.first), eps(val.second);
+                rational q(val.first);
+                SASSERT(rational(val.second).is_zero());
                 numeral  a(q);
                 m_assignment[i] = a;
-                // TBD: if epsilon is != 0, then adjust a by some small fraction.
             }
             inf_eps result(rational(0), r);
             blocker = mk_gt(v, result);
@@ -1027,12 +1044,12 @@ namespace smt {
 
     template<typename Ext>
     theory_var theory_dense_diff_logic<Ext>::add_objective(app* term) {
-        TRACE("opt", tout << mk_pp(term, get_manager()) << "\n";);
+        TRACE("opt", tout << mk_pp(term, m) << "\n";);
         objective_term objective;
         theory_var result = m_objectives.size();
         rational q(1), r(0);
-        expr_ref_vector vr(get_manager());
-        if (!is_linear(get_manager(), term)) {
+        expr_ref_vector vr(m);
+        if (!is_linear(m, term)) {
             result = null_theory_var;
         }
         else if (internalize_objective(term, q, r, objective)) {
@@ -1059,7 +1076,6 @@ namespace smt {
 
     template<typename Ext>
     expr_ref theory_dense_diff_logic<Ext>::mk_ineq(theory_var v, inf_eps const& val, bool is_strict) {
-        ast_manager& m = get_manager();
         objective_term const& t = m_objectives[v];
         expr_ref e(m), f(m), f2(m);
         TRACE("opt", tout << "mk_ineq " << v << " " << val << "\n";);
@@ -1114,5 +1130,4 @@ namespace smt {
 
 };
 
-#endif /* THEORY_DENSE_DIFF_LOGIC_DEF_H_ */
 

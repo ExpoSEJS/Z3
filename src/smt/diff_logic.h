@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DIFF_LOGIC_H_
-#define DIFF_LOGIC_H_
+#pragma once
 
 #include "util/vector.h"
 #include "util/heap.h"
@@ -263,14 +262,12 @@ class dl_graph {
 
 public:
     // An assignment is feasible if all edges are feasible.
-    bool is_feasible() const {
-#ifdef Z3DEBUG
+    bool is_feasible_dbg() const {
         for (unsigned i = 0; i < m_edges.size(); ++i) {
             if (!is_feasible(m_edges[i])) {
                 return false;
             }
         }
-#endif
         return true;
     }
 
@@ -371,7 +368,9 @@ private:
         SASSERT(m_gamma[target].is_neg());
         acc_assignment(target, gamma);
 
-        TRACE("arith", display(tout << id << "\n"););
+        TRACE("arith", display(tout << id << " " << gamma << "\n");
+              display_edge(tout, last_e);
+              );
 
         dl_var source = target;
         while (true) {
@@ -407,10 +406,14 @@ private:
                         if (gamma < m_gamma[target]) {
                             m_gamma[target]  = gamma;
                             m_parent[target] = e_id;
+                            SASSERT(m_heap.contains(target));
                             m_heap.decreased(target);
                         }
                         break;
                     case DL_PROCESSED:
+                        TRACE("arith", display_edge(tout << "processed twice: ", e););
+                        // if two edges with the same source/target occur in the graph.
+                        break;
                     default:
                         UNREACHABLE();
                     }
@@ -418,12 +421,11 @@ private:
             }
 
             if (m_heap.empty()) {
-                SASSERT(is_feasible());
+                SASSERT(is_feasible_dbg());
                 reset_marks();
                 m_assignment_stack.reset();
                 return true;
             }
-
             source = m_heap.erase_min();
             m_mark[source] = DL_PROCESSED;
             acc_assignment(source, m_gamma[source]);
@@ -495,7 +497,7 @@ public:
 
     // Add an new weighted edge "source --weight--> target" with explanation ex.
     edge_id add_edge(dl_var source, dl_var target, const numeral & weight, const explanation & ex) {
-        // SASSERT(is_feasible());
+        // SASSERT(is_feasible_dbg());
         edge_id new_id = m_edges.size();
         m_edges.push_back(edge(source, target, weight, m_timestamp, ex));
         m_activity.push_back(0);
@@ -508,12 +510,11 @@ public:
     // Return false if the resultant graph has a negative cycle. The negative
     // cycle can be extracted using traverse_neg_cycle.
     // The method assumes the graph is feasible before the invocation.
+
     bool enable_edge(edge_id id) {
         edge& e = m_edges[id];
+        SASSERT(is_feasible_dbg());
         bool r = true;
-        if (!is_feasible()) {
-            return false;
-        }
         if (!e.is_enabled()) {
             e.enable(m_timestamp);
             m_last_enabled_edge = id;
@@ -522,7 +523,7 @@ public:
                 r = make_feasible(id);
             }
             SASSERT(check_invariant());
-            SASSERT(!r || is_feasible()); 
+            SASSERT(!r || is_feasible_dbg()); 
             m_enabled_edges.push_back(id);
         }
         return r;
@@ -861,7 +862,7 @@ public:
     // Create a new scope.
     // That is, save the number of edges in the graph.
     void push() {
-        // SASSERT(is_feasible()); <<< I relaxed this condition
+        // SASSERT(is_feasible_dbg()); <<< I relaxed this condition
         m_trail_stack.push_back(scope(m_edges.size(), m_enabled_edges.size(), m_timestamp));
     }
     
@@ -895,20 +896,20 @@ public:
         }
         m_trail_stack.shrink(new_lvl);
         SASSERT(check_invariant()); 
-        // SASSERT(is_feasible()); <<< I relaxed the condition in push(), so this assertion is not valid anymore.
+        // SASSERT(is_feasible_dbg()); <<< I relaxed the condition in push(), so this assertion is not valid anymore.
     }
 
     // Make m_assignment[v] == zero
     // The whole assignment is adjusted in a way feasibility is preserved.
     // This method should only be invoked if the current assignment if feasible.
     void set_to_zero(dl_var v) {
-        SASSERT(is_feasible());
+        SASSERT(is_feasible_dbg());
         if (!m_assignment[v].is_zero()) {
             numeral k = m_assignment[v];
             for (auto& a : m_assignment) {
                 a -= k;
             }
-            SASSERT(is_feasible());
+            SASSERT(is_feasible_dbg());
         }
     }
 
@@ -928,7 +929,7 @@ public:
                     if (!m_assignment[w].is_zero()) {
                         enable_edge(add_edge(v, w, numeral(0), explanation()));
                         enable_edge(add_edge(w, v, numeral(0), explanation()));
-                        SASSERT(is_feasible());                        
+                        SASSERT(is_feasible_dbg());                        
                     }
                 }
                 return;
@@ -946,7 +947,7 @@ public:
         if (!m_assignment[v].is_zero() || !m_assignment[w].is_zero()) {
             enable_edge(add_edge(v, w, numeral(0), explanation()));
             enable_edge(add_edge(w, v, numeral(0), explanation()));
-            SASSERT(is_feasible());
+            SASSERT(is_feasible_dbg());
         }
     }
 
@@ -1281,7 +1282,6 @@ public:
                     }
                 }
             }
-
         }
     }
 
@@ -1289,12 +1289,12 @@ public:
         return m_assignment[v]; 
     }
 
-    void set_assignment(dl_var v, numeral const & n) {
-        m_assignment[v] = n; 
-    }
-
     unsigned get_timestamp() const {
         return m_timestamp;
+    }
+
+    void set_assignment(dl_var v, numeral const & n) {
+        m_assignment[v] = n; 
     }
 
 private:
@@ -1900,5 +1900,4 @@ public:
     }
 };
 
-#endif /* DIFF_LOGIC_H_ */
 

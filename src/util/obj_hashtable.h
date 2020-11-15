@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef OBJ_HASHTABLE_H_
-#define OBJ_HASHTABLE_H_
+#pragma once
 
 #include "util/hash.h"
 #include "util/hashtable.h"
@@ -60,10 +59,10 @@ public:
     struct key_data {
         Key *  m_key;
         Value  m_value;
-        key_data():m_key(nullptr) {
+        key_data():m_key(nullptr), m_value() {
         }
         key_data(Key * k):
-            m_key(k) {
+            m_key(k), m_value() {
         }
         key_data(Key * k, Value const & v):
             m_key(k),
@@ -146,11 +145,11 @@ public:
         m_table.insert(key_data(k, std::move(v)));
     }
     
-    key_data const & insert_if_not_there(Key * k, Value const & v) {
-        return m_table.insert_if_not_there(key_data(k, v));
+    Value& insert_if_not_there(Key * k, Value const & v) {
+        return m_table.insert_if_not_there2(key_data(k, v))->get_data().m_value;
     }
 
-    obj_map_entry * insert_if_not_there2(Key * k, Value const & v) {
+    obj_map_entry * insert_if_not_there3(Key * k, Value const & v) {
         return m_table.insert_if_not_there2(key_data(k, v));
     }
     
@@ -241,5 +240,4 @@ void erase_dealloc_value(obj_map<Key, Value*> & m, Key * k) {
     }
 }
 
-#endif /* OBJ_HASHTABLE_H_ */
 

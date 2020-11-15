@@ -16,11 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifndef TIMEOUT_H_
-#define TIMEOUT_H_
+#pragma once
 
 void register_on_timeout_proc(void (*proc)());
 
 void set_timeout(long ms);
+void disable_timeout();
 
-#endif // _TIMEOUT_H_

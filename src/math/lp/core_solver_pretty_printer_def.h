@@ -28,7 +28,7 @@ namespace lp {
 
 
 template <typename T, typename X>
-core_solver_pretty_printer<T, X>::core_solver_pretty_printer(lp_core_solver_base<T, X > & core_solver, std::ostream & out):
+core_solver_pretty_printer<T, X>::core_solver_pretty_printer(const lp_core_solver_base<T, X > & core_solver, std::ostream & out):
     m_out(out),
     m_core_solver(core_solver),
     m_A(core_solver.m_A.row_count(), vector<string>(core_solver.m_A.column_count(), "")),
@@ -76,8 +76,6 @@ template <typename T, typename X> void core_solver_pretty_printer<T, X>::init_co
 }
 
 template <typename T, typename X> core_solver_pretty_printer<T, X>::~core_solver_pretty_printer() {
-    m_core_solver.m_w = m_w_buff;
-    m_core_solver.m_ed = m_ed_buff;
 }
 template <typename T, typename X> void core_solver_pretty_printer<T, X>::init_rs_width() {
     m_rs_width = static_cast<unsigned>(T_to_string(m_core_solver.get_cost()).size());
@@ -103,8 +101,16 @@ template <typename T, typename X> void core_solver_pretty_printer<T, X>::init_m_
             for (const auto & c : m_core_solver.m_A.m_columns[column]){
                 t[c.var()] = m_core_solver.m_A.get_val(c);
             }
-                
-            string name = m_core_solver.column_name(column);
+
+            auto const& value = m_core_solver.get_var_value(column);
+             
+            if (m_core_solver.column_is_fixed(column) && is_zero(value)) 
+                continue;
+            string name;
+            if (m_core_solver.column_is_fixed(column)) 
+                name = "*" + T_to_string(value);
+            else 
+                name = m_core_solver.column_name(column);
             for (unsigned row = 0; row < nrows(); row ++) {
                 m_A[row].resize(ncols(), "");
                 m_signs[row].resize(ncols(),"");
@@ -119,16 +125,16 @@ template <typename T, typename X> void core_solver_pretty_printer<T, X>::init_m_
         }
     } else {
         for (unsigned column = 0; column < ncols(); column++) {
-            m_core_solver.solve_Bd(column); // puts the result into m_core_solver.m_ed
+            m_core_solver.solve_Bd(column, m_ed_buff, m_w_buff); // puts the result into m_core_solver.m_ed
             string name = m_core_solver.column_name(column);
             for (unsigned row = 0; row < nrows(); row ++) {
                 set_coeff(
                           m_A[row],
                           m_signs[row],
                           column,
-                          m_core_solver.m_ed[row],
+                          m_ed_buff[row],
                           name);
-                m_rs[row] += m_core_solver.m_ed[row] * m_core_solver.m_x[column];
+                m_rs[row] += m_ed_buff[row] * m_core_solver.m_x[column];
             }
             if (!m_core_solver.use_tableau())
                 m_exact_column_norms.push_back(current_column_norm() + T(1)); // a conversion missing 1 -> T
@@ -349,6 +355,11 @@ template <typename T, typename X> void core_solver_pretty_printer<T, X>::print()
     if (!m_core_solver.m_column_norms.empty())
         print_approx_norms();
     m_out << std::endl;
+    if (m_core_solver.inf_set().size()) {
+        m_out << "inf columns: ";
+        print_vector(m_core_solver.inf_set(), m_out);
+        m_out << std::endl;
+    }
 }
 
 template <typename T, typename X> void core_solver_pretty_printer<T, X>::print_basis_heading() {

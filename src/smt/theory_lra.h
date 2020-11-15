@@ -24,17 +24,19 @@ Revision History:
 
 namespace smt {
     class theory_lra : public theory, public theory_opt {
+    public:
         class imp;
+    private:
         imp* m_imp;
 
     public:
-        theory_lra(ast_manager& m, theory_arith_params& ap);
+        theory_lra(context& ctx);
         ~theory_lra() override;
         theory* mk_fresh(context* new_ctx) override;
         char const* get_name() const override { return "arithmetic"; }
-        
-        void init(context * ctx) override;
 
+        void init() override;
+        
         bool internalize_atom(app * atom, bool gate_ctx) override;
                                                      
         bool internalize_term(app * term) override;
@@ -92,6 +94,12 @@ namespace smt {
         void display(std::ostream & out) const override;
         
         void collect_statistics(::statistics & st) const override;
+
+        void setup() override;
+
+        void add_theory_assumptions(expr_ref_vector& assumptions) override;
+
+        bool should_research(expr_ref_vector& unsat_core) override;
 
         // optimization
         expr_ref mk_ge(generic_model_converter& fm, theory_var v, inf_rational const& val);

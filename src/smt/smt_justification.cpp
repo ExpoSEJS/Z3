@@ -20,6 +20,7 @@ Revision History:
 #include "smt/smt_conflict_resolution.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_ll_pp.h"
+#include <memory>
 
 namespace smt {
 
@@ -177,7 +178,8 @@ namespace smt {
 
 
     void mp_iff_justification::get_antecedents(conflict_resolution & cr) {
-        SASSERT(m_node1 != m_node2);
+        if (m_node1 == m_node2)
+            return;
         cr.mark_eq(m_node1, m_node2);
         context & ctx = cr.get_context();
         bool_var v    = ctx.enode2bool_var(m_node1);
@@ -187,6 +189,9 @@ namespace smt {
     }
 
     proof * mp_iff_justification::mk_proof(conflict_resolution & cr) {
+        ast_manager& m = cr.get_manager();
+        if (m_node1 == m_node2)
+            return m.mk_reflexivity(m_node1->get_owner());
         proof * pr1   = cr.get_proof(m_node1, m_node2);
         context & ctx = cr.get_context();
         bool_var v    = ctx.enode2bool_var(m_node1);
@@ -194,7 +199,7 @@ namespace smt {
         literal l(v, val == l_false);
         proof * pr2   = cr.get_proof(l);
         if (pr1 && pr2) {
-            ast_manager & m = cr.get_manager();
+            
             proof * pr;
             SASSERT(m.has_fact(pr1));
             SASSERT(m.has_fact(pr2));
@@ -298,8 +303,7 @@ namespace smt {
         simple_justification(r, num_lits, lits),
         m_num_eqs(num_eqs) {
         m_eqs = new (r) enode_pair[num_eqs];
-        if (num_eqs != 0)
-            memcpy(m_eqs, eqs, sizeof(enode_pair) * num_eqs);
+        std::uninitialized_copy(eqs, eqs + num_eqs, m_eqs);
         DEBUG_CODE({
             for (unsigned i = 0; i < num_eqs; i++) {
                 SASSERT(eqs[i].first->get_root() == eqs[i].second->get_root());

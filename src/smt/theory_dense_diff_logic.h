@@ -18,8 +18,7 @@ Revision History:
 TODO: eager equality propagation
 
 --*/
-#ifndef THEORY_DENSE_DIFF_LOGIC_H_
-#define THEORY_DENSE_DIFF_LOGIC_H_
+#pragma once
 
 #include "smt/theory_arith.h"
 #include "smt/params/theory_arith_params.h"
@@ -277,7 +276,7 @@ namespace smt {
         //
         // -----------------------------------
     public:
-        theory_dense_diff_logic(ast_manager & m, theory_arith_params & p);
+        theory_dense_diff_logic(context& ctx);
         ~theory_dense_diff_logic() override { reset_eh(); }
         
         theory * mk_fresh(context * new_ctx) override;
@@ -296,5 +295,4 @@ namespace smt {
     typedef theory_dense_diff_logic<si_ext>  theory_dense_si;
 };
 
-#endif /* THEORY_DENSE_DIFF_LOGIC_H_ */
 

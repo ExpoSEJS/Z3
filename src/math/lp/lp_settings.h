@@ -24,8 +24,10 @@ Revision History:
 #include <algorithm>
 #include <limits>
 #include <iomanip>
+#include <cstring>
 #include "math/lp/lp_utils.h"
 #include "util/stopwatch.h"
+#include "util/statistics.h"
 #include "math/lp/lp_types.h"
 
 namespace lp {
@@ -37,6 +39,16 @@ enum class column_type  {
     boxed = 3,
     fixed = 4
 };
+
+inline std::ostream& operator<<(std::ostream& out, column_type const& t) {
+    switch (t) {
+    case column_type::free_column: return out << "free";
+    case column_type::lower_bound: return out << "lower";
+    case column_type::upper_bound: return out << "upper";
+    case column_type::boxed: return out << "boxed";
+    case column_type::fixed: return out << "fixed";
+    }
+}
 
 enum class simplex_strategy_enum {
     undecided = 3,
@@ -112,8 +124,29 @@ struct statistics {
     unsigned m_cross_nested_forms;
     unsigned m_grobner_calls;
     unsigned m_grobner_conflicts;
+    unsigned m_cheap_eqs;
     statistics() { reset(); }
     void reset() { memset(this, 0, sizeof(*this)); }
+    void collect_statistics(::statistics& st) const {
+        st.update("arith-factorizations", m_num_factorizations);
+        st.update("arith-make-feasible", m_make_feasible);
+        st.update("arith-max-columns", m_max_cols);
+        st.update("arith-max-rows", m_max_rows);
+        st.update("arith-gcd-calls", m_gcd_calls);
+        st.update("arith-gcd-conflict", m_gcd_conflicts);
+        st.update("arith-cube-calls", m_cube_calls);
+        st.update("arith-cube-success", m_cube_success);
+        st.update("arith-patches", m_patches);
+        st.update("arith-patches-success", m_patches_success);
+        st.update("arith-hnf-calls", m_hnf_cutter_calls);
+        st.update("arith-horner-calls", m_horner_calls);
+        st.update("arith-horner-conflicts", m_horner_conflicts);
+        st.update("arith-horner-cross-nested-forms", m_cross_nested_forms);
+        st.update("arith-grobner-calls", m_grobner_calls);
+        st.update("arith-grobner-conflicts", m_grobner_conflicts);
+        st.update("arith-cheap-eqs", m_cheap_eqs);
+
+    }
 };
 
 struct lp_settings {
@@ -137,10 +170,14 @@ private:
     // used for messages, for example, the computation progress messages
     std::ostream*             m_message_out;
 
-    statistics                     m_stats;
+    statistics                m_stats;
     random_gen                m_rand;
 
 public:
+    bool enable_hnf() const { return m_enable_hnf; }
+    bool& enable_hnf() { return m_enable_hnf; } 
+    bool int_run_gcd_test() const { return m_int_run_gcd_test; }
+    bool& int_run_gcd_test() { return m_int_run_gcd_test; }
     unsigned      reps_in_scaler;
     // when the absolute value of an element is less than pivot_epsilon
     // in pivoting, we treat it as a zero
@@ -193,19 +230,19 @@ public:
     unsigned         m_int_find_cube_period;
 private:
     unsigned         m_hnf_cut_period;
-public:
     bool             m_int_run_gcd_test;
-    bool             m_int_pivot_fixed_vars_from_basis;
+public:
     unsigned         limit_on_rows_for_hnf_cutter;
     unsigned         limit_on_columns_for_hnf_cutter;
+private:
     bool             m_enable_hnf;
     bool             m_print_external_var_name;
-    bool             m_branch_flip;
-#ifdef Z3DEBUG
-    unsigned         m_counter_for_debug;
-#endif
-
-
+    bool             m_cheap_eqs;
+public:
+    bool print_external_var_name() const { return m_print_external_var_name; }
+    bool& print_external_var_name() { return m_print_external_var_name; }
+    bool cheap_eqs() const { return m_cheap_eqs;}
+    bool& cheap_eqs() { return m_cheap_eqs;}
     unsigned hnf_cut_period() const { return m_hnf_cut_period; }
     void set_hnf_cut_period(unsigned period) { m_hnf_cut_period = period;  }
     unsigned random_next() { return m_rand(); }
@@ -267,19 +304,13 @@ public:
                     m_int_find_cube_period(4),
                     m_hnf_cut_period(4),
                     m_int_run_gcd_test(true),
-                    m_int_pivot_fixed_vars_from_basis(false),
                     limit_on_rows_for_hnf_cutter(75),
                     limit_on_columns_for_hnf_cutter(150),
                     m_enable_hnf(true),
-                    m_print_external_var_name(false),
-                    m_branch_flip(false)
-#ifdef Z3DEBUG
-                  , m_counter_for_debug(0)
-#endif
+                    m_print_external_var_name(false)
+                    
     {}
 
-    bool branch_flip() const { return m_branch_flip; }
-    void set_branch_flip(bool f) { m_branch_flip = f; }
     void set_resource_limit(lp_resource_limit& lim) { m_resource_limit = &lim; }
     bool get_cancel_flag() const { return m_resource_limit->get_cancel_flag(); }
 

@@ -19,8 +19,7 @@ Revision History:
 
 --*/
 
-#ifndef THEORY_DIFF_LOGIC_H_
-#define THEORY_DIFF_LOGIC_H_
+#pragma once
 
 #include "util/rational.h"
 #include "util/inf_rational.h"
@@ -164,18 +163,21 @@ namespace smt {
         };
         typedef dl_graph<GExt> Graph;
 
+        enum lia_or_lra { not_set, is_lia, is_lra };
+
         smt_params &                   m_params;
         arith_util                     m_util;
         arith_eq_adapter               m_arith_eq_adapter;
         theory_diff_logic_statistics   m_stats;
         Graph                          m_graph;
+        bool                           m_consistent;
         theory_var                     m_izero, m_rzero; // cache the variable representing the zero variable.
         int_vector                     m_scc_id;                  // Cheap equality propagation
         eq_prop_info_set               m_eq_prop_info_set;        // set of existing equality prop infos
         ptr_vector<eq_prop_info>       m_eq_prop_infos;
 
         app_ref_vector                 m_terms;
-        bool_vector                  m_signs;
+        bool_vector                    m_signs;
 
         ptr_vector<atom>               m_atoms;
         ptr_vector<atom>               m_asserted_atoms;   // set of asserted atoms
@@ -186,7 +188,7 @@ namespace smt {
         unsigned                       m_num_core_conflicts;
         unsigned                       m_num_propagation_calls;
         double                         m_agility;
-        bool                           m_is_lia;
+        lia_or_lra                     m_lia_or_lra;
         bool                           m_non_diff_logic_exprs;
 
         arith_factory *                m_factory;
@@ -220,26 +222,10 @@ namespace smt {
             return get_family_id() == n->get_family_id();
         }
 
+        void set_sort(expr* n);
+
     public:    
-        theory_diff_logic(ast_manager& m, smt_params & params):
-            theory(m.mk_family_id("arith")),
-            m_params(params),
-            m_util(m),
-            m_arith_eq_adapter(*this, params, m_util),
-            m_izero(null_theory_var),
-            m_rzero(null_theory_var),
-            m_terms(m),
-            m_asserted_qhead(0),
-            m_num_core_conflicts(0),
-            m_num_propagation_calls(0),
-            m_agility(0.5),
-            m_is_lia(true),
-            m_non_diff_logic_exprs(false),
-            m_factory(nullptr),
-            m_nc_functor(*this),
-            m_S(m.limit()),
-            m_num_simplex_edges(0) {
-        }            
+        theory_diff_logic(context& ctx);
 
         ~theory_diff_logic() override {
             reset_eh();
@@ -249,12 +235,12 @@ namespace smt {
 
         char const * get_name() const override { return "difference-logic"; }
 
+        void init() override { init_zero(); }
+
         /**
            \brief See comment in theory::mk_eq_atom
         */
         app * mk_eq_atom(expr * lhs, expr * rhs) override { return m_util.mk_eq(lhs, rhs); }
-
-        void init(context * ctx) override;
 
         bool internalize_atom(app * atom, bool gate_ctx) override;
                                                      
@@ -432,4 +418,3 @@ namespace smt {
 
 
 
-#endif /* THEORY_DIFF_LOGIC_H_ */

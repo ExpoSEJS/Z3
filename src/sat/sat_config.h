@@ -17,8 +17,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_CONFIG_H_
-#define SAT_CONFIG_H_
+#pragma once
 
 #include "util/params.h"
 
@@ -108,6 +107,7 @@ namespace sat {
         double             m_random_freq;
         unsigned           m_random_seed;
         unsigned           m_burst_search;
+        bool               m_enable_pre_simplify;
         unsigned           m_max_conflicts;
         unsigned           m_num_threads;
         bool               m_ddfw_search;
@@ -117,8 +117,6 @@ namespace sat {
         bool               m_local_search;
         local_search_mode  m_local_search_mode;
         bool               m_local_search_dbg_flips;
-        unsigned           m_unit_walk_threads;
-        bool               m_unit_walk;
         bool               m_binspr;
         bool               m_cut_simplify;
         unsigned           m_cut_delay;
@@ -206,4 +204,3 @@ namespace sat {
     };
 };
 
-#endif

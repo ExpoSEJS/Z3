@@ -64,11 +64,11 @@ namespace datalog {
     }
 
     rule_dependencies::item_set & rule_dependencies::ensure_key(func_decl * pred) {
-        deps_type::obj_map_entry * e = m_data.insert_if_not_there2(pred, 0);
-        if (!e->get_data().m_value) {
-            e->get_data().m_value = alloc(item_set);
+        auto& value = m_data.insert_if_not_there(pred, 0);
+        if (!value) {
+            value = alloc(item_set);
         }
-        return *e->get_data().m_value;
+        return *value;
     }
 
     void rule_dependencies::insert(func_decl * depending, func_decl * master) {
@@ -137,7 +137,7 @@ namespace datalog {
         return *e->get_data().get_value();
     }
 
-    void rule_dependencies::restrict(const item_set & allowed) {
+    void rule_dependencies::restrict_dependencies(const item_set & allowed) {
         ptr_vector<func_decl> to_remove;
         for (auto const& kv : *this) {
             func_decl * pred = kv.m_key;
@@ -154,10 +154,8 @@ namespace datalog {
 
     void rule_dependencies::remove(func_decl * itm) {
         remove_m_data_entry(itm);
-        for (auto const& kv : *this) {
-            item_set & itms = *kv.get_value();
-            itms.remove(itm);
-        }
+        for (auto const& kv : *this) 
+            kv.get_value()->remove(itm);        
     }
 
     void rule_dependencies::remove(const item_set & to_remove) {
@@ -324,9 +322,9 @@ namespace datalog {
         app * head = r->get_head();
         SASSERT(head != 0);
         func_decl * d = head->get_decl();
-        decl2rules::obj_map_entry* e = m_head2rules.insert_if_not_there2(d, 0);
-        if (!e->get_data().m_value) e->get_data().m_value = alloc(ptr_vector<rule>);
-        e->get_data().m_value->push_back(r);
+        auto& value = m_head2rules.insert_if_not_there(d, 0);
+        if (!value) value = alloc(ptr_vector<rule>);
+        value->push_back(r);
     }
 
     void rule_set::del_rule(rule * r) {

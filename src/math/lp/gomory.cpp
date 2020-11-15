@@ -67,7 +67,7 @@ class create_cut {
             new_a = m_fj <= m_one_minus_f ? m_fj / m_one_minus_f : ((1 - m_fj) / m_f);
             lp_assert(new_a.is_pos());
             m_k.addmul(new_a, lower_bound(j).x);
-            m_ex->push_justification(column_lower_bound_constraint(j));            
+            m_ex->push_back(column_lower_bound_constraint(j));            
         }
         else {
             lp_assert(at_upper(j));
@@ -75,7 +75,7 @@ class create_cut {
             new_a = - (m_fj <= m_f ? m_fj / m_f  : ((1 - m_fj) / m_one_minus_f));
             lp_assert(new_a.is_neg());
             m_k.addmul(new_a, upper_bound(j).x);
-            m_ex->push_justification(column_upper_bound_constraint(j));
+            m_ex->push_back(column_upper_bound_constraint(j));
         }
         m_t.add_monomial(new_a, j);
         m_lcm_den = lcm(m_lcm_den, denominator(new_a));
@@ -100,7 +100,7 @@ class create_cut {
             }
             m_k.addmul(new_a, lower_bound(j).x); // is it a faster operation than
             // k += lower_bound(j).x * new_a;  
-            m_ex->push_justification(column_lower_bound_constraint(j));
+            m_ex->push_back(column_lower_bound_constraint(j));
         }
         else {
             lp_assert(at_upper(j));
@@ -113,7 +113,7 @@ class create_cut {
                 new_a =   a / m_one_minus_f; 
             }
             m_k.addmul(new_a, upper_bound(j).x); //  k += upper_bound(j).x * new_a; 
-            m_ex->push_justification(column_upper_bound_constraint(j));
+            m_ex->push_back(column_upper_bound_constraint(j));
         }
         m_t.add_monomial(new_a, j);
         TRACE("gomory_cut_detail_real", tout << "add " << new_a << "*v" << j << ", k: " << m_k << "\n";
@@ -282,7 +282,7 @@ public:
     void dump(std::ostream& out) {
         out << "applying cut at:\n"; print_linear_combination_indices_only<row_strip<mpq>, mpq>(m_row, out); out << std::endl;
         for (auto & p : m_row) {
-            lia.lra.m_mpq_lar_core_solver.m_r_solver.print_column_info(p.var(), out);
+            lia.lra.print_column_info(p.var(), out);
         }
         out << "inf_col = " << m_inf_col << std::endl;
     }
@@ -320,8 +320,8 @@ public:
              // use -p.coeff() to make the format compatible with the format used in: Integrating Simplex with DPLL(T)
             try {
                 if (lia.is_fixed(j)) {
-                    m_ex->push_justification(column_lower_bound_constraint(j));
-                    m_ex->push_justification(column_upper_bound_constraint(j));
+                    m_ex->push_back(column_lower_bound_constraint(j));
+                    m_ex->push_back(column_upper_bound_constraint(j));
                     continue;
                 }
                 if (is_real(j)) {  
@@ -346,10 +346,7 @@ public:
         if (some_int_columns)
             adjust_term_and_k_for_some_ints_case_gomory();
         TRACE("gomory_cut_detail", dump_cut_and_constraints_as_smt_lemma(tout););
-        lp_assert(lia.current_solution_is_inf_on_cut());
-        // NSB code review: this is also used in nla_core.
-        // but it isn't consistent: when theory_lra accesses lar_solver::get_term, the term that is returned uses
-        // column indices, not terms.
+        lp_assert(lia.current_solution_is_inf_on_cut());  // checks that indices are columns
         TRACE("gomory_cut", print_linear_combination_of_column_indices_only(m_t.coeffs_as_vector(), tout << "gomory cut:"); tout << " <= " << m_k << std::endl;);
         return lia_move::cut;
     }
@@ -391,15 +388,7 @@ int gomory::find_basic_var() {
     int result = -1;
     unsigned n = 0;
     unsigned min_row_size = UINT_MAX;
-#if 0
-    bool boxed = false;
-    mpq min_range;
-#endif
-
-
     // Prefer smaller row size
-    // Prefer boxed to non-boxed
-    // Prefer smaller ranges
 
     for (unsigned j : lra.r_basis()) {
         if (!lia.column_is_int_inf(j))
@@ -407,29 +396,7 @@ int gomory::find_basic_var() {
         const row_strip<mpq>& row = lra.get_row(lia.row_of_basic_column(j));
         if (!is_gomory_cut_target(row)) 
             continue;
-
-#if 0
-        if (is_boxed(j) && (min_row_size == UINT_MAX || 4*row.size() < 5*min_row_size)) {
-            lar_core_solver & lcs = lra.m_mpq_lar_core_solver;
-            auto new_range = lclia.m_r_upper_bounds()[j].x - lclia.m_r_lower_bounds()[j].x;
-            if (!boxed) {
-                result = j;
-                n = 1;
-                min_row_size = row.size();
-                boxed = true;
-                min_range = new_range;
-                continue;
-            }
-            if (min_range > 2*new_range || ((5*min_range > 4*new_range && (random() % (++n)) == 0))) { 
-                result = j;
-                n = 1;
-                min_row_size = row.size();
-                min_range = std::min(min_range, new_range);
-                continue;
-            }
-        }
-#endif
-
+        IF_VERBOSE(20, lia.display_row_info(verbose_stream(), lia.row_of_basic_column(j)));
         if (min_row_size == UINT_MAX || 
             2*row.size() < min_row_size || 
             (4*row.size() < 5*min_row_size && lia.random() % (++n) == 0)) {
@@ -442,12 +409,7 @@ int gomory::find_basic_var() {
 }
     
 lia_move gomory::operator()() {
-    if (lra.move_non_basic_columns_to_bounds()) {
-        lp_status st = lra.find_feasible_solution();
-        (void)st;
-        lp_assert(st == lp_status::FEASIBLE || st == lp_status::OPTIMAL);
-    }
-        
+    lra.move_non_basic_columns_to_bounds(true);
     int j = find_basic_var();
     if (j == -1) return lia_move::undef;
     unsigned r = lia.row_of_basic_column(j);

@@ -16,12 +16,11 @@ Author:
 Revision History:
 
 --*/
-#ifndef DYN_ACK_PARAMS_H_
-#define DYN_ACK_PARAMS_H_
+#pragma once
 
 #include "util/params.h"
 
-enum dyn_ack_strategy {
+enum class dyn_ack_strategy {
     DACK_DISABLED,
     DACK_ROOT, // congruence is the root of the conflict
     DACK_CR    // congruence used during conflict resolution
@@ -37,7 +36,7 @@ struct dyn_ack_params {
 
 public:
     dyn_ack_params(params_ref const & p = params_ref()) :
-        m_dack(DACK_ROOT),
+        m_dack(dyn_ack_strategy::DACK_ROOT),
         m_dack_eq(false),
         m_dack_factor(0.1),
         m_dack_threshold(10),
@@ -52,5 +51,4 @@ public:
 };
 
 
-#endif /* DYN_ACK_PARAMS_H_ */
 

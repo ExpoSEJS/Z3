@@ -16,11 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifndef PREPROCESSOR_PARAMS_H_
-#define PREPROCESSOR_PARAMS_H_
+#pragma once
 
-#include "ast/pattern/pattern_inference_params.h"
-#include "ast/rewriter/bit_blaster/bit_blaster_params.h"
+#include "params/pattern_inference_params.h"
+#include "params/bit_blaster_params.h"
 
 enum lift_ite_kind {
     LI_NONE,
@@ -79,4 +78,3 @@ public:
     void display(std::ostream & out) const;
 };
 
-#endif /* PREPROCESSOR_PARAMS_H_ */

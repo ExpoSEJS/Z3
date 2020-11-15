@@ -18,8 +18,7 @@ Revision History:
 
 --*/
 
-#ifndef AUTOMATON_H_
-#define AUTOMATON_H_
+#pragma once
 
 
 #include "util/util.h"
@@ -52,6 +51,10 @@ public:
 
         move(move const& other): m(other.m), m_t(other.m_t), m_src(other.m_src), m_dst(other.m_dst) {
             if (m_t) m.inc_ref(m_t);
+        }
+
+        move(move &&other) noexcept : m(other.m), m_t(nullptr), m_src(other.m_src), m_dst(other.m_dst) {
+            std::swap(m_t, other.m_t);
         }
 
         move& operator=(move const& other) {
@@ -746,4 +749,3 @@ private:
 typedef automaton<unsigned> uautomaton;
 
 
-#endif 

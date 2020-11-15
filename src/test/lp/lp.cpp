@@ -78,6 +78,7 @@ void test_cn_on_expr(nex_sum *t, cross_nested& cn) {
 }
 
 void test_nex_order() {
+#if Z3DEBUG
     enable_trace("nla_cn");
     enable_trace("nla_cn_details");
     // enable_trace("nla_cn_details_");
@@ -116,6 +117,7 @@ void test_nex_order() {
     nex_mul * poly = r.mk_mul(five_a_pl_one, b);
     nex * p = r.simplify(poly);
     std::cout << "poly = " << *poly << " , p = " << *p << "\n";
+#endif
 }
 
 void test_simplify() {
@@ -311,11 +313,6 @@ void test_cn() {
 namespace lp {
 unsigned seed = 1;
 
-class my_bound_propagator : public lp_bound_propagator {
-public:
-    my_bound_propagator(lar_solver & ls): lp_bound_propagator(ls) {}
-    void consume(mpq const& v, lp::constraint_index j) override {}
-};
 
 random_gen g_rand;
 static unsigned my_random() {
@@ -2683,7 +2680,10 @@ void run_lar_solver(argument_parser & args_parser, lar_solver * solver, mps_read
             return;
         }
         std::cout << "checking randomize" << std::endl;
-        vector<var_index> all_vars = solver->get_list_of_all_var_indices();
+        vector<var_index> all_vars;
+        for (unsigned j = 0; j < solver->number_of_vars(); j++)
+            all_vars.push_back(j);
+        
         unsigned m = all_vars.size();
         if (m > 100)
             m = 100;
@@ -2962,7 +2962,7 @@ void test_term() {
     }
     std::cout << solver.constraints();
     std::cout << "\ntableau before cube\n";
-    solver.m_mpq_lar_core_solver.m_r_solver.pretty_print(std::cout);
+    solver.pp(std::cout).print();
     std::cout << "\n";
     int_solver i_s(solver);
     solver.set_int_solver(&i_s);
@@ -2977,7 +2977,7 @@ void test_term() {
     }
 
     std::cout << "\ntableu after cube\n";
-    solver.m_mpq_lar_core_solver.m_r_solver.pretty_print(std::cout);
+    solver.pp(std::cout).print();
     std::cout << "Ax_is_correct = " << solver.ax_is_correct() << "\n";
     
 }

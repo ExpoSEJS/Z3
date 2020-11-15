@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef MAP_H_
-#define MAP_H_
+#pragma once
 
 #include "util/hashtable.h"
 
@@ -112,11 +111,11 @@ public:
         return m_table.insert_if_not_there_core(key_data(k,v), et);
     }
 
-    key_data const & insert_if_not_there(key const & k, value const & v) {
-        return m_table.insert_if_not_there(key_data(k, v));
+    value & insert_if_not_there(key const & k, value const & v) {
+        return m_table.insert_if_not_there2(key_data(k, v))->get_data().m_value;
     }
     
-    entry * insert_if_not_there2(key const & k, value const & v) {
+    entry * insert_if_not_there3(key const & k, value const & v) {
         return m_table.insert_if_not_there2(key_data(k, v));
     }
         
@@ -305,4 +304,3 @@ class size_t_map : public map<size_t, Value, size_t_hash, size_t_eq> {};
 template<typename Value> 
 class u64_map : public map<uint64_t, Value, u64_hash, u64_eq> {};
 
-#endif

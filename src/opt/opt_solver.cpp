@@ -53,6 +53,7 @@ namespace opt {
             m_params.m_relevancy_lvl = 0;
         }
         m_params.m_arith_auto_config_simplex = false;
+        m_params.m_threads = 1; // need to interact with the solver that created model so can't have threads
         // m_params.m_auto_config = false;
     }
 
@@ -83,6 +84,7 @@ namespace opt {
     }
     
     void opt_solver::assert_expr_core(expr * t) {
+        m_last_model = nullptr;
         if (has_quantifiers(t)) {
             m_params.m_relevancy_lvl = 2;
         }
@@ -106,7 +108,7 @@ namespace opt {
         smt::theory_id th_id = m.get_family_id("pb");
         smt::theory* th = get_context().get_theory(th_id);               
         if (!th) {
-            get_context().register_plugin(alloc(smt::theory_pb, m, m_params));
+            get_context().register_plugin(alloc(smt::theory_pb, get_context()));
         }
     }
 
@@ -116,7 +118,7 @@ namespace opt {
         smt::theory* arith_theory = ctx.get_theory(arith_id);
         
         if (!arith_theory) {
-            ctx.register_plugin(alloc(smt::theory_mi_arith, m, m_params));
+            ctx.register_plugin(alloc(smt::theory_mi_arith, ctx));
             arith_theory = ctx.get_theory(arith_id);
             SASSERT(arith_theory);
         }
@@ -172,13 +174,14 @@ namespace opt {
             w.start();
             std::stringstream file_name;
             file_name << "opt_solver" << ++m_dump_count << ".smt2";
-            std::ofstream buffer(file_name.str().c_str());
+            std::ofstream buffer(file_name.str());
             to_smt2_benchmark(buffer, num_assumptions, assumptions, "opt_solver");
             buffer.close();
             IF_VERBOSE(1, verbose_stream() << "(created benchmark: " << file_name.str() << "...";
                        verbose_stream().flush(););
         }
         lbool r;
+        m_last_model = nullptr;
         if (m_first && num_assumptions == 0 && m_context.get_scope_level() == 0) {
             r = m_context.setup_and_check();
         }
@@ -187,7 +190,7 @@ namespace opt {
         }
         r = adjust_result(r);
         if (r == l_true) {
-            m_context.get_model(m_model);
+            m_context.get_model(m_last_model);
         }
         m_first = false;
         if (dump_benchmarks()) {
@@ -236,33 +239,40 @@ namespace opt {
     void opt_solver::maximize_objective(unsigned i, expr_ref& blocker) {
         smt::theory_var v = m_objective_vars[i];
         bool has_shared = false;
+        m_last_model = nullptr;
         inf_eps val = get_optimizer().maximize(v, blocker, has_shared);
-        get_model(m_model);
+        m_context.get_model(m_last_model);
         inf_eps val2;
         m_valid_objectives[i] = true;
         has_shared = true;
         TRACE("opt", tout << (has_shared?"has shared":"non-shared") << " " << val << " " << blocker << "\n";);
-        if (!m_models[i]) {
-            set_model(i);
-        }
+        if (!m_models[i]) 
+            m_models.set(i, m_last_model.get());
+                         
         if (!val.is_finite()) {
             // skip model updates
         }
         else if (m_context.get_context().update_model(has_shared)) {
+            m_last_model = nullptr;
+            m_context.get_model(m_last_model);
             if (has_shared && val != current_objective_value(i)) {
                 decrement_value(i, val);
+                m_last_model = nullptr;
                 if (l_true != m_context.check(0, nullptr)) 
                     throw default_exception("maximization suspended");
+                m_context.get_model(m_last_model);
             }
             else {
-                set_model(i);
+                m_models.set(i, m_last_model.get());
             }
         }
         else {
+            m_last_model = nullptr;
             SASSERT(has_shared);
             decrement_value(i, val);            
             if (l_true != m_context.check(0, nullptr)) 
                 throw default_exception("maximization suspended");
+            m_context.get_model(m_last_model);
         }
         m_objective_values[i] = val;
         TRACE("opt", { 
@@ -270,12 +280,6 @@ namespace opt {
                 tout << "maximal value: " << val << "\n"; 
                 tout << "new condition: " << blocker << "\n";
                 if (m_models[i]) model_smt2_pp(tout << "update model:\n", m, *m_models[i], 0); });
-    }
-
-    void opt_solver::set_model(unsigned i) {
-        model_ref mdl;
-        get_model(mdl);
-        m_models.set(i, mdl.get());
     }
 
     lbool opt_solver::decrement_value(unsigned i, inf_eps& val) {
@@ -286,7 +290,8 @@ namespace opt {
         lbool is_sat = m_context.check(0, nullptr);
         is_sat = adjust_result(is_sat);
         if (is_sat == l_true) {
-            set_model(i);
+            m_context.get_model(m_last_model);
+            m_models.set(i, m_last_model.get());
         }
         pop_core(1);
         TRACE("opt", tout << is_sat << "\n";);
@@ -320,9 +325,14 @@ namespace opt {
         }
     }
 
-    void opt_solver::get_model_core(model_ref & m) {
-        m_context.get_model(m);
-        if (!m) m = m_model; else m_model = m;
+    void opt_solver::get_model_core(model_ref & m) {  
+        for (auto* mdl : m_models) {
+            if (mdl) {
+                m = mdl;
+                return;
+            }
+        }        
+        m = m_last_model.get();
     }
     
     proof * opt_solver::get_proof() {
@@ -362,7 +372,7 @@ namespace opt {
         smt::theory_var v = get_optimizer().add_objective(term);
         TRACE("opt", tout << v << " " << mk_pp(term, m) << "\n";);
         m_objective_vars.push_back(v);
-        m_objective_values.push_back(inf_eps(rational(-1), inf_rational()));
+        m_objective_values.push_back(inf_eps(rational::minus_one(), inf_rational()));
         m_objective_terms.push_back(term);
         m_valid_objectives.push_back(true);
         m_models.push_back(nullptr);

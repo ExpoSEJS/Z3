@@ -129,7 +129,7 @@ func_decl * array_decl_plugin::mk_const(sort * s, unsigned arity, sort * const *
         m_manager->raise_exception("invalid const array definition, parameter is not an array sort");
         return nullptr;
     }
-    if (!m_manager->compatible_sorts(get_array_range(s), domain[0])) {
+    if (get_array_range(s) != domain[0]) {
         m_manager->raise_exception("invalid const array definition, sort mismatch between array range and argument");
         return nullptr;
     }
@@ -460,6 +460,7 @@ func_decl * array_decl_plugin::mk_set_has_size(unsigned arity, sort * const* dom
         m_manager->raise_exception("set-has-size takes two arguments");
         return nullptr;
     }    
+    m_manager->raise_exception("set-has-size is not supported");
     // domain[0] is a Boolean array,
     // domain[1] is Int
     arith_util arith(*m_manager);

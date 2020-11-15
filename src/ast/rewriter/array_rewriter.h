@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef ARRAY_REWRITER_H_
-#define ARRAY_REWRITER_H_
+#pragma once
 
 #include "ast/array_decl_plugin.h"
 #include "ast/rewriter/rewriter_types.h"
@@ -29,11 +28,12 @@ Notes:
 */
 class array_rewriter {
     array_util    m_util;
-    bool          m_sort_store;
-    bool          m_expand_select_store;
-    bool          m_expand_store_eq;
-    bool          m_expand_select_ite;
-    bool          m_expand_nested_stores;
+    bool          m_sort_store { false };
+    bool          m_blast_select_store { false };
+    bool          m_expand_select_store { false };
+    bool          m_expand_store_eq { false };
+    bool          m_expand_select_ite { false };
+    bool          m_expand_nested_stores { false };
     template<bool CHECK_DISEQ>
     lbool compare_args(unsigned num_args, expr * const * args1, expr * const * args2);
     void mk_eq(expr* e, expr* lhs, expr* rhs, expr_ref_vector& fmls);
@@ -49,7 +49,6 @@ public:
     array_rewriter(ast_manager & m, params_ref const & p = params_ref()):
         m_util(m) {
         updt_params(p);
-
     }
     ast_manager & m() const { return m_util.get_manager(); }
     family_id get_fid() const { return m_util.get_family_id(); }
@@ -96,4 +95,3 @@ public:
 
 };
 
-#endif

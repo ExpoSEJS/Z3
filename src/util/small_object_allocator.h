@@ -17,8 +17,7 @@ Revision History:
     Leonardo de Moura (leonardo) 2011-04-27
     Rewrote/Simplified the allocator
 --*/
-#ifndef SMALL_OBJECT_ALLOCATOR_H_
-#define SMALL_OBJECT_ALLOCATOR_H_
+#pragma once
 
 #include "util/machine.h"
 #include "util/debug.h"
@@ -28,8 +27,8 @@ class small_object_allocator {
     static const unsigned SMALL_OBJ_SIZE = 256;
     static const unsigned NUM_SLOTS      = (SMALL_OBJ_SIZE >> PTR_ALIGNMENT);
     struct chunk {
-        chunk * m_next;
-        char  * m_curr;
+        chunk* m_next{ nullptr };
+        char* m_curr{ nullptr };
         char    m_data[CHUNK_SIZE];
         chunk():m_curr(m_data) {}
     };
@@ -56,5 +55,4 @@ inline void * operator new[](size_t s, small_object_allocator & r) { return r.al
 inline void operator delete(void * p, small_object_allocator & r) { UNREACHABLE(); }
 inline void operator delete[](void * p, small_object_allocator & r) { UNREACHABLE(); }
 
-#endif /* SMALL_OBJECT_ALLOCATOR_H_ */
 

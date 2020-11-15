@@ -2103,6 +2103,7 @@ namespace smtfd {
         expr * get_assertion(unsigned idx) const override {
             return m_assertions.get(idx);
         }
+
     };
 
 }

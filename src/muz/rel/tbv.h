@@ -18,8 +18,7 @@ Revision History:
 
 --*/
 
-#ifndef TBV_H_
-#define TBV_H_
+#pragma once
 
 #include "util/fixed_bit_vector.h"
 #include "util/rational.h"
@@ -103,6 +102,9 @@ public:
         bool operator()(tbv const& d1, tbv const& d2) const {
             return m.equals(d1, d2);
         }
+        bool operator()(tbv const* d1, tbv const* d2) const {
+            return m.equals(*d1, *d2);
+        }
     };
 
     struct hash {
@@ -110,6 +112,9 @@ public:
         hash(tbv_manager& m):m(m) {}
         unsigned operator()(tbv const& d) const {
             return m.hash(d);
+        }
+        unsigned operator()(tbv const* d) const {
+            return m.hash(*d);
         }
     };
         
@@ -147,4 +152,3 @@ public:
 };
 
 
-#endif /* TBV_H_ */

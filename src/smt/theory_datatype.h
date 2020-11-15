@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_DATATYPE_H_
-#define THEORY_DATATYPE_H_
+#pragma once
 
 #include "util/union_find.h"
 #include "ast/array_decl_plugin.h"
@@ -45,9 +44,7 @@ namespace smt {
             void reset() { memset(this, 0, sizeof(stats)); }
             stats() { reset(); }
         };
-
         
-        theory_datatype_params &  m_params;
         datatype_util             m_util;
         array_util                m_autil;
         ptr_vector<var_data>      m_var_data;
@@ -83,6 +80,8 @@ namespace smt {
         enode_pair_vector     m_used_eqs; // conflict, if any
         parent_tbl            m_parent; // parent explanation for occurs_check
         svector<stack_entry>  m_stack; // stack for DFS for occurs_check
+
+        void clear_mark();
 
         void oc_mark_on_stack(enode * n);
         bool oc_on_stack(enode * n) const { return n->get_root()->is_marked(); }
@@ -128,8 +127,9 @@ namespace smt {
         void reset_eh() override;
         void restart_eh() override { m_util.reset(); }
         bool is_shared(theory_var v) const override;
+        theory_datatype_params const& params() const;
     public:
-        theory_datatype(ast_manager & m, theory_datatype_params & p);
+        theory_datatype(context& ctx);
         ~theory_datatype() override;
         theory * mk_fresh(context * new_ctx) override;
         void display(std::ostream & out) const override;
@@ -147,5 +147,4 @@ namespace smt {
 
 };
 
-#endif /* THEORY_DATATYPE_H_ */
 

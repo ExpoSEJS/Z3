@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_ARRAY_PARAMS_H_
-#define THEORY_ARRAY_PARAMS_H_
+#pragma once
 
 #include "util/params.h"
 
@@ -45,7 +44,7 @@ struct theory_array_params {
     theory_array_params():
         m_array_canonize_simplify(false),
         m_array_simplify(true),
-        m_array_mode(AR_FULL),
+        m_array_mode(array_solver_id::AR_FULL),
         m_array_weak(false),
         m_array_extensional(true),
         m_array_laziness(1),
@@ -81,5 +80,4 @@ struct theory_array_params {
 };
 
 
-#endif /* THEORY_ARRAY_PARAMS_H_ */
 

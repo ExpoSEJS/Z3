@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef BIT_BLASTER_TPL_H_
-#define BIT_BLASTER_TPL_H_
+#pragma once
 
 #include "util/rational.h"
 
@@ -70,6 +69,7 @@ public:
     void mk_ite(expr * c, expr * t, expr * e, expr_ref & r) { Cfg::mk_ite(c, t, e, r); }
     void mk_nand(expr * a, expr * b, expr_ref & r) { Cfg::mk_nand(a, b, r); }
     void mk_nor(expr * a, expr * b, expr_ref & r) { Cfg::mk_nor(a, b, r); }
+    void mk_ge2(expr* a, expr* b, expr* c, expr_ref& r) { Cfg::mk_ge2(a, b, c, r); }
     //
 
 
@@ -129,4 +129,3 @@ public:
     void mk_abs(unsigned sz, expr * const * a_bits, expr_ref_vector & out_bits);
 };
 
-#endif

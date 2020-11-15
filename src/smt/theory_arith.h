@@ -17,8 +17,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_ARITH_H_
-#define THEORY_ARITH_H_
+#pragma once
 
 #include "util/map.h"
 #include "util/heap.h"
@@ -542,7 +541,7 @@ namespace smt {
         int random_lower() const { return m_params.m_arith_random_lower; }
         int random_upper() const { return m_params.m_arith_random_upper; }
         unsigned blands_rule_threshold() const { return m_params.m_arith_blands_rule_threshold; }
-        bound_prop_mode propagation_mode() const { return m_num_conflicts < m_params.m_arith_propagation_threshold ? m_params.m_arith_bound_prop : BP_NONE; }
+        bound_prop_mode propagation_mode() const { return m_num_conflicts < m_params.m_arith_propagation_threshold ? m_params.m_arith_bound_prop : bound_prop_mode::BP_NONE; }
         bool adaptive() const { return m_params.m_arith_adaptive; }
         double adaptive_assertion_threshold() const { return m_params.m_arith_adaptive_assertion_threshold; }
         unsigned max_lemma_size() const { return m_params.m_arith_max_lemma_size; }
@@ -1059,7 +1058,7 @@ namespace smt {
         //
         // -----------------------------------
     public:
-        theory_arith(ast_manager & m, theory_arith_params & params);
+        theory_arith(context& ctx);
         ~theory_arith() override;
         
         theory * mk_fresh(context * new_ctx) override;
@@ -1288,5 +1287,4 @@ namespace smt {
     
 };
 
-#endif /* THEORY_ARITH_H_ */
 

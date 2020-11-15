@@ -20,7 +20,9 @@ Notes:
 #include "util/cancel_eh.h"
 #include "util/scoped_ptr_vector.h"
 #include "tactic/tactical.h"
+#ifndef SINGLE_THREAD
 #include <thread>
+#endif
 #include <vector>
 
 class binary_tactical : public tactic {
@@ -361,6 +363,14 @@ tactic * or_else(tactic * t1, tactic * t2, tactic * t3, tactic * t4, tactic * t5
     return or_else(10, ts);
 }
 
+#ifdef SINGLE_THREAD
+
+tactic * par(unsigned num, tactic * const * ts) {
+    throw default_exception("par_tactical is unavailable in single threaded mode");
+}
+
+#else
+
 enum par_exception_kind {
     TACTIC_EX,
     DEFAULT_EX,
@@ -489,6 +499,8 @@ tactic * par(unsigned num, tactic * const * ts) {
     return alloc(par_tactical, num, ts);
 }
 
+#endif
+
 tactic * par(tactic * t1, tactic * t2) {
     tactic * ts[2] = { t1, t2 };
     return par(2, ts);
@@ -504,6 +516,12 @@ tactic * par(tactic * t1, tactic * t2, tactic * t3, tactic * t4) {
     return par(4, ts);
 }
 
+#ifdef SINGLE_THREAD
+
+tactic * par_and_then(tactic * t1, tactic * t2) {
+    throw default_exception("par_and_then is not available in single threaded mode");
+}
+#else
 class par_and_then_tactical : public and_then_tactical {
 public:
     par_and_then_tactical(tactic * t1, tactic * t2):and_then_tactical(t1, t2) {}
@@ -741,6 +759,7 @@ public:
 tactic * par_and_then(tactic * t1, tactic * t2) {
     return alloc(par_and_then_tactical, t1, t2);
 }
+#endif
 
 tactic * par_and_then(unsigned num, tactic * const * ts) {
     unsigned i = num - 1;
@@ -792,11 +811,6 @@ class repeat_tactical : public unary_tactical {
     void operator()(unsigned depth,
                     goal_ref const & in, 
                     goal_ref_buffer& result) {
-        // TODO: implement a non-recursive version.
-        if (depth > m_max_depth) {
-            result.push_back(in.get());
-            return;
-        }
 
         bool models_enabled = in->models_enabled();
         bool proofs_enabled = in->proofs_enabled();
@@ -804,64 +818,72 @@ class repeat_tactical : public unary_tactical {
 
         ast_manager & m = in->m();                                                                          
         goal_ref_buffer      r1;  
-        result.reset();          
+        goal_ref g = in;
+        unsigned r1_size = 0;
+        result.reset();      
+    try_goal:
+        r1.reset();
+        if (depth > m_max_depth) {
+            result.push_back(g.get());
+            return;
+        }
         {
-            goal orig_in(in->m(), proofs_enabled, models_enabled, cores_enabled);
-            orig_in.copy_from(*(in.get()));
-            m_t->operator()(in, r1);                                                            
+            goal orig_in(g->m(), proofs_enabled, models_enabled, cores_enabled);
+            orig_in.copy_from(*(g.get()));
+            m_t->operator()(g, r1);                                                            
             if (r1.size() == 1 && is_equal(orig_in, *(r1[0]))) {
                 result.push_back(r1[0]);
                 return;                                                                                     
             }
         }
-        unsigned r1_size = r1.size();                                                                       
-        SASSERT(r1_size > 0);                                                                               
+        r1_size = r1.size();                                                                       
+        SASSERT(r1_size > 0);    
         if (r1_size == 1) {                                                                                 
             if (r1[0]->is_decided()) {
                 result.push_back(r1[0]);  
                 return;                                                                                     
             }                          
-            goal_ref r1_0 = r1[0];                                                                          
-            operator()(depth+1, r1_0, result); 
-        }                                                                                                   
-        else {
-            goal_ref_buffer            r2;                                                                  
-            for (unsigned i = 0; i < r1_size; i++) {                                                        
-                goal_ref g = r1[i];                                                                         
-                r2.reset();                   
-                operator()(depth+1, g, r2);                                              
-                if (is_decided(r2)) {
-                    SASSERT(r2.size() == 1);
-                    if (is_decided_sat(r2)) {                                                          
-                        // found solution...                                                                
-                        result.push_back(r2[0]);
-                        return;                                                                             
-                    }                                                                                       
-                    else {                                                                                  
-                        SASSERT(is_decided_unsat(r2));
-                    }                                                                                       
-                }                                                                                           
-                else {                                                                                      
-                    result.append(r2.size(), r2.c_ptr());                                                           
-                }                                                                                           
-            }    
-                                                                                           
-            if (result.empty()) {                                                                           
-                // all subgoals were shown to be unsat.                                                     
-                // create an decided_unsat goal with the proof
-                in->reset_all();
-                proof_ref pr(m);
-                expr_dependency_ref core(m);
-                if (proofs_enabled) {
-                    apply(m, in->pc(), pr);                    
-                }
-                if (cores_enabled && in->dc()) {
-                    core = (*in->dc())();
-                }
-                in->assert_expr(m.mk_false(), pr, core);
-                result.push_back(in.get());
-            }
-        }
+            g = r1[0];   
+            depth++;
+            goto try_goal;
+        }                      
+
+		goal_ref_buffer            r2;
+		for (unsigned i = 0; i < r1_size; i++) {
+			goal_ref g = r1[i];
+			r2.reset();
+			operator()(depth + 1, g, r2);
+			if (is_decided(r2)) {
+				SASSERT(r2.size() == 1);
+				if (is_decided_sat(r2)) {
+					// found solution...                                                                
+					result.push_back(r2[0]);
+					return;
+				}
+				else {
+					SASSERT(is_decided_unsat(r2));
+				}
+			}
+			else {
+				result.append(r2.size(), r2.c_ptr());
+			}
+		}
+
+		if (result.empty()) {
+			// all subgoals were shown to be unsat.                                                     
+			// create an decided_unsat goal with the proof
+			g->reset_all();
+			proof_ref pr(m);
+			expr_dependency_ref core(m);
+			if (proofs_enabled) {
+				apply(m, g->pc(), pr);
+			}
+			if (cores_enabled && g->dc()) {
+				core = (*g->dc())();
+			}
+			g->assert_expr(m.mk_false(), pr, core);
+			result.push_back(g.get());
+		}
     }
 
 public:

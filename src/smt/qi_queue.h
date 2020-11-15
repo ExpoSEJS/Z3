@@ -16,15 +16,14 @@ Author:
 Revision History:
 
 --*/
-#ifndef QI_QUEUE_H_
-#define QI_QUEUE_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "smt/smt_quantifier_stat.h"
 #include "smt/smt_checker.h"
 #include "smt/smt_quantifier.h"
-#include "smt/params/qi_params.h"
 #include "smt/fingerprints.h"
+#include "smt/params/qi_params.h"
 #include "parsers/util/cost_parser.h"
 #include "smt/cost_evaluator.h"
 #include "smt/cached_var_subst.h"
@@ -100,5 +99,4 @@ namespace smt {
     };
 };
 
-#endif /* QI_QUEUE_H_ */
 

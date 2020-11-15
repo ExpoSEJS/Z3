@@ -17,8 +17,8 @@ Author:
 Revision History:
 
 --*/
-#ifndef INF_RATIONAL_H_
-#define INF_RATIONAL_H_
+#pragma once
+
 #include<stdlib.h>
 #include<string>
 #include "util/debug.h"
@@ -67,11 +67,6 @@ class inf_rational {
 
     inf_rational() {}
 
-    inf_rational(const inf_rational & r): 
-        m_first(r.m_first),
-        m_second(r.m_second)
-     {}
-
     explicit inf_rational(int n):
         m_first(rational(n)),
         m_second(rational())
@@ -97,8 +92,6 @@ class inf_rational {
         m_first(r),
         m_second(i) {
     }
-
-    ~inf_rational() {}
 
     /**
        \brief Set inf_rational to 0.
@@ -141,12 +134,6 @@ class inf_rational {
     }
 
     rational const & get_first() const { return m_first; }
-
-    inf_rational & operator=(const inf_rational & r) {
-        m_first = r.m_first;
-        m_second = r.m_second;
-        return *this;
-    }
 
     inf_rational & operator=(const rational & r) {
         m_first = r;
@@ -470,5 +457,3 @@ inline inf_rational abs(const inf_rational & r) {
     }
     return result;
 }
-
-#endif /* INF_RATIONAL_H_ */

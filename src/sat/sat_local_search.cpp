@@ -19,7 +19,6 @@ Notes:
 
 #include "sat/sat_local_search.h"
 #include "sat/sat_solver.h"
-#include "sat/ba_solver.h"
 #include "sat/sat_params.hpp"
 #include "util/timer.h"
 
@@ -260,7 +259,7 @@ namespace sat {
     }
 
     void local_search::verify_constraint(constraint const& c) const {
-        unsigned value = constraint_value(c);
+        uint64_t value = constraint_value(c);
         IF_VERBOSE(11, display(verbose_stream() << "verify ", c););
         TRACE("sat", display(verbose_stream() << "verify ", c););
         if (c.m_k < value) {
@@ -278,8 +277,8 @@ namespace sat {
         }
     }
 
-    unsigned local_search::constraint_value(constraint const& c) const {
-        unsigned value = 0;
+    uint64_t local_search::constraint_value(constraint const& c) const {
+        uint64_t value = 0;
         for (literal t : c) {
             if (is_true(t)) {
                 value += constraint_coeff(c, t);
@@ -323,6 +322,7 @@ namespace sat {
             add_unit(~c[0], null_literal);
             return;
         }
+        m_is_pb = true;
         unsigned id = m_constraints.size();
         m_constraints.push_back(constraint(k, id));
         for (unsigned i = 0; i < sz; ++i) {
@@ -355,6 +355,7 @@ namespace sat {
 
     local_search::local_search() :         
         m_is_unsat(false),
+        m_initializing(false),
         m_par(nullptr) {
     }
 
@@ -414,93 +415,16 @@ namespace sat {
         }
         m_num_non_binary_clauses = s.m_clauses.size();
 
+
         // copy cardinality clauses
-        ba_solver* ext = dynamic_cast<ba_solver*>(s.get_extension());
-        if (ext) {
-            unsigned_vector coeffs;
-            literal_vector lits;
-            for (ba_solver::constraint* cp : ext->m_constraints) {
-                switch (cp->tag()) {
-                case ba_solver::card_t: {
-                    ba_solver::card const& c = cp->to_card();
-                    unsigned n = c.size();
-                    unsigned k = c.k();
-                    
-                    if (c.lit() == null_literal) {
-                        //    c.lits() >= k 
-                        // <=> 
-                        //    ~c.lits() <= n - k
-                        lits.reset();
-                        for (unsigned j = 0; j < n; ++j) lits.push_back(c[j]);
-                        add_cardinality(lits.size(), lits.c_ptr(), n - k);
-                    }
-                    else {
-                        //
-                        // c.lit() <=> c.lits() >= k
-                        // 
-                        //    (c.lits() < k) or c.lit()
-                        // =  (c.lits() + (n - k + 1)*~c.lit()) <= n    
-                        //
-                        //    ~c.lit() or (c.lits() >= k)
-                        // =  ~c.lit() or (~c.lits() <= n - k)
-                        // =  k*c.lit() + ~c.lits() <= n 
-                        // 
-                        m_is_pb = true;
-                        lits.reset();
-                        coeffs.reset();
-                        for (literal l : c) lits.push_back(l), coeffs.push_back(1);
-                        lits.push_back(~c.lit()); coeffs.push_back(n - k + 1);
-                        add_pb(lits.size(), lits.c_ptr(), coeffs.c_ptr(), n);
-                        
-                        lits.reset();
-                        coeffs.reset();
-                        for (literal l : c) lits.push_back(~l), coeffs.push_back(1);
-                        lits.push_back(c.lit()); coeffs.push_back(k);
-                        add_pb(lits.size(), lits.c_ptr(), coeffs.c_ptr(), n);
-                    }
-                    break;
-                }
-                case ba_solver::pb_t: {
-                    ba_solver::pb const& p = cp->to_pb();
-                    lits.reset();
-                    coeffs.reset();
-                    m_is_pb = true;
-                    unsigned sum = 0;
-                    for (ba_solver::wliteral wl : p) sum += wl.first;
-
-                    if (p.lit() == null_literal) {
-                        //   w1 + .. + w_n >= k
-                        // <=> 
-                        //  ~wl + ... + ~w_n <= sum_of_weights - k
-                        for (ba_solver::wliteral wl : p) lits.push_back(~(wl.second)), coeffs.push_back(wl.first);
-                        add_pb(lits.size(), lits.c_ptr(), coeffs.c_ptr(), sum - p.k());
-                    }
-                    else {
-                        //    lit <=> w1 + .. + w_n >= k
-                        // <=>
-                        //     lit or w1 + .. + w_n <= k - 1
-                        //    ~lit or w1 + .. + w_n >= k
-                        // <=> 
-                        //     (sum - k + 1)*~lit + w1 + .. + w_n <= sum
-                        //     k*lit + ~wl + ... + ~w_n <= sum
-                        lits.push_back(p.lit()), coeffs.push_back(p.k());
-                        for (ba_solver::wliteral wl : p) lits.push_back(~(wl.second)), coeffs.push_back(wl.first);
-                        add_pb(lits.size(), lits.c_ptr(), coeffs.c_ptr(), sum);
-
-                        lits.reset();
-                        coeffs.reset();
-                        lits.push_back(~p.lit()), coeffs.push_back(sum + 1 - p.k());
-                        for (ba_solver::wliteral wl : p) lits.push_back(wl.second), coeffs.push_back(wl.first);
-                        add_pb(lits.size(), lits.c_ptr(), coeffs.c_ptr(), sum);
-                    }
-                    break;
-                }
-                case ba_solver::xr_t:
-                    throw default_exception("local search is incompatible with enabling xor solving");
-                    break;
-                }
-            }
-        }
+        extension* ext = s.get_extension();
+        std::function<void(unsigned, literal const*, unsigned)> card = 
+            [&](unsigned sz, literal const* c, unsigned k) { add_cardinality(sz, c, k); };
+        std::function<void(unsigned sz, literal const* c, unsigned const* coeffs, unsigned k)> pb = 
+            [&](unsigned sz, literal const* c, unsigned const* coeffs, unsigned k) { add_pb(sz, c, coeffs, k); };
+        if (ext && !ext->extract_pb(card, pb))
+            throw default_exception("local search is incomplete with extensions beyond PB");
+        
         if (_init) {
             init();
         }
@@ -681,10 +605,10 @@ namespace sat {
             bool tt = cur_solution(v);
             coeff_vector const& falsep = m_vars[v].m_watch[!tt];
             for (pbcoeff const& pbc : falsep) {
-                int slack = constraint_slack(pbc.m_constraint_id);
+                int64_t slack = constraint_slack(pbc.m_constraint_id);
                 if (slack < 0)
                     ++best_bsb;
-                else if (slack < static_cast<int>(pbc.m_coeff))
+                else if (slack < static_cast<int64_t>(pbc.m_coeff))
                     best_bsb += num_unsat;
             }
             ++cit;
@@ -696,7 +620,7 @@ namespace sat {
                     coeff_vector const& falsep = m_vars[v].m_watch[!cur_solution(v)];
                     auto it = falsep.begin(), end = falsep.end();
                     for (; it != end; ++it) {
-                        int slack = constraint_slack(it->m_constraint_id);
+                        int64_t slack = constraint_slack(it->m_constraint_id);
                         if (slack < 0) {
                             if (bsb == best_bsb) {
                                 break;
@@ -705,7 +629,7 @@ namespace sat {
                                 ++bsb;
                             }
                         }
-                        else if (slack < static_cast<int>(it->m_coeff)) {
+                        else if (slack < static_cast<int64_t>(it->m_coeff)) {
                             bsb += num_unsat;
                             if (bsb > best_bsb) {
                                 break;
@@ -783,7 +707,7 @@ namespace sat {
         for (auto const& pbc : truep) {
             unsigned ci = pbc.m_constraint_id;
             constraint& c = m_constraints[ci];
-            int old_slack = c.m_slack;
+            auto old_slack = c.m_slack;
             c.m_slack -= pbc.m_coeff;
             DEBUG_CODE(verify_slack(c););
             if (c.m_slack < 0 && old_slack >= 0) { // from non-negative to negative: sat -> unsat
@@ -793,7 +717,7 @@ namespace sat {
         for (auto const& pbc : falsep) {
             unsigned ci = pbc.m_constraint_id;
             constraint& c = m_constraints[ci];
-            int old_slack = c.m_slack;
+            auto old_slack = c.m_slack;
             c.m_slack += pbc.m_coeff;
             DEBUG_CODE(verify_slack(c););
             if (c.m_slack >= 0 && old_slack < 0) { // from negative to non-negative: unsat -> sat

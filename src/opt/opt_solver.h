@@ -18,8 +18,7 @@ Notes:
     Based directly on smt_solver.
    
 --*/
-#ifndef OPT_SOLVER_H_
-#define OPT_SOLVER_H_
+#pragma once
 
 #include "util/inf_rational.h"
 #include "util/inf_eps_rational.h"
@@ -73,7 +72,7 @@ namespace opt {
         generic_model_converter& m_fm;
         progress_callback * m_callback;
         symbol              m_logic;
-        model_ref           m_model;
+        model_ref           m_last_model;
         svector<smt::theory_var>  m_objective_vars;
         vector<inf_eps>     m_objective_values;
         sref_vector<model>  m_models;
@@ -150,4 +149,3 @@ namespace opt {
     };
 }
 
-#endif

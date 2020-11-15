@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_JUSTIFICATION_H_
-#define SMT_JUSTIFICATION_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "smt/smt_types.h"
@@ -27,6 +26,7 @@ Revision History:
 namespace smt {
     
     class conflict_resolution;
+    class context;
 
     typedef ptr_vector<justification> justification_vector;
 
@@ -410,5 +410,4 @@ namespace smt {
       
 };
 
-#endif /* SMT_JUSTIFICATION_H_ */
 

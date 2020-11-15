@@ -16,11 +16,9 @@ Author:
 Revision History:
 
 --*/
-#ifndef MPN_H_
-#define MPN_H_
+#pragma once
 
 #include<ostream>
-#include<mutex>
 #include "util/util.h"
 #include "util/buffer.h"
 
@@ -107,4 +105,3 @@ private:
     void trace_nl(mpn_digit const * a, size_t lnga) const;
 };
 
-#endif

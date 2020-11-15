@@ -142,7 +142,7 @@ class skolemizer {
                 }
             }
         }
-        r = s(body, substitution.size(), substitution.c_ptr());
+        r = s(body, substitution);
         p = nullptr;
         if (m_proofs_enabled) {
             if (q->get_kind() == forall_k) 
@@ -221,16 +221,6 @@ struct nnf::imp {
             m_cache_result(cache_res),
             m_spos(spos) {
         }
-        frame(frame && other):
-            m_curr(std::move(other.m_curr)),
-            m_i(other.m_i),
-            m_pol(other.m_pol),
-            m_in_q(other.m_in_q),
-            m_new_child(other.m_new_child),
-            m_cache_result(other.m_cache_result),
-            m_spos(other.m_spos) {            
-        }
-            
     };
 
     // There are four caches:
@@ -697,8 +687,7 @@ struct nnf::imp {
         else {
             r = arg;
             if (proofs_enabled()) {
-                proof * p1 = m.mk_iff_oeq(m.mk_rewrite(t, t->get_arg(0)));
-                pr = m.mk_transitivity(p1, arg_pr);
+                pr = mk_proof(fr.m_pol, 1, &arg_pr, t, to_app(r));
             }
         }
 

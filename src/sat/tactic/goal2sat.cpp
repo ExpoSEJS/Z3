@@ -29,20 +29,25 @@ Notes:
 #include "util/ref_util.h"
 #include "ast/ast_smt2_pp.h"
 #include "ast/ast_pp.h"
+#include "ast/ast_smt2_pp.h"
 #include "ast/ast_ll_pp.h"
 #include "ast/pb_decl_plugin.h"
 #include "ast/ast_util.h"
 #include "ast/for_each_expr.h"
-#include "sat/tactic/goal2sat.h"
-#include "sat/ba_solver.h"
-#include "sat/sat_cut_simplifier.h"
 #include "model/model_evaluator.h"
 #include "model/model_v2_pp.h"
 #include "tactic/tactic.h"
 #include "tactic/generic_model_converter.h"
+#include "sat/sat_cut_simplifier.h"
+#include "sat/sat_drat.h"
+#include "sat/tactic/goal2sat.h"
+#include "sat/smt/ba_solver.h"
+#include "sat/smt/euf_solver.h"
+#include "sat/smt/sat_th.h"
+#include "sat/sat_params.hpp"
 #include<sstream>
 
-struct goal2sat::imp {
+struct goal2sat::imp : public sat::sat_internalizer {
     struct frame {
         app *    m_t;
         unsigned m_root:1;
@@ -53,7 +58,6 @@ struct goal2sat::imp {
     };
     ast_manager &               m;
     pb_util                     pb;
-    sat::ba_solver*             m_ext;
     sat::cut_simplifier*        m_aig;
     svector<frame>              m_frame_stack;
     svector<sat::literal>       m_result_stack;
@@ -62,73 +66,204 @@ struct goal2sat::imp {
     sat::solver_core &          m_solver;
     atom2bool_var &             m_map;
     dep2asm_map &               m_dep2asm;
+    obj_map<expr, sat::bool_var>* m_expr2var_replay { nullptr };
     sat::literal                m_true;
     bool                        m_ite_extra;
     unsigned long long          m_max_memory;
     expr_ref_vector             m_trail;
-    expr_ref_vector             m_interpreted_atoms;
+    func_decl_ref_vector        m_unhandled_funs;
     bool                        m_default_external;
     bool                        m_xor_solver;
-    bool                        m_is_lemma;
+    bool                        m_euf { false };
+    bool                        m_drat { false };
+    bool                        m_is_redundant { false };
+    bool                        m_top_level { false };
+    sat::literal_vector         aig_lits;
     
     imp(ast_manager & _m, params_ref const & p, sat::solver_core & s, atom2bool_var & map, dep2asm_map& dep2asm, bool default_external):
         m(_m),
         pb(m),
-        m_ext(nullptr),
         m_aig(nullptr),
         m_solver(s),
         m_map(map),
         m_dep2asm(dep2asm),
         m_trail(m),
-        m_interpreted_atoms(m),
-        m_default_external(default_external),
-        m_is_lemma(false) {
+        m_unhandled_funs(m),
+        m_default_external(default_external) {
         updt_params(p);
         m_true = sat::null_literal;
         m_aig = s.get_cut_simplifier();
     }
+
+    ~imp() override {}
         
     void updt_params(params_ref const & p) {
+        sat_params sp(p);
         m_ite_extra  = p.get_bool("ite_extra", true);
         m_max_memory = megabytes_to_bytes(p.get_uint("max_memory", UINT_MAX));
         m_xor_solver = p.get_bool("xor_solver", false);
-        if (m_xor_solver) ensure_extension();
+        m_euf = sp.euf();
+        m_drat = sp.drat_file().is_non_empty_string();
     }
 
     void throw_op_not_handled(std::string const& s) {
         std::string s0 = "operator " + s + " not supported, apply simplifier before invoking translator";
         throw tactic_exception(std::move(s0));
     }
+
+    sat::status mk_status() const {
+        return sat::status::th(m_is_redundant, m.get_basic_family_id());
+    }
+
+
+    bool top_level_relevant() {
+        return m_top_level && m_euf && ensure_euf()->relevancy_enabled();
+    }
+
+    void add_dual_def(unsigned n, sat::literal const* lits) {
+        if (top_level_relevant())
+            ensure_euf()->add_aux(n, lits);        
+    }
+
+    void add_dual_root(unsigned n, sat::literal const* lits) {
+        if (top_level_relevant())
+            ensure_euf()->add_root(n, lits);
+    }
     
     void mk_clause(sat::literal l) {
-        TRACE("goal2sat", tout << "mk_clause: " << l << "\n";);
-        m_solver.add_clause(1, &l, false);
+        mk_clause(1, &l);
     }
-
-    void set_lemma_mode(bool f) { m_is_lemma = f; }
 
     void mk_clause(sat::literal l1, sat::literal l2) {
-        TRACE("goal2sat", tout << "mk_clause: " << l1 << " " << l2 << "\n";);
-        m_solver.add_clause(l1, l2, m_is_lemma);
+        sat::literal lits[2] = { l1, l2 };
+        mk_clause(2, lits);
     }
 
-    void mk_clause(sat::literal l1, sat::literal l2, sat::literal l3, bool is_lemma = false) {
-        TRACE("goal2sat", tout << "mk_clause: " << l1 << " " << l2 << " " << l3 << "\n";);
-        m_solver.add_clause(l1, l2, l3, m_is_lemma || is_lemma);
+    void mk_clause(sat::literal l1, sat::literal l2, sat::literal l3) {
+        sat::literal lits[3] = { l1, l2, l3 };
+        mk_clause(3, lits);
     }
 
-    void mk_clause(unsigned num, sat::literal * lits) {
-        TRACE("goal2sat", tout << "mk_clause: "; for (unsigned i = 0; i < num; i++) tout << lits[i] << " "; tout << "\n";);
-        m_solver.add_clause(num, lits, m_is_lemma);
+    void mk_clause(unsigned n, sat::literal * lits) {
+        TRACE("goal2sat", tout << "mk_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
+        add_dual_def(n, lits);
+        m_solver.add_clause(n, lits, mk_status());
+    }
+
+    void mk_root_clause(sat::literal l) {
+        mk_root_clause(1, &l);
+    }
+
+    void mk_root_clause(sat::literal l1, sat::literal l2) {
+        sat::literal lits[2] = { l1, l2 };
+        mk_root_clause(2, lits);
+    }
+
+    void mk_root_clause(sat::literal l1, sat::literal l2, sat::literal l3) {
+        sat::literal lits[3] = { l1, l2, l3 };
+        mk_root_clause(3, lits);
+    }
+
+    void mk_root_clause(unsigned n, sat::literal * lits) {
+        TRACE("goal2sat", tout << "mk_root_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
+        add_dual_root(n, lits);
+        m_solver.add_clause(n, lits, m_is_redundant ? mk_status() : sat::status::input());
+    }
+
+    sat::bool_var add_var(bool is_ext, expr* n) {
+        sat::bool_var v;
+        if (m_expr2var_replay && m_expr2var_replay->find(n, v))
+            return v;
+        v = m_solver.add_var(is_ext);
+        log_node(n);
+        log_def(v, n);
+        if (top_level_relevant() && !is_bool_op(n))
+            ensure_euf()->track_relevancy(v);
+        return v;
+    }
+
+    void log_def(sat::bool_var v, expr* n) {
+        if (m_drat && m_solver.get_drat_ptr()) 
+            m_solver.get_drat_ptr()->bool_def(v, n->get_id());
+    }
+
+    void log_node(expr* n) {
+        if (m_drat && m_solver.get_drat_ptr()) {
+            if (is_app(n)) {
+                for (expr* arg : *to_app(n))
+                    if (m.is_not(arg))
+                        log_node(arg);
+            }
+            ensure_euf()->drat_log_node(n);
+        }
     }
 
     sat::literal mk_true() {
         if (m_true == sat::null_literal) {
             // create fake variable to represent true;
-            m_true = sat::literal(m_solver.add_var(false), false);
+            m_true = sat::literal(add_var(false, m.mk_true()), false);
             mk_clause(m_true); // v is true
         }
         return m_true;
+    }
+
+    sat::bool_var to_bool_var(expr* e) override {
+        sat::literal l;
+        sat::bool_var v = m_map.to_bool_var(e);
+        if (v != sat::null_bool_var)
+            return v;
+        if (is_app(e) && m_cache.find(to_app(e), l) && !l.sign()) 
+            return l.var();
+        return sat::null_bool_var;
+    }
+
+
+    void set_expr2var_replay(obj_map<expr, sat::bool_var>* r) override {
+        m_expr2var_replay = r;
+    }
+
+    sat::bool_var mk_bool_var(expr* t) {
+        force_push();
+        sat::bool_var v;
+        if (!m_expr2var_replay || !m_expr2var_replay->find(t, v))  
+            v = add_var(true, t);
+        m_map.insert(t, v);
+        return v;
+    }
+
+    sat::bool_var add_bool_var(expr* t) override {
+        sat::bool_var v = m_map.to_bool_var(t);
+        if (v == sat::null_bool_var) 
+            v = mk_bool_var(t);
+        else 
+            m_solver.set_external(v);        
+        return v;
+    }
+
+    unsigned m_num_scopes{ 0 };
+
+    void force_push() {
+        for (; m_num_scopes > 0; --m_num_scopes)
+            m_map.push();
+    }
+
+    void push() override {
+        ++m_num_scopes;
+    }
+
+    void pop(unsigned n) override {
+        if (n <= m_num_scopes) {
+            m_num_scopes -= n;
+            return;
+        }
+        n -= m_num_scopes;
+        m_num_scopes = 0;
+        m_cache.reset();
+        m_map.pop(n);
+    }
+
+    void cache(app* t, sat::literal l) override {
+        m_cache.insert(t, l);
     }
 
    void convert_atom(expr * t, bool root, bool sign) {
@@ -142,20 +277,26 @@ struct goal2sat::imp {
             else if (m.is_false(t)) {
                 l = sign ? mk_true() : ~mk_true();
             }
-            else if (!is_app(t)) {
-                std::ostringstream strm;
-                strm << mk_ismt2_pp(t, m);
-                throw_op_not_handled(strm.str());
-            }
-            else {
-                bool ext = m_default_external || !is_uninterp_const(t) || m_interface_vars.contains(t);
-                sat::bool_var v = m_solver.add_var(ext);
-                m_map.insert(t, v);
-                l = sat::literal(v, sign);
-                TRACE("sat", tout << "new_var: " << v << ": " << mk_bounded_pp(t, m, 2) << "\n";);
-                if (!is_uninterp_const(t)) {
-                    m_interpreted_atoms.push_back(t);
+            else {                
+                if (m_euf) {
+                    convert_euf(t, root, sign);  
+                    return;
                 }
+                if (!is_uninterp_const(t)) {
+                    if (!is_app(t)) {
+                        std::ostringstream strm;
+                        strm << mk_ismt2_pp(t, m);
+                        throw_op_not_handled(strm.str());
+                    }
+                    else
+                        m_unhandled_funs.push_back(to_app(t)->get_decl());
+                }
+                v = mk_bool_var(t);
+                l = sat::literal(v, sign);
+                bool ext = m_default_external || !is_uninterp_const(t) || m_interface_vars.contains(t);
+                if (ext) 
+                    m_solver.set_external(v);
+                TRACE("sat", tout << "new_var: " << v << ": " << mk_bounded_pp(t, m, 2) << " " << is_uninterp_const(t) << "\n";);
             }
         }
         else {
@@ -165,14 +306,13 @@ struct goal2sat::imp {
         }
         SASSERT(l != sat::null_literal);
         if (root)
-            mk_clause(l);
+            mk_root_clause(l);
         else
             m_result_stack.push_back(l);
     }
 
     bool convert_app(app* t, bool root, bool sign) {
-        if (t->get_family_id() == pb.get_family_id()) {
-            ensure_extension();
+        if (!m_euf && pb.is_pb(t)) {
             m_frame_stack.push_back(frame(to_app(t), root, sign, 0));
             return false;
         }
@@ -182,39 +322,39 @@ struct goal2sat::imp {
         }
     }
 
-    bool process_cached(app * t, bool root, bool sign) {
-        sat::literal l;
-        if (m_cache.find(t, l)) {
-            if (sign)
-                l.neg();
-            if (root)
-                mk_clause(l);
-            else
-                m_result_stack.push_back(l);
-            return true;
-        }
-        return false;
+    bool process_cached(app* t, bool root, bool sign) {
+        sat::literal l = sat::null_literal;
+        if (!m_cache.find(t, l))
+            return false;
+        if (sign)
+            l.neg();
+        if (root)
+            mk_root_clause(l);
+        else
+            m_result_stack.push_back(l);
+        return true;
     }
 
-
     bool visit(expr * t, bool root, bool sign) {
+        SASSERT(m.is_bool(t));
         if (!is_app(t)) {
             convert_atom(t, root, sign);
             return true;
         }
         if (process_cached(to_app(t), root, sign))
             return true;
-        if (to_app(t)->get_family_id() != m.get_basic_family_id()) {
-            return convert_app(to_app(t), root, sign);
-        }
+        if (to_app(t)->get_family_id() != m.get_basic_family_id()) 
+            return convert_app(to_app(t), root, sign);   
         switch (to_app(t)->get_decl_kind()) {
         case OP_NOT:
         case OP_OR:
         case OP_AND:
+        case OP_ITE:
+        case OP_XOR:
+        case OP_IMPLIES:
             m_frame_stack.push_back(frame(to_app(t), root, sign, 0));
             return false;
-        case OP_ITE:
-        case OP_EQ:
+        case OP_EQ:            
             if (m.is_bool(to_app(t)->get_arg(1))) {
                 m_frame_stack.push_back(frame(to_app(t), root, sign, 0));
                 return false;
@@ -223,9 +363,11 @@ struct goal2sat::imp {
                 convert_atom(t, root, sign);
                 return true;
             }
-        case OP_XOR:
-        case OP_IMPLIES:
         case OP_DISTINCT: {
+            if (m_euf) {
+                convert_euf(t, root, sign);
+                return true;
+            }                
             TRACE("goal2sat_not_handled", tout << mk_ismt2_pp(t, m) << "\n";);
             std::ostringstream strm;
             strm << mk_ismt2_pp(t, m);
@@ -237,11 +379,11 @@ struct goal2sat::imp {
         }
     }
 
-    sat::literal_vector aig_lits;
-
     void convert_or(app * t, bool root, bool sign) {
-        TRACE("goal2sat", tout << "convert_or:\n" << mk_bounded_pp(t, m, 2) << "\n";);
+        TRACE("goal2sat", tout << "convert_or:\n" << mk_bounded_pp(t, m, 2) << " root " << root << " stack " << m_result_stack.size() << "\n";);        
         unsigned num = t->get_num_args();
+        SASSERT(num <= m_result_stack.size());
+        unsigned old_sz = m_result_stack.size() - num;
         if (root) {
             SASSERT(num == m_result_stack.size());
             if (sign) {
@@ -249,24 +391,23 @@ struct goal2sat::imp {
                 for (unsigned i = 0; i < num; i++) {
                     sat::literal l = m_result_stack[i];
                     l.neg();
-                    mk_clause(l);
+                    mk_root_clause(l);
                 }
             }
             else {
-                mk_clause(m_result_stack.size(), m_result_stack.c_ptr());
+                mk_root_clause(m_result_stack.size(), m_result_stack.c_ptr());
             }
-            m_result_stack.reset();
+            m_result_stack.shrink(old_sz);
         }
         else {
             SASSERT(num <= m_result_stack.size());
-            sat::bool_var k = m_solver.add_var(false);
+            sat::bool_var k = add_var(false, t);
             sat::literal  l(k, false);
             m_cache.insert(t, l);
-            sat::literal * lits = m_result_stack.end() - num;           
-
-            for (unsigned i = 0; i < num; i++) {
+            sat::literal * lits = m_result_stack.end() - num;       
+            for (unsigned i = 0; i < num; i++) 
                 mk_clause(~lits[i], l);
-            }
+                       
             m_result_stack.push_back(~l);
             lits = m_result_stack.end() - num - 1;
             if (m_aig) {
@@ -276,10 +417,10 @@ struct goal2sat::imp {
             // remark: mk_clause may perform destructive updated to lits.
             // I have to execute it after the binary mk_clause above.
             mk_clause(num+1, lits);
-            if (m_aig) {
+            if (m_aig) 
                 m_aig->add_or(l, num, aig_lits.c_ptr());
-            }
-            unsigned old_sz = m_result_stack.size() - num - 1;
+                        
+            m_solver.set_phase(~l);               
             m_result_stack.shrink(old_sz);
             if (sign)
                 l.neg();
@@ -288,29 +429,31 @@ struct goal2sat::imp {
     }
 
     void convert_and(app * t, bool root, bool sign) {
-        TRACE("goal2sat", tout << "convert_and:\n" << mk_ismt2_pp(t, m) << "\n";);
+        TRACE("goal2sat", tout << "convert_and:\n" << mk_bounded_pp(t, m, 2) << " root: " << root  << " result stack: " << m_result_stack.size() << "\n";);
+
         unsigned num = t->get_num_args();
+        unsigned old_sz = m_result_stack.size() - num;
+        SASSERT(num <= m_result_stack.size());
         if (root) {
             if (sign) {
                 for (unsigned i = 0; i < num; ++i) {
                     m_result_stack[i].neg();
                 }                
-                mk_clause(m_result_stack.size(), m_result_stack.c_ptr());
+                mk_root_clause(m_result_stack.size(), m_result_stack.c_ptr());
             }
             else {
                 for (unsigned i = 0; i < num; ++i) {
-                    mk_clause(m_result_stack[i]);
+                    mk_root_clause(m_result_stack[i]);
                 }
             }
-            m_result_stack.reset();
+            m_result_stack.shrink(old_sz);
         }
         else {
             SASSERT(num <= m_result_stack.size());
-            sat::bool_var k = m_solver.add_var(false);
+            sat::bool_var k = add_var(false, t);
             sat::literal  l(k, false);
             m_cache.insert(t, l);
             sat::literal * lits = m_result_stack.end() - num;
-
 
             // l => /\ lits
             for (unsigned i = 0; i < num; i++) {
@@ -329,11 +472,12 @@ struct goal2sat::imp {
             mk_clause(num+1, lits);
             if (m_aig) {
                 m_aig->add_and(l, num, aig_lits.c_ptr());
-            }
-            unsigned old_sz = m_result_stack.size() - num - 1;
-            m_result_stack.shrink(old_sz);
+            }        
+            m_solver.set_phase(l);               
             if (sign)
                 l.neg();
+            
+            m_result_stack.shrink(old_sz);
             m_result_stack.push_back(l);
             TRACE("goal2sat", tout << m_result_stack << "\n";);
         }
@@ -345,20 +489,20 @@ struct goal2sat::imp {
         sat::literal  c = m_result_stack[sz-3];
         sat::literal  t = m_result_stack[sz-2];
         sat::literal  e = m_result_stack[sz-1];
+        m_result_stack.shrink(sz - 3);
         if (root) {
             SASSERT(sz == 3);
             if (sign) {
-                mk_clause(~c, ~t);
-                mk_clause(c,  ~e);
+                mk_root_clause(~c, ~t);
+                mk_root_clause(c,  ~e);
             }
             else {
-                mk_clause(~c, t);
-                mk_clause(c, e);
+                mk_root_clause(~c, t);
+                mk_root_clause(c, e);
             }
-            m_result_stack.reset();
         }
         else {
-            sat::bool_var k = m_solver.add_var(false);
+            sat::bool_var k = add_var(false, n);
             sat::literal  l(k, false);
             m_cache.insert(n, l);
             mk_clause(~l, ~c, t);
@@ -366,11 +510,42 @@ struct goal2sat::imp {
             mk_clause(l,  ~c, ~t);
             mk_clause(l,   c, ~e);
             if (m_ite_extra) {
-                mk_clause(~t, ~e, l, false);
-                mk_clause(t,  e, ~l, false);
+                mk_clause(~t, ~e, l);
+                mk_clause(t,  e, ~l);
             }
             if (m_aig) m_aig->add_ite(l, c, t, e);
-            m_result_stack.shrink(sz-3);
+            if (sign)
+                l.neg();
+
+            m_result_stack.push_back(l);
+        }
+    }
+
+    void convert_implies(app* t, bool root, bool sign) {
+        SASSERT(t->get_num_args() == 2);
+        unsigned sz = m_result_stack.size();
+        SASSERT(sz >= 2);
+        sat::literal  l2 = m_result_stack[sz - 1];
+        sat::literal  l1 = m_result_stack[sz - 2];
+        m_result_stack.shrink(sz - 2);
+        if (root) {
+            SASSERT(sz == 2);
+            if (sign) {
+                mk_root_clause(l1);
+                mk_root_clause(~l2);
+            }
+            else {
+                mk_root_clause(~l1, l2);
+            }            
+        }
+        else {
+            sat::bool_var k = add_var(false, t);
+            sat::literal  l(k, false);
+            m_cache.insert(t, l);
+            // l <=> (l1 => l2)
+            mk_clause(~l, ~l1, l2);
+            mk_clause(l1, l);
+            mk_clause(~l2, l);
             if (sign)
                 l.neg();
             m_result_stack.push_back(l);
@@ -378,33 +553,32 @@ struct goal2sat::imp {
     }
 
     void convert_iff2(app * t, bool root, bool sign) {
-        TRACE("goal2sat", tout << "convert_iff " << root << " " << sign << "\n" << mk_bounded_pp(t, m, 2) << "\n";);
+        SASSERT(t->get_num_args() == 2);
         unsigned sz = m_result_stack.size();
         SASSERT(sz >= 2);
         sat::literal  l1 = m_result_stack[sz-1];
         sat::literal  l2 = m_result_stack[sz-2];
+        m_result_stack.shrink(sz - 2);
         if (root) {
             SASSERT(sz == 2);
             if (sign) {
-                mk_clause(l1, l2);
-                mk_clause(~l1, ~l2);
+                mk_root_clause(l1, l2);
+                mk_root_clause(~l1, ~l2);
             }
             else {
-                mk_clause(l1, ~l2);
-                mk_clause(~l1, l2);
-            }
-            m_result_stack.reset();
+                mk_root_clause(l1, ~l2);
+                mk_root_clause(~l1, l2);
+            }            
         }
         else {
-            sat::bool_var k = m_solver.add_var(false);
+            sat::bool_var k = add_var(false, t);
             sat::literal  l(k, false);
             m_cache.insert(t, l);
             mk_clause(~l, l1, ~l2);
             mk_clause(~l, ~l1, l2);
             mk_clause(l,  l1, l2);
             mk_clause(l, ~l1, ~l2);
-            if (m_aig) m_aig->add_iff(l, l1, l2);
-            m_result_stack.shrink(sz-2);
+            if (m_aig) m_aig->add_iff(l, l1, l2);            
             if (sign)
                 l.neg();
             m_result_stack.push_back(l);
@@ -412,260 +586,81 @@ struct goal2sat::imp {
     }
 
     void convert_iff(app * t, bool root, bool sign) {
-        TRACE("goal2sat", tout << "convert_iff " << root << " " << sign << "\n" << mk_bounded_pp(t, m, 2) << "\n";);
-        unsigned sz = m_result_stack.size();
-        unsigned num = get_num_args(t);
-        SASSERT(sz >= num && num >= 2);
-        if (num == 2) {
+        if (!m_euf && is_xor(t))
+            convert_ba(t, root, sign);
+        else               
             convert_iff2(t, root, sign);
+    }
+
+    func_decl_ref_vector const& interpreted_funs() {
+        auto* ext = dynamic_cast<euf::solver*>(m_solver.get_extension());
+        if (ext)
+            return ext->unhandled_functions();
+        return m_unhandled_funs;
+    }
+
+    euf::solver* ensure_euf() {
+        SASSERT(m_euf);
+        sat::extension* ext = m_solver.get_extension();
+        euf::solver* euf = nullptr;
+        if (!ext) {
+            euf = alloc(euf::solver, m, *this);
+            m_solver.set_extension(euf);
+#if 0
+            std::function<solver*(void)> mk_solver = [&]() {
+                return mk_inc_sat_solver(m, m_params, true);
+            };
+            euf->set_mk_solver(mk_solver);
+#endif
+        }
+        else {
+            euf = dynamic_cast<euf::solver*>(ext);
+        }
+        if (!euf)
+            throw default_exception("cannot convert to euf");
+        return euf;
+    }
+
+    void convert_euf(expr* e, bool root, bool sign) {
+        SASSERT(m_euf);
+        TRACE("goal2sat", tout << "convert-euf " << mk_bounded_pp(e, m, 2) << " root " << root << "\n";);
+        euf::solver* euf = ensure_euf();
+        sat::literal lit;
+        {
+            flet<bool> _top(m_top_level, false);
+            lit = euf->internalize(e, sign, root, m_is_redundant);           
+        }
+        if (lit == sat::null_literal) 
             return;
-        }
-        sat::literal_vector lits;
-        sat::bool_var v = m_solver.add_var(true);
-        lits.push_back(sat::literal(v, true));
-        convert_pb_args(num, lits);
-        // ensure that = is converted to xor
-        for (unsigned i = 1; i + 1 < lits.size(); ++i) {
-            lits[i].neg();
-        }
-        ensure_extension();
-        m_ext->add_xr(lits);
-        if (m_aig) m_aig->add_xor(~lits.back(), lits.size() - 1, lits.c_ptr() + 1);
-        sat::literal lit(v, sign);
-        if (root) {            
-            m_result_stack.reset();
-            mk_clause(lit);
-        }
-        else {
-            m_result_stack.shrink(sz - num);
+        if (top_level_relevant())
+            euf->track_relevancy(lit.var());
+        if (root)
+            mk_root_clause(lit);
+        else
             m_result_stack.push_back(lit);
-        }
     }
 
-    void convert_pb_args(unsigned num_args, sat::literal_vector& lits) {
-        unsigned sz = m_result_stack.size();
-        for (unsigned i = 0; i < num_args; ++i) {
-            sat::literal lit(m_result_stack[sz - num_args + i]);
-            if (!m_solver.is_external(lit.var())) {
-                m_solver.set_external(lit.var());
-            }
-            lits.push_back(lit);
-        }
-    }
-
-    typedef std::pair<unsigned, sat::literal> wliteral;
-
-    void check_unsigned(rational const& c) {
-        if (!c.is_unsigned()) {
-            throw default_exception("unsigned coefficient expected");
-        }
-    }
-
-    void convert_to_wlits(app* t, sat::literal_vector const& lits, svector<wliteral>& wlits) {
-        for (unsigned i = 0; i < lits.size(); ++i) {
-            rational c = pb.get_coeff(t, i);
-            check_unsigned(c);
-            wlits.push_back(std::make_pair(c.get_unsigned(), lits[i]));
-        }
-    }
-
-    void convert_pb_args(app* t, svector<wliteral>& wlits) {
-        sat::literal_vector lits;
-        convert_pb_args(t->get_num_args(), lits);
-        convert_to_wlits(t, lits, wlits);        
-    }
-
-    void push_result(bool root, sat::literal lit, unsigned num_args) {
-        if (root) {
-            m_result_stack.reset();
-            mk_clause(lit);                
+    void convert_ba(app* t, bool root, bool sign) {
+        SASSERT(!m_euf);
+        sat::extension* ext = dynamic_cast<sat::ba_solver*>(m_solver.get_extension());
+        euf::th_solver* th = nullptr;
+        if (!ext) {
+            th = alloc(sat::ba_solver, m, *this, pb.get_family_id());
+            m_solver.set_extension(th);
+            th->push_scopes(m_solver.num_scopes());
         }
         else {
-            m_result_stack.shrink(m_result_stack.size() - num_args);
-            m_result_stack.push_back(lit);
+            th = dynamic_cast<euf::th_solver*>(ext);
+            SASSERT(th);
         }
-    }
-
-    void convert_pb_ge(app* t, bool root, bool sign) {
-        rational k = pb.get_k(t);
-        check_unsigned(k);                
-        svector<wliteral> wlits;
-        convert_pb_args(t, wlits);
-        if (root && m_solver.num_user_scopes() == 0) {
-            m_result_stack.reset();
-            unsigned k1 = k.get_unsigned();
-            if (sign) {
-                k1 = 1 - k1;
-                for (wliteral& wl : wlits) {
-                    wl.second.neg();
-                    k1 += wl.first;
-                }
-            }
-            m_ext->add_pb_ge(sat::null_bool_var, wlits, k1);
-        }
-        else {
-            sat::bool_var v = m_solver.add_var(true);
-            sat::literal lit(v, sign);
-            m_ext->add_pb_ge(v, wlits, k.get_unsigned());
-            TRACE("goal2sat", tout << "root: " << root << " lit: " << lit << "\n";);
-            push_result(root, lit, t->get_num_args());
-        }
-    }
-
-    void convert_pb_le(app* t, bool root, bool sign) {
-        rational k = pb.get_k(t);
-        k.neg();
-        svector<wliteral> wlits;
-        convert_pb_args(t, wlits);
-        for (wliteral& wl : wlits) {
-            wl.second.neg();
-            k += rational(wl.first);
-        }
-        check_unsigned(k);
-        if (root && m_solver.num_user_scopes() == 0) {
-            m_result_stack.reset();
-            unsigned k1 = k.get_unsigned();
-            if (sign) {
-                k1 = 1 - k1;
-                for (wliteral& wl : wlits) {
-                    wl.second.neg();
-                    k1 += wl.first;
-                }
-            }
-            m_ext->add_pb_ge(sat::null_bool_var, wlits, k1);
-        }
-        else {
-            sat::bool_var v = m_solver.add_var(true);
-            sat::literal lit(v, sign);
-            m_ext->add_pb_ge(v, wlits, k.get_unsigned());
-            TRACE("goal2sat", tout << "root: " << root << " lit: " << lit << "\n";);
-            push_result(root, lit, t->get_num_args());
-        }
-    }
-
-    void convert_pb_eq(app* t, bool root, bool sign) {
-        rational k = pb.get_k(t);
-        SASSERT(k.is_unsigned());
-        svector<wliteral> wlits;
-        convert_pb_args(t, wlits);
-        bool base_assert = (root && !sign && m_solver.num_user_scopes() == 0);
-        sat::bool_var v1 = base_assert ? sat::null_bool_var : m_solver.add_var(true);
-        sat::bool_var v2 = base_assert ? sat::null_bool_var : m_solver.add_var(true);
-        m_ext->add_pb_ge(v1, wlits, k.get_unsigned());        
-        k.neg();
-        for (wliteral& wl : wlits) {
-            wl.second.neg();
-            k += rational(wl.first);
-        }
-        check_unsigned(k);
-        m_ext->add_pb_ge(v2, wlits, k.get_unsigned());
-        if (base_assert) {
-            m_result_stack.reset();
-        }
-        else {
-            sat::literal l1(v1, false), l2(v2, false);
-            sat::bool_var v = m_solver.add_var(false);
-            sat::literal l(v, false);
-            mk_clause(~l, l1);
-            mk_clause(~l, l2);
-            mk_clause(~l1, ~l2, l);
-            m_cache.insert(t, l);
-            if (sign) l.neg();
-            push_result(root, l, t->get_num_args());
-        }
-    }
-
-    void convert_at_least_k(app* t, rational const& k, bool root, bool sign) {
-        SASSERT(k.is_unsigned());
-        sat::literal_vector lits;
-        convert_pb_args(t->get_num_args(), lits);
-        unsigned k2 = k.get_unsigned();
-        if (root && m_solver.num_user_scopes() == 0) {
-            m_result_stack.reset();
-            if (sign) {
-                for (sat::literal& l : lits) l.neg();
-                k2 = lits.size() + 1 - k2;
-            }
-            m_ext->add_at_least(sat::null_bool_var, lits, k2);
-        }
-        else {
-            sat::bool_var v = m_solver.add_var(true);
-            sat::literal lit(v, false);
-            m_ext->add_at_least(v, lits, k.get_unsigned());
-            m_cache.insert(t, lit);
-            if (sign) lit.neg();
-            TRACE("goal2sat", tout << "root: " << root << " lit: " << lit << "\n";);
-            push_result(root, lit, t->get_num_args());
-        }
-    }
-
-    void convert_at_most_k(app* t, rational const& k, bool root, bool sign) {
-        SASSERT(k.is_unsigned());
-        sat::literal_vector lits;
-        convert_pb_args(t->get_num_args(), lits);
-        for (sat::literal& l : lits) {
-            l.neg();
-        }
-        unsigned k2 = lits.size() - k.get_unsigned();
-        if (root && m_solver.num_user_scopes() == 0) {
-            m_result_stack.reset();
-            if (sign) {
-                for (sat::literal& l : lits) l.neg();
-                k2 = lits.size() + 1 - k2;
-            }
-            m_ext->add_at_least(sat::null_bool_var, lits, k2);
-        }
-        else {
-            sat::bool_var v = m_solver.add_var(true);
-            sat::literal lit(v, false);
-            m_ext->add_at_least(v, lits, k2);
-            m_cache.insert(t, lit);
-            if (sign) lit.neg();
-            push_result(root, lit, t->get_num_args());
-        }        
-    }
-
-    void convert_eq_k(app* t, rational const& k, bool root, bool sign) {
-        SASSERT(k.is_unsigned());
-        sat::literal_vector lits;
-        convert_pb_args(t->get_num_args(), lits);
-        sat::bool_var v1 = (root && !sign) ? sat::null_bool_var : m_solver.add_var(true);
-        sat::bool_var v2 = (root && !sign) ? sat::null_bool_var : m_solver.add_var(true);
-        m_ext->add_at_least(v1, lits, k.get_unsigned());        
-        for (sat::literal& l : lits) {
-            l.neg();
-        }
-        m_ext->add_at_least(v2, lits, lits.size() - k.get_unsigned());
-
-
-        if (root && !sign) {
-            m_result_stack.reset();
-        }
-        else {
-            sat::literal l1(v1, false), l2(v2, false);
-            sat::bool_var v = m_solver.add_var(false);
-            sat::literal l(v, false);
-            mk_clause(~l, l1);
-            mk_clause(~l, l2);
-            mk_clause(~l1, ~l2, l);
-            m_cache.insert(t, l);
-            if (sign) l.neg();
-            push_result(root, l, t->get_num_args());
-        }
-    }
-
-    void ensure_extension() {
-        if (!m_ext) {
-            sat::extension* ext = m_solver.get_extension();
-            if (ext) {
-                m_ext = dynamic_cast<sat::ba_solver*>(ext);
-                SASSERT(m_ext);
-            }
-            if (!m_ext) {
-                m_ext = alloc(sat::ba_solver);
-                m_solver.set_extension(m_ext);
-            }
-        }        
+        auto lit = th->internalize(t, sign, root, m_is_redundant);
+        m_result_stack.shrink(m_result_stack.size() - t->get_num_args());
+        if (lit == sat::null_literal)
+            return;
+        if (root) 
+            mk_root_clause(lit);        
+        else 
+            m_result_stack.push_back(lit);      
     }
 
     void convert(app * t, bool root, bool sign) {
@@ -683,114 +678,78 @@ struct goal2sat::imp {
             case OP_EQ:
                 convert_iff(t, root, sign);
                 break;
+            case OP_XOR:
+                convert_iff(t, root, !sign);
+                break;
+            case OP_IMPLIES:
+                convert_implies(t, root, sign);
+                break;
             default:
                 UNREACHABLE();
             }
+            SASSERT(!root || m_result_stack.empty());
         }
-        else if (t->get_family_id() == pb.get_family_id()) {
-            ensure_extension();
-            rational k;
-            switch (t->get_decl_kind()) {
-            case OP_AT_MOST_K:
-                k = pb.get_k(t);
-                convert_at_most_k(t, k, root, sign);
-                break;
-            case OP_AT_LEAST_K:
-                k = pb.get_k(t);
-                convert_at_least_k(t, k, root, sign);
-                break;
-            case OP_PB_LE:
-                if (pb.has_unit_coefficients(t)) {
-                    k = pb.get_k(t);
-                    convert_at_most_k(t, k, root, sign);
-                }
-                else {
-                    convert_pb_le(t, root, sign);
-                }
-                break;
-            case OP_PB_GE:
-                if (pb.has_unit_coefficients(t)) {
-                    k = pb.get_k(t);
-                    convert_at_least_k(t, k, root, sign);
-                }
-                else {
-                    convert_pb_ge(t, root, sign);
-                }
-                break;
-            case OP_PB_EQ:
-                if (pb.has_unit_coefficients(t)) {
-                    k = pb.get_k(t);
-                    convert_eq_k(t, k, root, sign);
-                }
-                else {
-                    convert_pb_eq(t, root, sign);
-                }
-                break;
-            default:
-                UNREACHABLE();
-            }
+        else if (!m_euf && pb.is_pb(t)) {
+            convert_ba(t, root, sign);
         }
         else {
             UNREACHABLE();
         }
     }
 
-
-    unsigned get_num_args(app* t) {
-        
-        if (m.is_iff(t) && m_xor_solver) {
-            unsigned n = 2;
-            while (m.is_iff(t->get_arg(1))) {
-                ++n;
-                t = to_app(t->get_arg(1));
-            }
-            return n;
-        }
-        else {
-            return t->get_num_args();
-        }
+    bool is_xor(app* t) const {
+        return m_xor_solver && m.is_iff(t) && m.is_iff(t->get_arg(1));
     }
 
-    expr* get_arg(app* t, unsigned idx) {
-        if (m.is_iff(t) && m_xor_solver) {        
-            while (idx >= 1) {
-                SASSERT(m.is_iff(t));
-                t = to_app(t->get_arg(1));
-                --idx;
+    struct scoped_stack {
+        imp& i;
+        sat::literal_vector& r;
+        unsigned rsz;
+        svector<frame>& frames;
+        unsigned fsz;
+        bool is_root;
+        scoped_stack(imp& x, bool is_root) :
+            i(x), r(i.m_result_stack), rsz(r.size()), frames(x.m_frame_stack), fsz(frames.size()), is_root(is_root)
+        {}
+        ~scoped_stack() {
+            if (frames.size() > fsz) {
+                frames.shrink(fsz);
+                r.shrink(rsz);
+                return;
             }
-            if (m.is_iff(t)) {
-                return t->get_arg(idx);
-            }
-            else {
-                return t;
-            }
+            SASSERT(i.m.limit().is_canceled() || frames.size() == fsz);
+            SASSERT(i.m.limit().is_canceled() || !is_root || rsz == r.size());
+            SASSERT(i.m.limit().is_canceled() || is_root || rsz + 1 == r.size());
         }
-        else {
-            return t->get_arg(idx);
-        }
-    }
-    
-    void process(expr * n) {
-        //SASSERT(m_result_stack.empty());
-        TRACE("goal2sat", tout << "converting: " << mk_bounded_pp(n, m, 2) << "\n";);
-        if (visit(n, true, false)) {
-            SASSERT(m_result_stack.empty());
+    };
+
+    void process(expr* n, bool is_root, bool redundant) {
+        TRACE("goal2sat", tout << "process-begin " << mk_bounded_pp(n, m, 3) 
+            << " root: " << is_root 
+            << " result-stack: " << m_result_stack.size() 
+            << " frame-stack: " << m_frame_stack.size() << "\n";);
+        flet<bool> _is_redundant(m_is_redundant, redundant);
+        scoped_stack _sc(*this, is_root);
+        unsigned sz = m_frame_stack.size();
+        if (visit(n, is_root, false)) 
             return;
-        }
-        while (!m_frame_stack.empty()) {
+        
+        while (m_frame_stack.size() > sz) {
         loop:
             if (!m.inc())
                 throw tactic_exception(m.limit().get_cancel_msg());
             if (memory::get_allocation_size() > m_max_memory)
                 throw tactic_exception(TACTIC_MAX_MEMORY_MSG);
-            frame & fr = m_frame_stack.back();
-            app * t    = fr.m_t;
-            bool root  = fr.m_root;
-            bool sign  = fr.m_sign;
+            unsigned fsz = m_frame_stack.size();
+            frame const& _fr = m_frame_stack[fsz-1];
+            app * t    = _fr.m_t;
+            bool root  = _fr.m_root;
+            bool sign  = _fr.m_sign;
             TRACE("goal2sat_bug", tout << "result stack\n";
-                  tout << mk_ismt2_pp(t, m) << " root: " << root << " sign: " << sign << "\n";
+            tout << "ref-count: " << t->get_ref_count() << "\n";
+                  tout << mk_bounded_pp(t, m, 3) << " root: " << root << " sign: " << sign << "\n";
                   tout << m_result_stack << "\n";);
-            if (fr.m_idx == 0 && process_cached(t, root, sign)) {
+            if (_fr.m_idx == 0 && process_cached(t, root, sign)) {
                 m_frame_stack.pop_back();
                 continue;
             }
@@ -799,19 +758,78 @@ struct goal2sat::imp {
                 visit(t->get_arg(0), root, !sign);
                 continue;
             }
-            unsigned num = get_num_args(t);
-            while (fr.m_idx < num) {
-                expr * arg = get_arg(t, fr.m_idx);
-                fr.m_idx++;
+            if (!m_euf && is_xor(t)) {
+                convert_ba(t, root, sign);
+                m_frame_stack.pop_back();
+                continue;
+            }
+            unsigned num = t->get_num_args();
+            while (m_frame_stack[fsz-1].m_idx < num) {
+                expr * arg = t->get_arg(m_frame_stack[fsz-1].m_idx);
+                m_frame_stack[fsz - 1].m_idx++;
                 if (!visit(arg, false, false))
                     goto loop;
+                TRACE("goal2sat_bug", tout << "visit " << mk_bounded_pp(t, m, 2) << " result stack: " << m_result_stack.size() << "\n";);
             }
             TRACE("goal2sat_bug", tout << "converting\n";
-                  tout << mk_ismt2_pp(t, m) << " root: " << root << " sign: " << sign << "\n";
+                  tout << mk_bounded_pp(t, m, 2) << " root: " << root << " sign: " << sign << "\n";
                   tout << m_result_stack << "\n";);
+            SASSERT(m_frame_stack.size() > sz);
             convert(t, root, sign);
-            m_frame_stack.pop_back();
+            m_frame_stack.pop_back();            
         }
+        TRACE("goal2sat", tout 
+            << "done process: " << mk_bounded_pp(n, m, 3) 
+            << " frame-stack: " << m_frame_stack.size() 
+            << " result-stack: " << m_result_stack.size() << "\n";);
+    }
+
+    sat::literal internalize(expr* n, bool redundant) override {
+        flet<bool> _top(m_top_level, false);
+        unsigned sz = m_result_stack.size();
+        (void)sz;
+        SASSERT(n->get_ref_count() > 0);
+        TRACE("goal2sat", tout << "internalize " << mk_bounded_pp(n, m, 2) << "\n";);
+        process(n, false, redundant);
+        SASSERT(m_result_stack.size() == sz + 1);
+        sat::literal result = m_result_stack.back();
+        m_result_stack.pop_back();
+        if (!result.sign() && m_map.to_bool_var(n) == sat::null_bool_var) 
+            m_map.insert(n, result.var());    
+        return result;
+    }
+
+    bool is_bool_op(expr* t) const override {
+        if (!is_app(t))
+            return false;
+        if (to_app(t)->get_family_id() == m.get_basic_family_id()) {
+            switch (to_app(t)->get_decl_kind()) {
+            case OP_OR:
+            case OP_AND:             
+            case OP_TRUE:
+            case OP_FALSE:
+            case OP_NOT:
+            case OP_IMPLIES:
+            case OP_XOR:
+                return true;
+            case OP_ITE:
+            case OP_EQ:
+                return m.is_bool(to_app(t)->get_arg(1));
+            default:
+                return false;
+            }
+        }
+        else if (!m_euf && to_app(t)->get_family_id() == pb.get_family_id()) 
+            return true;        
+        else 
+            return false;       
+    }
+    
+    void process(expr * n) {
+        flet<bool> _top(m_top_level, true);
+        VERIFY(m_result_stack.empty());
+        TRACE("goal2sat", tout << "assert: " << mk_bounded_pp(n, m, 3) << "\n";);
+        process(n, true, m_is_redundant);
         CTRACE("goal2sat", !m_result_stack.empty(), tout << m_result_stack << "\n";);
         SASSERT(m_result_stack.empty());
     }
@@ -837,7 +855,15 @@ struct goal2sat::imp {
     }
 
     void operator()(goal const & g) {
-        m_interface_vars.reset();
+        struct scoped_reset {
+            imp& i;
+            scoped_reset(imp& i) :i(i) {}
+            ~scoped_reset() {
+                i.m_interface_vars.reset();
+                i.m_cache.reset();
+            }
+        };
+        scoped_reset _reset(*this);
         collect_boolean_interface(g, m_interface_vars);
         unsigned size = g.size();
         expr_ref f(m), d_new(m);
@@ -868,7 +894,7 @@ struct goal2sat::imp {
                     }
                     fmls.push_back(d_new);
                 }                
-                f = m.mk_or(fmls.size(), fmls.c_ptr());
+                f = m.mk_or(fmls);
             }
             TRACE("goal2sat", tout << mk_bounded_pp(f, m, 2) << "\n";);
             process(f);
@@ -877,12 +903,18 @@ struct goal2sat::imp {
         }
     }
 
-    void operator()(unsigned sz, expr * const * fs) {
-        m_interface_vars.reset();
-        collect_boolean_interface(m, sz, fs, m_interface_vars);
+    void update_model(model_ref& mdl) {
+        auto* ext = dynamic_cast<euf::solver*>(m_solver.get_extension());
+        if (ext)
+            ext->update_model(mdl);
+    }
+
+    void user_push() {
         
-        for (unsigned i = 0; i < sz; i++)
-            process(fs[i]);
+    }
+
+    void user_pop(unsigned n) {
+        m_true = sat::null_literal;
     }
 
 };
@@ -896,8 +928,6 @@ struct unsupported_bool_proc {
     void operator()(app * n) { 
         if (n->get_family_id() == m.get_basic_family_id()) {
             switch (n->get_decl_kind()) {
-            case OP_XOR:
-            case OP_IMPLIES:
             case OP_DISTINCT:
                 throw found();
             default:
@@ -915,10 +945,15 @@ struct unsupported_bool_proc {
       :blast-distinct true
 */
 bool goal2sat::has_unsupported_bool(goal const & g) {
-    return test<unsupported_bool_proc>(g);
+    return false && test<unsupported_bool_proc>(g);
 }
 
-goal2sat::goal2sat():m_imp(nullptr), m_interpreted_atoms(nullptr) {
+goal2sat::goal2sat():
+    m_imp(nullptr) {
+}
+
+goal2sat::~goal2sat() {
+    dealloc(m_imp);
 }
 
 void goal2sat::collect_param_descrs(param_descrs & r) {
@@ -926,32 +961,52 @@ void goal2sat::collect_param_descrs(param_descrs & r) {
     r.insert("ite_extra", CPK_BOOL, "(default: true) add redundant clauses (that improve unit propagation) when encoding if-then-else formulas");
 }
 
-struct goal2sat::scoped_set_imp {
-    goal2sat * m_owner; 
-    scoped_set_imp(goal2sat * o, goal2sat::imp * i):m_owner(o) {
-        m_owner->m_imp = i;        
-    }
-    ~scoped_set_imp() {
-        m_owner->m_imp = nullptr;
-    }
-};
 
+void goal2sat::operator()(goal const & g, params_ref const & p, sat::solver_core & t, atom2bool_var & m, dep2asm_map& dep2asm, bool default_external) {
+    if (!m_imp) 
+        m_imp = alloc(imp, g.m(), p, t, m, dep2asm, default_external);
+        
+    (*m_imp)(g);
+    
+    if (!t.get_extension() && m_imp->interpreted_funs().empty()) {
+        dealloc(m_imp);
+        m_imp = nullptr;
+    }
 
-void goal2sat::operator()(goal const & g, params_ref const & p, sat::solver_core & t, atom2bool_var & m, dep2asm_map& dep2asm, bool default_external, bool is_lemma) {
-    imp proc(g.m(), p, t, m, dep2asm, default_external);
-    scoped_set_imp set(this, &proc);
-    proc.set_lemma_mode(is_lemma);
-    proc(g);
-    dealloc(m_interpreted_atoms);
-    m_interpreted_atoms = alloc(expr_ref_vector, g.m());
-    m_interpreted_atoms->append(proc.m_interpreted_atoms);
 }
 
-void goal2sat::get_interpreted_atoms(expr_ref_vector& atoms) {
-    if (m_interpreted_atoms) {
-        atoms.append(*m_interpreted_atoms);
+void goal2sat::get_interpreted_funs(func_decl_ref_vector& funs) {
+    if (m_imp) {
+        funs.append(m_imp->interpreted_funs());
     }
 }
+
+bool goal2sat::has_interpreted_funs() const {
+    return m_imp && !m_imp->interpreted_funs().empty(); 
+}
+
+void goal2sat::update_model(model_ref& mdl) {
+    if (m_imp) 
+        m_imp->update_model(mdl);
+}
+
+void goal2sat::user_push() {
+    if (m_imp)
+        m_imp->user_push();
+}
+    
+void goal2sat::user_pop(unsigned n) {
+    if (m_imp)
+        m_imp->user_pop(n);
+}
+
+
+sat::sat_internalizer& goal2sat::si(ast_manager& m, params_ref const& p, sat::solver_core& t, atom2bool_var& a2b, dep2asm_map& dep2asm, bool default_external) {
+    if (!m_imp)
+        m_imp = alloc(imp, m, p, t, a2b, dep2asm, default_external);
+    return *m_imp;
+}
+
 
 
 sat2goal::mc::mc(ast_manager& m): m(m), m_var2expr(m) {}
@@ -960,6 +1015,7 @@ void sat2goal::mc::flush_smc(sat::solver_core& s, atom2bool_var const& map) {
     s.flush(m_smc);
     m_var2expr.resize(s.num_vars());
     map.mk_var_inv(m_var2expr);
+    flush_gmc();
 }
 
 void sat2goal::mc::flush_gmc() {
@@ -982,7 +1038,10 @@ void sat2goal::mc::flush_gmc() {
                 lit0.neg();
                 def = m.mk_not(def);
             }
-            m_gmc->add(lit2expr(lit0), def);
+            expr_ref e = lit2expr(lit0);
+            expr* r = nullptr;
+            if (is_uninterp_const(e) || (m.is_not(e, r) && is_uninterp_const(r)))
+                m_gmc->add(e, def);
             clause.reset();
             tail.reset();
         }
@@ -1011,7 +1070,7 @@ model_converter* sat2goal::mc::translate(ast_translation& translator) {
     mc* result = alloc(mc, translator.to());
     result->m_smc.copy(m_smc);
     result->m_gmc = m_gmc ? dynamic_cast<generic_model_converter*>(m_gmc->translate(translator)) : nullptr;
-    for (app* e : m_var2expr) {
+    for (expr* e : m_var2expr) {
         result->m_var2expr.push_back(translator(e));
     }
     return result;
@@ -1050,28 +1109,29 @@ void sat2goal::mc::operator()(expr_ref& fml) {
     if (m_gmc) (*m_gmc)(fml);
 }
 
-void sat2goal::mc::insert(sat::bool_var v, app * atom, bool aux) {
+void sat2goal::mc::insert(sat::bool_var v, expr * atom, bool aux) {
     SASSERT(!m_var2expr.get(v, nullptr));
     m_var2expr.reserve(v + 1);
     m_var2expr.set(v, atom);
     if (aux) {
-        SASSERT(is_uninterp_const(atom));
         SASSERT(m.is_bool(atom));
         if (!m_gmc) m_gmc = alloc(generic_model_converter, m, "sat2goal");
-        m_gmc->hide(atom->get_decl());
+        if (is_uninterp_const(atom))
+            m_gmc->hide(to_app(atom)->get_decl());
     }
     TRACE("sat_mc", tout << "insert " << v << "\n";);
 }
 
 expr_ref sat2goal::mc::lit2expr(sat::literal l) {
-    if (!m_var2expr.get(l.var())) {
+    sat::bool_var v = l.var();
+    if (!m_var2expr.get(v)) {
         app* aux = m.mk_fresh_const(nullptr, m.mk_bool_sort());
-        m_var2expr.set(l.var(), aux);
+        m_var2expr.set(v, aux);
         if (!m_gmc) m_gmc = alloc(generic_model_converter, m, "sat2goal");
         m_gmc->hide(aux->get_decl());
     }
-    VERIFY(m_var2expr.get(l.var()));
-    expr_ref result(m_var2expr.get(l.var()), m);
+    VERIFY(m_var2expr.get(v));
+    expr_ref result(m_var2expr.get(v), m);
     if (l.sign()) {
         result = m.mk_not(result);
     }
@@ -1107,7 +1167,7 @@ struct sat2goal::imp {
     expr * lit2expr(ref<mc>& mc, sat::literal l) {
         if (!m_lit2expr.get(l.index())) {
             SASSERT(m_lit2expr.get((~l).index()) == 0);
-            app* aux = mc ? mc->var2expr(l.var()) : nullptr;
+            expr* aux = mc ? mc->var2expr(l.var()) : nullptr;
             if (!aux) {
                 aux = m.mk_fresh_const(nullptr, m.mk_bool_sort());
                 if (mc) {
@@ -1121,50 +1181,6 @@ struct sat2goal::imp {
         return m_lit2expr.get(l.index());
     }
 
-    void assert_pb(ref<mc>& mc, goal& r, sat::ba_solver::pb const& p) {
-        pb_util pb(m);
-        ptr_buffer<expr> lits;
-        vector<rational> coeffs;
-        for (auto const& wl : p) {
-            lits.push_back(lit2expr(mc, wl.second));
-            coeffs.push_back(rational(wl.first));
-        }
-        rational k(p.k());
-        expr_ref fml(pb.mk_ge(p.size(), coeffs.c_ptr(), lits.c_ptr(), k), m);
-        
-        if (p.lit() != sat::null_literal) {
-            fml = m.mk_eq(lit2expr(mc, p.lit()), fml);            
-        }
-        r.assert_expr(fml);
-    }
-
-    void assert_card(ref<mc>& mc, goal& r, sat::ba_solver::card const& c) {
-        pb_util pb(m);
-        ptr_buffer<expr> lits;
-        for (sat::literal l : c) {
-            lits.push_back(lit2expr(mc, l));
-        }
-        expr_ref fml(pb.mk_at_least_k(c.size(), lits.c_ptr(), c.k()), m);
-        
-        if (c.lit() != sat::null_literal) {
-            fml = m.mk_eq(lit2expr(mc, c.lit()), fml);            
-        }
-        r.assert_expr(fml);
-    }
-
-    void assert_xor(ref<mc>& mc, goal & r, sat::ba_solver::xr const& x) {
-        ptr_buffer<expr> lits;
-        for (sat::literal l : x) {
-            lits.push_back(lit2expr(mc, l));
-        }
-        expr_ref fml(m.mk_xor(x.size(), lits.c_ptr()), m);
-        
-        if (x.lit() != sat::null_literal) {
-            fml = m.mk_eq(lit2expr(mc, x.lit()), fml);            
-        }
-        r.assert_expr(fml);
-    }
-
     void assert_clauses(ref<mc>& mc, sat::solver_core const & s, sat::clause_vector const& clauses, goal & r, bool asserted) {
         ptr_buffer<expr> lits;
         unsigned small_lbd = 3; // s.get_config().m_gc_small_lbd;
@@ -1176,13 +1192,9 @@ struct sat2goal::imp {
                 for (sat::literal l : c) {
                     lits.push_back(lit2expr(mc, l));
                 }
-                r.assert_expr(m.mk_or(lits.size(), lits.c_ptr()));
+                r.assert_expr(m.mk_or(lits));
             }
         }
-    }
-
-    sat::ba_solver* get_ba_solver(sat::solver_core const& s) {
-        return dynamic_cast<sat::ba_solver*>(s.get_extension());
     }
 
     void operator()(sat::solver_core & s, atom2bool_var const & map, goal & r, ref<mc> & mc) {
@@ -1199,10 +1211,9 @@ struct sat2goal::imp {
         // collect units
         unsigned trail_sz = s.init_trail_size();
         for (unsigned i = 0; i < trail_sz; ++i) {
-            checkpoint();
+            checkpoint();            
             r.assert_expr(lit2expr(mc, s.trail_literal(i)));
         }
-
         // collect binary clauses
         svector<sat::solver::bin_clause> bin_clauses;
         s.collect_bin_clauses(bin_clauses, m_learned, false);
@@ -1213,21 +1224,20 @@ struct sat2goal::imp {
         // collect clauses
         assert_clauses(mc, s, s.clauses(), r, true);
 
-        sat::ba_solver* ext = get_ba_solver(s);
+        auto* ext = s.get_extension();
         if (ext) {
-            for (auto* c : ext->constraints()) {
-                switch (c->tag()) {
-                case sat::ba_solver::card_t: 
-                    assert_card(mc, r, c->to_card());
-                    break;
-                case sat::ba_solver::pb_t: 
-                    assert_pb(mc, r, c->to_pb());
-                    break;
-                case sat::ba_solver::xr_t: 
-                    assert_xor(mc, r, c->to_xr());
-                    break;
-                }
+            std::function<expr_ref(sat::literal)> l2e = [&](sat::literal lit) {
+                return expr_ref(lit2expr(mc, lit), m);
+            };
+            expr_ref_vector fmls(m);
+            sat::ba_solver* ba = dynamic_cast<sat::ba_solver*>(ext);
+            if (ba) {                
+                ba->to_formulas(l2e, fmls);
             }
+            else 
+                dynamic_cast<euf::solver*>(ext)->to_formulas(l2e, fmls);            
+            for (expr* f : fmls)
+                r.assert_expr(f);            
         }
     }
 

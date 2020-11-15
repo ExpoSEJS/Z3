@@ -16,13 +16,13 @@ Author:
 Notes:
 
 --*/
-#ifndef CHECK_SAT_RESULT_H_
-#define CHECK_SAT_RESULT_H_
+#pragma once
 
 #include "model/model.h"
 #include "util/lbool.h"
 #include "util/statistics.h"
 #include "util/event_handler.h"
+#include "util/timer.h"
 #include "tactic/model_converter.h"
 
 /**
@@ -42,8 +42,9 @@ protected:
     unsigned    m_ref_count;
     lbool       m_status; 
     model_converter_ref m_mc0;
+    double      m_time;
 public:
-    check_sat_result():m_ref_count(0), m_status(l_undef) {}
+    check_sat_result():m_ref_count(0), m_status(l_undef), m_time(0) {}
     virtual ~check_sat_result() {}
     void inc_ref() { m_ref_count++; }
     void dec_ref() { SASSERT(m_ref_count > 0); m_ref_count--; if (m_ref_count == 0) dealloc(this); }
@@ -65,6 +66,19 @@ public:
     virtual void get_labels(svector<symbol> & r) = 0;
     virtual ast_manager& get_manager() const = 0;
 
+    class scoped_solver_time {
+        check_sat_result& c;
+        timer t;
+    public:
+        scoped_solver_time(check_sat_result& c):c(c) { c.m_time = 0; }
+        ~scoped_solver_time() { c.m_time = t.get_seconds(); }
+    };
+
+    void collect_timer_stats(statistics& st) const {
+        if (m_time != 0) 
+            st.update("time", m_time);
+    }
+
 };
 
 /**
@@ -77,7 +91,6 @@ struct simple_check_sat_result : public check_sat_result {
     proof_ref       m_proof;
     std::string     m_unknown;
     
-
     simple_check_sat_result(ast_manager & m);
     ~simple_check_sat_result() override;
     ast_manager& get_manager() const override { return m_proof.get_manager(); }
@@ -90,4 +103,3 @@ struct simple_check_sat_result : public check_sat_result {
     void set_reason_unknown(char const* msg) override { m_unknown = msg; }
 };
 
-#endif

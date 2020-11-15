@@ -21,15 +21,15 @@ Revision History:
 #include<limits>
 #include "ast/arith_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
-#include "muz/base/dl_context.h"
 #include "ast/for_each_expr.h"
 #include "ast/ast_smt_pp.h"
 #include "ast/ast_smt2_pp.h"
 #include "ast/datatype_decl_plugin.h"
 #include "ast/scoped_proof.h"
-#include "muz/base/fp_params.hpp"
 #include "ast/ast_pp_util.h"
-
+#include "ast/ast_util.h"
+#include "muz/base/dl_context.h"
+#include "muz/base/fp_params.hpp"
 
 namespace datalog {
 
@@ -74,8 +74,7 @@ namespace datalog {
 
             unsigned newIdx = m_el_numbers.size();
 
-            sym2num::entry* sym_e = m_el_numbers.insert_if_not_there2(sym, newIdx);
-            unsigned idx=sym_e->get_data().m_value;
+            unsigned idx = m_el_numbers.insert_if_not_there(sym, newIdx);
 
             if (idx==newIdx) {
                 m_el_names.push_back(sym);
@@ -117,10 +116,9 @@ namespace datalog {
 
             unsigned newIdx = m_el_numbers.size();
 
-            el2num::entry* sym_e = m_el_numbers.insert_if_not_there2(el, newIdx);
-            unsigned idx=sym_e->get_data().m_value;
+            unsigned idx = m_el_numbers.insert_if_not_there(el, newIdx);
 
-            if (idx==newIdx) {
+            if (idx == newIdx) {
                 m_el_names.push_back(el);
                 SASSERT(m_el_names.size()==m_el_numbers.size());
             }
@@ -356,10 +354,9 @@ namespace datalog {
 
     void context::restrict_predicates(func_decl_set const& preds) {
         m_preds.reset();
-        func_decl_set::iterator it = preds.begin(), end = preds.end();
-        for (; it != end; ++it) {
-            TRACE("dl", tout << mk_pp(*it, m) << "\n";);
-            m_preds.insert(*it);
+        for (func_decl* p : preds) {
+            TRACE("dl", tout << mk_pp(p, m) << "\n";);
+            m_preds.insert(p);
         }
     }
 
@@ -425,7 +422,7 @@ namespace datalog {
         if (!e) {
             std::stringstream name_stm;
             name_stm << '#' << arg_index;
-            return symbol(name_stm.str().c_str());
+            return symbol(name_stm.str());
         }
         SASSERT(arg_index < e->get_data().m_value.size());
         return e->get_data().m_value[arg_index];
@@ -569,6 +566,7 @@ namespace datalog {
 
     void context::check_rules(rule_set& r) {
         m_rule_properties.set_generate_proof(generate_proof_trace());
+        TRACE("dl", m_rule_set.display(tout););
         switch(get_engine()) {
         case DATALOG_ENGINE:
             m_rule_properties.collect(r);
@@ -743,13 +741,7 @@ namespace datalog {
     }
 
     expr_ref context::get_background_assertion() {
-        expr_ref result(m);
-        switch (m_background.size()) {
-        case 0: result = m.mk_true(); break;
-        case 1: result = m_background[0].get(); break;
-        default: result = m.mk_and(m_background.size(), m_background.c_ptr()); break;
-        }
-        return result;
+        return mk_and(m_background);
     }
 
     void context::assert_expr(expr* e) {
@@ -968,18 +960,17 @@ namespace datalog {
         rule_ref_vector rv (rm);
         get_rules_along_trace (rv);
         expr_ref fml (m);
-        rule_ref_vector::iterator it = rv.begin (), end = rv.end ();
-        for (; it != end; it++) {
-            m_rule_manager.to_formula (**it, fml);
+        for (auto* r : rv) {
+            m_rule_manager.to_formula (*r, fml);
             rules.push_back (fml);
             // The concatenated names are already stored last-first, so do not need to be reversed here
-            const symbol& rule_name = (*it)->name();
+            const symbol& rule_name = r->name();
             names.push_back (rule_name);
 
             TRACE ("dl",
                    if (rule_name == symbol::null) {
                        tout << "Encountered unnamed rule: ";
-                       (*it)->display(*this, tout);
+                       r->display(*this, tout);
                        tout << "\n";
                    });
         }
@@ -1071,9 +1062,7 @@ namespace datalog {
                 --i;
             }
         }
-        rule_set::iterator it = m_rule_set.begin(), end = m_rule_set.end();
-        for (; it != end; ++it) {
-            rule* r = *it;
+        for (rule* r : m_rule_set) {
             rm.to_formula(*r, fml);
             func_decl* h = r->get_decl();
             if (m_rule_set.is_output_predicate(h)) {
@@ -1194,11 +1183,11 @@ namespace datalog {
                 out << " :named ";
                 while (fresh_names.contains(nm)) {
                     std::ostringstream s;
-                    s << nm << "!";
-                    nm = symbol(s.str().c_str());
+                    s << nm << '!';
+                    nm = symbol(s.str());
                 }
                 fresh_names.add(nm);
-                display_symbol(out, nm) << ")";
+                display_symbol(out, nm) << ')';
             }
             out << ")\n";
         }
@@ -1232,14 +1221,14 @@ namespace datalog {
         }
         else {
             for (unsigned i = 0; i < queries.size(); ++i) {
-                if (queries.size() > 1) out << "(push)\n";
+                if (queries.size() > 1) out << "(push 1)\n";
                 out << "(assert ";
                 expr_ref q(m);
                 q = m.mk_not(queries[i].get());
                 PP(q);
                 out << ")\n";
                 out << "(check-sat)\n";
-                if (queries.size() > 1) out << "(pop)\n";
+                if (queries.size() > 1) out << "(pop 1)\n";
             }
         }
     }
@@ -1314,8 +1303,7 @@ namespace datalog {
 
                 // index into fresh variable array.
                 // unsigned fresh_var_idx = 0;
-                obj_map<sort, unsigned_vector>::obj_map_entry* e = var_idxs.insert_if_not_there2(s, unsigned_vector());
-                unsigned_vector& vars = e->get_data().m_value;
+                unsigned_vector& vars = var_idxs.insert_if_not_there(s, unsigned_vector());
                 if (max_var >= vars.size()) {
                     SASSERT(vars.size() == max_var);
                     vars.push_back(fresh_vars.size());

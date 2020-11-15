@@ -37,9 +37,7 @@ OCAMLC=getenv("OCAMLC", "ocamlc")
 OCAMLOPT=getenv("OCAMLOPT", "ocamlopt")
 OCAML_LIB=getenv("OCAML_LIB", None)
 OCAMLFIND=getenv("OCAMLFIND", "ocamlfind")
-CSC=getenv("CSC", None)
 DOTNET="dotnet"
-GACUTIL=getenv("GACUTIL", 'gacutil')
 # Standard install directories relative to PREFIX
 INSTALL_BIN_DIR=getenv("Z3_INSTALL_BIN_DIR", "bin")
 INSTALL_LIB_DIR=getenv("Z3_INSTALL_LIB_DIR", "lib")
@@ -48,7 +46,6 @@ INSTALL_PKGCONFIG_DIR=getenv("Z3_INSTALL_PKGCONFIG_DIR", os.path.join(INSTALL_LI
 
 CXX_COMPILERS=['g++', 'clang++']
 C_COMPILERS=['gcc', 'clang']
-CSC_COMPILERS=['csc', 'mcs']
 JAVAC=None
 JAR=None
 PYTHON_PACKAGE_DIR=distutils.sysconfig.get_python_lib(prefix=getenv("PREFIX", None))
@@ -75,6 +72,7 @@ IS_OSX=False
 IS_FREEBSD=False
 IS_NETBSD=False
 IS_OPENBSD=False
+IS_SUNOS=False
 IS_CYGWIN=False
 IS_CYGWIN_MINGW=False
 IS_MSYS2=False
@@ -156,6 +154,9 @@ def is_netbsd():
 
 def is_openbsd():
     return IS_OPENBSD
+
+def is_sunos():
+    return IS_SUNOS
 
 def is_osx():
     return IS_OSX
@@ -362,7 +363,7 @@ def check_java():
     oo = TempFile('output')
     eo = TempFile('errout')
     try:
-        subprocess.call([JAVAC, 'Hello.java', '-verbose'], stdout=oo.fname, stderr=eo.fname)
+        subprocess.call([JAVAC, 'Hello.java', '-verbose', '-source', '1.8', '-target', '1.8' ], stdout=oo.fname, stderr=eo.fname)
         oo.commit()
         eo.commit()
     except:
@@ -491,7 +492,10 @@ def find_ml_lib():
 
 def is64():
     global LINUX_X64
-    return LINUX_X64 and sys.maxsize >= 2**32
+    if is_sunos() and sys.version_info.major < 3: 
+        return LINUX_X64
+    else:
+        return LINUX_X64 and sys.maxsize >= 2**32
 
 def check_ar():
     if is_verbose():
@@ -601,6 +605,8 @@ elif os.name == 'posix':
         IS_NETBSD=True
     elif os.uname()[0] == 'OpenBSD':
         IS_OPENBSD=True
+    elif os.uname()[0] == 'SunOS':
+        IS_SUNOS=True
     elif os.uname()[0][:6] == 'CYGWIN':
         IS_CYGWIN=True
         if (CC != None and "mingw" in CC):
@@ -666,8 +672,6 @@ def display_help(exit_code):
     print("  OCAMLFIND  Ocaml find tool (only relevant with --ml)")
     print("  OCAMLOPT   Ocaml native compiler (only relevant with --ml)")
     print("  OCAML_LIB  Ocaml library directory (only relevant with --ml)")
-    print("  CSC        C# Compiler (only relevant if .NET bindings are enabled)")
-    print("  GACUTIL    GAC Utility (only relevant if .NET bindings are enabled)")
     print("  Z3_INSTALL_BIN_DIR Install directory for binaries relative to install prefix")
     print("  Z3_INSTALL_LIB_DIR Install directory for libraries relative to install prefix")
     print("  Z3_INSTALL_INCLUDE_DIR Install directory for header files relative to install prefix")
@@ -916,20 +920,23 @@ def is_CXX_clangpp():
         return is_clang_in_gpp_form(CXX)
     return is_compiler(CXX, 'clang++')
 
+def get_files_with_ext(path, ext):
+    return filter(lambda f: f.endswith(ext), os.listdir(path))
+
 def get_cpp_files(path):
-    return filter(lambda f: f.endswith('.cpp'), os.listdir(path))
+    return get_files_with_ext(path,'.cpp')
 
 def get_c_files(path):
-    return filter(lambda f: f.endswith('.c'), os.listdir(path))
+    return get_files_with_ext(path,'.c')
 
 def get_cs_files(path):
-    return filter(lambda f: f.endswith('.cs'), os.listdir(path))
+    return get_files_with_ext(path,'.cs')
 
 def get_java_files(path):
-    return filter(lambda f: f.endswith('.java'), os.listdir(path))
+    return get_files_with_ext(path,'.java')
 
 def get_ml_files(path):
-    return filter(lambda f: f.endswith('.ml'), os.listdir(path))
+    return get_files_with_ext(path,'.ml')
 
 def find_all_deps(name, deps):
     new_deps = []
@@ -1657,6 +1664,7 @@ class DotNetDLLComponent(Component):
     <AssemblyName>Microsoft.Z3</AssemblyName>
     <OutputType>Library</OutputType>
     <PackageId>Microsoft.Z3</PackageId>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RuntimeFrameworkVersion>1.0.4</RuntimeFrameworkVersion>
     <Version>%s</Version>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -1710,6 +1718,8 @@ class DotNetDLLComponent(Component):
                         '%s.dll' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             shutil.copy('%s.pdb' % os.path.join(build_path, self.dll_name),
                         '%s.pdb' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
+            shutil.copy('%s.xml' % os.path.join(build_path, self.dll_name),
+                        '%s.xml' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             shutil.copy('%s.deps.json' % os.path.join(build_path, self.dll_name),
                         '%s.deps.json' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             if DEBUG_MODE:
@@ -1721,6 +1731,8 @@ class DotNetDLLComponent(Component):
             mk_dir(os.path.join(dist_path, INSTALL_BIN_DIR))
             shutil.copy('%s.dll' % os.path.join(build_path, self.dll_name),
                         '%s.dll' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
+            shutil.copy('%s.xml' % os.path.join(build_path, self.dll_name),
+                        '%s.xml' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
             shutil.copy('%s.deps.json' % os.path.join(build_path, self.dll_name),
                         '%s.deps.json' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
 
@@ -1764,6 +1776,8 @@ class JavaDLLComponent(Component):
                 t = t.replace('PLATFORM', 'netbsd')
             elif IS_OPENBSD:
                 t = t.replace('PLATFORM', 'openbsd')
+            elif IS_SUNOS:
+                t = t.replace('PLATFORM', 'SunOS')
             elif IS_CYGWIN:
                 t = t.replace('PLATFORM', 'cygwin')
             elif IS_MSYS2:
@@ -1788,9 +1802,9 @@ class JavaDLLComponent(Component):
             #if IS_WINDOWS:
             JAVAC = '"%s"' % JAVAC
             JAR = '"%s"' % JAR
-            t = ('\t%s %s.java -d %s\n' % (JAVAC, os.path.join(self.to_src_dir, 'enumerations', '*'), os.path.join('api', 'java', 'classes')))
+            t = ('\t%s -source 1.8 -target 1.8 %s.java -d %s\n' % (JAVAC, os.path.join(self.to_src_dir, 'enumerations', '*'), os.path.join('api', 'java', 'classes')))
             out.write(t)
-            t = ('\t%s -cp %s %s.java -d %s\n' % (JAVAC,
+            t = ('\t%s -source 1.8 -target 1.8 -cp %s %s.java -d %s\n' % (JAVAC,
                                                   os.path.join('api', 'java', 'classes'),
                                                   os.path.join(self.to_src_dir, '*'),
                                                   os.path.join('api', 'java', 'classes')))
@@ -1956,7 +1970,7 @@ class MLComponent(Component):
 
             OCAMLMKLIB = 'ocamlmklib'
 
-            LIBZ3 = '-cclib -l' + z3link
+            LIBZ3 = '-l' + z3link + ' -lstdc++'
             if is_cygwin() and not(is_cygwin_mingw()):
                 LIBZ3 = z3linkdep
 
@@ -1969,9 +1983,9 @@ class MLComponent(Component):
             z3mls = os.path.join(self.sub_dir, 'z3ml')
 
             out.write('%s.cma: %s %s %s\n' % (z3mls, cmos, stubso, z3linkdep))
-            out.write('\t%s -o %s -I %s %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmos, LIBZ3))
+            out.write('\t%s -o %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmos, LIBZ3))
             out.write('%s.cmxa: %s %s %s %s.cma\n' % (z3mls, cmxs, stubso, z3linkdep, z3mls))
-            out.write('\t%s -o %s -I %s %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmxs, LIBZ3))
+            out.write('\t%s -o %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmxs, LIBZ3))
             out.write('%s.cmxs: %s.cmxa\n' % (z3mls, z3mls))
             out.write('\t%s -linkall -shared -o %s.cmxs -I . -I %s %s.cmxa\n' % (OCAMLOPTF, z3mls, self.sub_dir, z3mls))
 
@@ -2272,6 +2286,10 @@ def add_lib(name, deps=[], path=None, includes2install=[]):
     c = LibComponent(name, path, deps, includes2install)
     reg_component(name, c)
 
+def add_clib(name, deps=[], path=None, includes2install=[]):
+    c = CLibComponent(name, path, deps, includes2install)
+    reg_component(name, c)
+
 def add_hlib(name, path=None, includes2install=[]):
     c = HLibComponent(name, path, includes2install)
     reg_component(name, c)
@@ -2340,7 +2358,7 @@ def mk_config():
     if ONLY_MAKEFILES:
         return
     config = open(os.path.join(BUILD_DIR, 'config.mk'), 'w')
-    global CXX, CC, GMP, CPPFLAGS, CXXFLAGS, LDFLAGS, EXAMP_DEBUG_FLAG, FPMATH_FLAGS, LOG_SYNC, SINGLE_THREADED
+    global CXX, CC, GMP, GUARD_CF, STATIC_BIN, GIT_HASH, CPPFLAGS, CXXFLAGS, LDFLAGS, EXAMP_DEBUG_FLAG, FPMATH_FLAGS, LOG_SYNC, SINGLE_THREADED
     if IS_WINDOWS:
         config.write(
             'CC=cl\n'
@@ -2506,6 +2524,12 @@ def mk_config():
             OS_DEFINES     = '-D_OPENBSD_'
             SO_EXT         = '.so'
             SLIBFLAGS      = '-shared'
+        elif sysname  == 'SunOS':
+            CXXFLAGS       = '%s -D_SUNOS_' % CXXFLAGS
+            OS_DEFINES     = '-D_SUNOS_'
+            SO_EXT         = '.so'
+            SLIBFLAGS      = '-shared'
+            SLIBEXTRAFLAGS = '%s -mimpure-text' % SLIBEXTRAFLAGS
         elif sysname.startswith('CYGWIN'):
             CXXFLAGS       = '%s -D_CYGWIN' % CXXFLAGS
             OS_DEFINES     = '-D_CYGWIN'

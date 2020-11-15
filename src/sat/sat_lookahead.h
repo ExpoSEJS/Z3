@@ -17,8 +17,7 @@ Author:
 Notes:
 
 --*/
-#ifndef _SAT_LOOKAHEAD_H_
-#define _SAT_LOOKAHEAD_H_
+#pragma once
 
 
 #include "util/small_object_allocator.h"
@@ -43,7 +42,7 @@ namespace sat {
         return out;
     }
 
-    enum lookahead_mode {
+    enum class lookahead_mode {
         searching,         // normal search
         lookahead1,        // lookahead mode
         lookahead2         // double lookahead
@@ -101,8 +100,8 @@ namespace sat {
                 m_delta_rho = (double)0.7;
                 m_dl_max_iterations = 2;
                 m_tc1_limit = 10000000;
-                m_reward_type = ternary_reward;
-                m_cube_cutoff = adaptive_freevars_cutoff;
+                m_reward_type = reward_t::ternary_reward;
+                m_cube_cutoff = cutoff_t::adaptive_freevars_cutoff;
                 m_cube_depth = 10;
                 m_cube_fraction = 0.4;
                 m_cube_freevars = 0.8;
@@ -525,7 +524,7 @@ namespace sat {
         void update_lookahead_reward(literal l, unsigned level);
         bool dl_enabled(literal l) const { return m_lits[l.index()].m_double_lookahead != m_istamp_id; }
         void dl_disable(literal l) { m_lits[l.index()].m_double_lookahead = m_istamp_id; }
-        bool dl_no_overflow(unsigned base) const { return base + 2 * m_lookahead.size() * static_cast<uint64_t>(m_config.m_dl_max_iterations + 1) < c_fixed_truth; }
+        bool dl_no_overflow(unsigned base) const { return base + static_cast < uint64_t>(2 * m_lookahead.size()) * static_cast <uint64_t>(m_config.m_dl_max_iterations + 1) < c_fixed_truth; }
 
         unsigned do_double(literal l, unsigned& base);
         unsigned double_look(literal l, unsigned& base);
@@ -632,5 +631,4 @@ namespace sat {
     };
 }
 
-#endif
 

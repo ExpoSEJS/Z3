@@ -947,10 +947,13 @@ namespace nlsat {
         }
 
         void mk_clause(unsigned num_lits, literal const * lits, assumption a) {
-            SASSERT(num_lits > 0);
             _assumption_set as = nullptr;
             if (a != nullptr)
                 as = m_asm.mk_leaf(a);
+            if (num_lits == 0) {
+                num_lits = 1;
+                lits = &false_literal;
+            }
             mk_clause(num_lits, lits, false, as);
         }
 
@@ -1543,9 +1546,8 @@ namespace nlsat {
             lbool r = l_undef;
             while (true) {
                 r = search();
-                if (r != l_true) break;     
-                vector<rational> lows;
-                vector<var>      vars;
+                if (r != l_true) break; 
+                vector<std::pair<var, rational>> bounds;                
 
                 for (var x = 0; x < num_vars(); x++) {
                     if (m_is_int[x] && m_assignment.is_assigned(x) && !m_am.is_int(m_assignment.value(x))) {
@@ -1553,24 +1555,24 @@ namespace nlsat {
                         v = m_assignment.value(x);
                         rational lo;
                         m_am.int_lt(v, vlo);
-                        if (!m_am.is_int(vlo)) continue;
+                        if (!m_am.is_int(vlo)) 
+                            continue;
                         m_am.to_rational(vlo, lo);
                         // derive tight bounds.
                         while (true) {
                             lo++;
                             if (!m_am.gt(v, lo.to_mpq())) { lo--; break; }
                         }
-                        lows.push_back(lo);
-                        vars.push_back(x);
+                        bounds.push_back(std::make_pair(x, lo));
                     }
                 }
-                if (lows.empty()) break;
+                if (bounds.empty()) break;
 
                 init_search();                
-                for (unsigned i = 0; i < lows.size(); ++i) {
-                    rational lo = lows[i];
-                    rational hi = lo + rational::one();
-                    var x = vars[i];
+                for (auto const& b : bounds) {
+                    var x = b.first;
+                    rational lo = b.second;
+                    rational hi = lo + 1; // rational::one();
                     bool is_even = false;                        
                     polynomial_ref p(m_pm);
                     rational one(1);
@@ -1756,7 +1758,7 @@ namespace nlsat {
             if (assigned_value(antecedent) == l_undef) {
                 checkpoint();
                 // antecedent must be false in the current arith interpretation
-                SASSERT(value(antecedent) == l_false || m_rlimit.get_cancel_flag());
+                SASSERT(value(antecedent) == l_false || m_rlimit.is_canceled());
                 if (!is_marked(b)) {
                     SASSERT(is_arith_atom(b) && max_var(b) < m_xk); // must be in a previous stage
                     TRACE("nlsat_resolve", tout << "literal is unassigned, but it is false in arithmetic interpretation, adding it to lemma\n";); 
@@ -1834,10 +1836,10 @@ namespace nlsat {
                 for (unsigned i = 0; i < sz; i++) {
                     literal l = m_lazy_clause[i];
                     if (l.var() != b) {
-                        SASSERT(value(l) == l_false || m_rlimit.get_cancel_flag());
+                        SASSERT(value(l) == l_false || m_rlimit.is_canceled());
                     }
                     else {
-                        SASSERT(value(l) == l_true || m_rlimit.get_cancel_flag());
+                        SASSERT(value(l) == l_true || m_rlimit.is_canceled());
                         SASSERT(!l.sign() || m_bvalues[b] == l_false);
                         SASSERT(l.sign()  || m_bvalues[b] == l_true);
                     }
@@ -1958,6 +1960,13 @@ namespace nlsat {
             return new_lvl;
         }
 
+        struct scoped_reset_marks {
+            imp& i;
+            scoped_reset_marks(imp& i):i(i) {}
+            ~scoped_reset_marks() { if (i.m_num_marks > 0) { i.m_num_marks = 0; for (char& m : i.m_marks) m = 0; } }
+        };
+
+
         /**
            \brief Return true if the conflict was solved.
         */
@@ -1977,7 +1986,7 @@ namespace nlsat {
             m_num_marks = 0;
             m_lemma.reset();
             m_lemma_assumptions = nullptr;
-
+            scoped_reset_marks _sr(*this);
             resolve_clause(null_bool_var, *conflict_clause);
 
             unsigned top = m_trail.size();

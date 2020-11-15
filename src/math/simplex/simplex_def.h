@@ -5,8 +5,6 @@ Module Name:
 
     simplex_def.h
 
-Abstract:
-
 Author:
 
     Nikolaj Bjorner (nbjorner) 2014-01-15
@@ -19,8 +17,7 @@ Notes:
 
 --*/
 
-#ifndef SIMPLEX_DEF_H_
-#define SIMPLEX_DEF_H_
+#pragma once
 
 
 namespace simplex {
@@ -1040,5 +1037,4 @@ namespace simplex {
 
 };
 
-#endif
 

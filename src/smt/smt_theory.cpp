@@ -22,29 +22,41 @@ Revision History:
 
 namespace smt {
 
-    void theory::init(context * ctx) {
-        SASSERT(m_context == 0);
-        m_context = ctx;
-        m_manager = &(ctx->get_manager());
-    }
-
     void theory::reset_eh() {
         m_var2enode.reset();
     }
     
     void theory::push_scope_eh() {
-        SASSERT(m_context);
         m_var2enode_lim.push_back(m_var2enode.size());
     }
 
     void theory::pop_scope_eh(unsigned num_scopes) {
-        SASSERT(m_context);
         unsigned scope_lvl = m_var2enode_lim.size();
         SASSERT(num_scopes <= scope_lvl);
         unsigned new_lvl   = scope_lvl - num_scopes;
         unsigned old_sz    = m_var2enode_lim[new_lvl];
         m_var2enode.shrink(old_sz);
         m_var2enode_lim.shrink(new_lvl);
+    }
+
+    bool theory::lazy_push() {
+        if (m_lazy)
+            ++m_lazy_scopes;
+        return m_lazy;
+    }
+
+    bool theory::lazy_pop(unsigned& num_scopes) {
+        unsigned n = std::min(num_scopes, m_lazy_scopes);
+        num_scopes -= n;
+        m_lazy_scopes -= n;
+        return num_scopes == 0;
+    }
+
+    void theory::force_push() {
+        flet<bool> _lazy(m_lazy, false);
+        for (; m_lazy_scopes > 0; --m_lazy_scopes) {
+            push_scope_eh();
+        }
     }
 
     void theory::display_var2enode(std::ostream & out) const {
@@ -109,35 +121,79 @@ namespace smt {
     }
     
     bool theory::is_relevant_and_shared(enode * n) const {
-        context & ctx = get_context();
         return ctx.is_relevant(n) && ctx.is_shared(n);
     }
     
     bool theory::assume_eq(enode * n1, enode * n2) {
-        return get_context().assume_eq(n1, n2);
+        return ctx.assume_eq(n1, n2);
     }
 
     literal theory::mk_eq(expr * a, expr * b, bool gate_ctx) {
         if (a == b) {
             return true_literal;
         }
-        context & ctx = get_context();
-        app * eq = ctx.mk_eq_atom(a, b);
+        if (m.are_distinct(a, b))
+            return false_literal;
+        app_ref eq(ctx.mk_eq_atom(a, b), get_manager());
         TRACE("mk_var_bug", tout << "mk_eq: " << eq->get_id() << " " << a->get_id() << " " << b->get_id() << "\n";
               tout << mk_ll_pp(a, get_manager()) << "\n" << mk_ll_pp(b, get_manager()););		
         ctx.internalize(eq, gate_ctx);
         return ctx.get_literal(eq);
     }
 
-    theory::theory(family_id fid):
+    literal theory::mk_preferred_eq(expr* a, expr* b) {
+        ctx.assume_eq(ensure_enode(a), ensure_enode(b));
+        literal lit = mk_eq(a, b, false);
+        ctx.force_phase(lit);
+        return lit;
+    }
+
+    literal theory::mk_literal(expr* _e) {
+        expr_ref e(_e, m);
+        bool is_not = m.is_not(_e, _e);
+        if (!ctx.e_internalized(_e)) {
+            ctx.internalize(_e, is_quantifier(_e));
+        }
+        literal lit = ctx.get_literal(_e);
+        ctx.mark_as_relevant(lit);
+        if (is_not) lit.neg();
+        return lit;
+    }
+
+    enode* theory::ensure_enode(expr* e) {
+        if (!ctx.e_internalized(e)) {
+            ctx.internalize(e, is_quantifier(e));
+        }
+        enode* n = ctx.get_enode(e);
+        ctx.mark_as_relevant(n);
+        return n;
+    }
+
+    theory::theory(context& ctx, family_id fid):
         m_id(fid),
-        m_context(nullptr),
-        m_manager(nullptr) {
+        ctx(ctx),
+        m(ctx.get_manager()),
+        m_lazy_scopes(0),
+        m_lazy(true) {
     }
 
     theory::~theory() {
     }
 
+    smt_params const& theory::get_fparams() const { 
+        return ctx.get_fparams();
+    }
+
+    void theory::log_axiom_instantiation(literal_vector const& ls) {
+        ast_manager& m = get_manager();
+        expr_ref_vector fmls(m);
+        expr_ref tmp(m);
+        for (literal l : ls) {
+            ctx.literal2expr(l, tmp);
+            fmls.push_back(tmp);
+        }
+        log_axiom_instantiation(mk_or(fmls));
+    }
 
     void theory::log_axiom_instantiation(app * r, unsigned axiom_id, unsigned num_bindings, app * const * bindings, unsigned pattern_id, const vector<std::tuple<enode *, enode *>> & used_enodes) {
         ast_manager & m = get_manager();
@@ -167,8 +223,8 @@ namespace smt {
                 enode *orig = std::get<0>(n);
                 enode *substituted = std::get<1>(n);
                 if (orig != nullptr) {
-                    quantifier_manager::log_justification_to_root(out, orig, already_visited, get_context(), get_manager());
-                    quantifier_manager::log_justification_to_root(out, substituted, already_visited, get_context(), get_manager());
+                    quantifier_manager::log_justification_to_root(out, orig, already_visited, ctx, get_manager());
+                    quantifier_manager::log_justification_to_root(out, substituted, already_visited, ctx, get_manager());
                 }
             }
             out << "[new-match] " << static_cast<void *>(nullptr) << " " << family_name << "#" << axiom_id << " " << family_name << "#" << pattern_id;
@@ -192,7 +248,7 @@ namespace smt {
     }
 
     theory_var theory::get_th_var(expr* e) const {
-        return get_th_var(get_context().get_enode(e));
+        return get_th_var(ctx.get_enode(e));
     }
 
 };

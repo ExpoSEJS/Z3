@@ -150,6 +150,9 @@ namespace smt {
     void qi_queue::instantiate() {
         unsigned since_last_check = 0;
         for (entry & curr : m_new_entries) {
+            if (m_context.get_cancel_flag()) {
+                break;
+            }
             fingerprint * f    = curr.m_qb;
             quantifier * qa    = static_cast<quantifier*>(f->get_data());
 
@@ -171,9 +174,6 @@ namespace smt {
                 if (m_context.resource_limits_exceeded()) {
                     break;
                 }
-                if (m_context.get_cancel_flag()) {
-                    break;
-                }
                 since_last_check = 0;
             }
         }
@@ -193,6 +193,9 @@ namespace smt {
     }
 
     void qi_queue::instantiate(entry & ent) {
+        // set temporary flag to enable quantifier-specific tracing in within smt_internalizer.
+        flet<bool> _coming_from_quant(m_context.m_coming_from_quant, true);
+
         fingerprint * f          = ent.m_qb;
         quantifier * q           = static_cast<quantifier*>(f->get_data());
         unsigned generation      = ent.m_generation;
@@ -200,13 +203,24 @@ namespace smt {
         enode * const * bindings = f->get_args();
 
         ent.m_instantiated = true;
-
+                
         TRACE("qi_queue_profile", tout << q->get_qid() << ", gen: " << generation << " " << *f << " cost: " << ent.m_cost << "\n";);
+
+        quantifier_stat * stat = m_qm.get_stat(q);
 
         if (m_checker.is_sat(q->get_expr(), num_bindings, bindings)) {
             TRACE("checker", tout << "instance already satisfied\n";);
+            // we log the "dummy" instantiations separately from "instance"
+            STRACE("dummy", tout << "### " << static_cast<void*>(f) <<", " << q->get_qid() << "\n";);
+            STRACE("dummy", tout << "Instance already satisfied (dummy)\n";);
+            // a dummy instantiation is still an instantiation.
+            // in this way smt.qi.profile=true coincides with the axiom profiler
+            stat->inc_num_instances_checker_sat();
             return;
         }
+
+        STRACE("instance", tout << "### " << static_cast<void*>(f) <<", " << q->get_qid()  << "\n";);
+
         expr_ref instance(m);
         m_subst(q, num_bindings, bindings, instance);
 
@@ -219,6 +233,8 @@ namespace smt {
         if (m.is_true(s_instance)) {
             TRACE("checker", tout << "reduced to true, before:\n" << mk_ll_pp(instance, m););
 
+            STRACE("instance", tout <<  "Instance reduced to true\n";);
+            stat -> inc_num_instances_simplify_true();
             if (m.has_trace_stream()) {
                 display_instance_profile(f, q, num_bindings, bindings, pr ? pr->get_id() : 0, generation);
                 m.trace_stream() << "[end-of-instance]\n";
@@ -227,7 +243,6 @@ namespace smt {
             return;
         }
         TRACE("qi_queue", tout << "simplified instance:\n" << s_instance << "\n";);
-        quantifier_stat * stat = m_qm.get_stat(q);
         stat->inc_num_instances();
         if (stat->get_num_instances() % m_params.m_qi_profile_freq == 0) {
             m_qm.display_stats(verbose_stream(), q);

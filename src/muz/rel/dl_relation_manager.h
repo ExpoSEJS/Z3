@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_RELATION_MANAGER_H_
-#define DL_RELATION_MANAGER_H_
+#pragma once
 
 
 #include "util/map.h"
@@ -673,7 +672,7 @@ namespace datalog {
         family_id get_relation_kind(const relation_signature & sig, const Spec & spec) {
             typename sig2store::entry * e = m_kind_assignment.find_core(sig);
             if(!e) {
-                e = m_kind_assignment.insert_if_not_there2(sig, alloc(family_id_idx_store));
+                e = m_kind_assignment.insert_if_not_there3(sig, alloc(family_id_idx_store));
                 m_kind_specs.insert(sig, alloc(family_id2spec));
             }
             family_id_idx_store & ids = *e->get_data().m_value;
@@ -702,5 +701,4 @@ namespace datalog {
 
 };
 
-#endif /* DL_RELATION_MANAGER_H_ */
 

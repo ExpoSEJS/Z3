@@ -18,8 +18,7 @@ Author:
 Notes:
 
 --*/
-#ifndef CMD_CONTEXT_H_
-#define CMD_CONTEXT_H_
+#pragma once
 
 #include<sstream>
 #include<vector>
@@ -36,11 +35,11 @@ Notes:
 #include "ast/rewriter/seq_rewriter.h"
 #include "tactic/generic_model_converter.h"
 #include "solver/solver.h"
+#include "solver/check_logic.h"
 #include "solver/progress_callback.h"
 #include "cmd_context/pdecl.h"
 #include "cmd_context/tactic_manager.h"
-#include "cmd_context/check_logic.h"
-#include "cmd_context/context_params.h"
+#include "params/context_params.h"
 
 
 class func_decls {
@@ -82,6 +81,7 @@ public:
     macro_decls() { m_decls = nullptr; }
     void finalize(ast_manager& m);
     bool insert(ast_manager& m, unsigned arity, sort *const* domain, expr* body);
+    bool empty() const { return !m_decls || m_decls->empty(); }
     expr* find(unsigned arity, sort *const* domain) const;
     void erase_last(ast_manager& m);
     vector<macro_decl>::iterator begin() const { return m_decls->begin(); }
@@ -192,8 +192,8 @@ protected:
     status                       m_status;
     bool                         m_numeral_as_real;
     bool                         m_ignore_check;      // used by the API to disable check-sat() commands when parsing SMT 2.0 files.
-    bool                         m_processing_pareto; // used when re-entering check-sat for pareto front.
     bool                         m_exit_on_error;
+    bool                         m_allow_duplicate_declarations { false };
 
     static std::ostringstream    g_error_stream;
 
@@ -306,7 +306,7 @@ protected:
     bool contains_macro(symbol const& s, unsigned arity, sort *const* domain) const;
     void insert_macro(symbol const& s, unsigned arity, sort*const* domain, expr* t);
     void erase_macro(symbol const& s);
-    bool macros_find(symbol const& s, unsigned n, expr*const* args, expr*& t) const;
+    bool macros_find(symbol const& s, unsigned n, expr*const* args, expr_ref_vector& coerced_args, expr*& t) const;
 
     recfun::decl::plugin& get_recfun_plugin();
 
@@ -348,6 +348,7 @@ public:
     void set_produce_unsat_cores(bool flag);
     void set_produce_proofs(bool flag);
     void set_produce_unsat_assumptions(bool flag) { m_produce_unsat_assumptions = flag; }
+    void set_allow_duplicate_declarations() { m_allow_duplicate_declarations = true; }
     bool produce_assignments() const { return m_produce_assignments; }
     bool produce_unsat_assumptions() const { return m_produce_unsat_assumptions; }
     void set_produce_assignments(bool flag) { m_produce_assignments = flag; }
@@ -367,7 +368,7 @@ public:
     check_sat_state cs_state() const;
     void complete_model(model_ref& mdl) const;
     void validate_model();
-    void analyze_failure(model_evaluator& ev, expr* e, bool expected_value);
+    void analyze_failure(expr_mark& seen, model_evaluator& ev, expr* e, bool expected_value);
     void display_detailed_analysis(std::ostream& out, model_evaluator& ev, expr* e);
     void display_model(model_ref& mdl);
 
@@ -388,7 +389,6 @@ public:
     void model_add(symbol const & s, unsigned arity, sort *const* domain, expr * t);
     void model_del(func_decl* f);
     void insert_rec_fun(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* e);
-    void insert_rec_fun_as_axiom(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* e);
     func_decl * find_func_decl(symbol const & s) const;
     func_decl * find_func_decl(symbol const & s, unsigned num_indices, unsigned const * indices,
                                unsigned arity, sort * const * domain, sort * range) const;
@@ -513,4 +513,3 @@ public:
     }
 };
 
-#endif

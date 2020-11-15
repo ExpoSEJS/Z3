@@ -217,17 +217,17 @@ class psort_app : public psort {
         unsigned operator()(psort_app const * d, unsigned idx) const { return d->m_args[idx]->hash(); }
     };
 
-    sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s) override {
+    sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s) override {        
         sort * r = find(s);
         if (r)
             return r;
         sort_ref_buffer args_i(m.m());
         unsigned sz = m_args.size();
-        for (unsigned i = 0; i < sz; i++) {
+        for (unsigned i = 0; i < sz; ++i) {
             sort * a = m_args[i]->instantiate(m, n, s);
             args_i.push_back(a);
         }
-        r = m_decl->instantiate(m, args_i.size(), args_i.c_ptr());
+        r = m_decl->instantiate(m, args_i.size(), args_i.c_ptr());        
         cache(m, s, r);
         return r;
     }
@@ -682,10 +682,13 @@ bool pdatatypes_decl::fix_missing_refs(symbol & missing) {
 
 sort* pdecl_manager::instantiate_datatype(psort_decl* p, symbol const& name, unsigned n, sort * const* s) {
     TRACE("datatype", tout << name << " "; for (unsigned i = 0; i < n; ++i) tout << s[i]->get_name() << " "; tout << "\n";);
+
     pdecl_manager& m = *this;
     sort * r = p->find(s);
-    if (r)
+    if (r) {
+        notify_datatype(r, p, n, s);
         return r;
+    }
     buffer<parameter> ps;
     ps.push_back(parameter(name));
     for (unsigned i = 0; i < n; i++)
@@ -694,7 +697,16 @@ sort* pdecl_manager::instantiate_datatype(psort_decl* p, symbol const& name, uns
     r = m.m().mk_sort(util.get_family_id(), DATATYPE_SORT, ps.size(), ps.c_ptr());
     p->cache(m, s, r);
     m.save_info(r, p, n, s);
-    if (n > 0 && util.is_declared(r)) {
+    notify_datatype(r, p, n, s);
+    return r;
+}
+
+void pdecl_manager::notify_datatype(sort *r, psort_decl* p, unsigned n, sort* const* s) {
+    if (m_notified.contains(r) || n == 0)
+        return;
+    pdecl_manager& m = *this;
+    datatype_util util(m.m());
+    if (util.is_declared(r)) {
         bool has_typevar = false;
         // crude check ..
         for (unsigned i = 0; !has_typevar && i < n; ++i) {
@@ -703,8 +715,23 @@ sort* pdecl_manager::instantiate_datatype(psort_decl* p, symbol const& name, uns
         if (!has_typevar) {
             m.notify_new_dt(r, p);
         }
+        m_notified.insert(r);
+        m_notified_trail.push_back(r);
     }
-    return r;
+}
+
+void pdecl_manager::push() {
+    m_notified_lim.push_back(m_notified_trail.size());
+}
+
+void pdecl_manager::pop(unsigned n) {
+    SASSERT(n > 0);
+    unsigned new_sz = m_notified_lim[m_notified_lim.size() - n];
+    for (unsigned i = m_notified_trail.size(); i-- > new_sz; ) {
+        m_notified.erase(m_notified_trail[i]);
+    }
+    m_notified_trail.shrink(new_sz);
+    m_notified_lim.shrink(m_notified_lim.size() - n);
 }
 
 bool pdatatypes_decl::instantiate(pdecl_manager & m, sort * const * s) {
@@ -781,13 +808,13 @@ struct pdecl_manager::app_sort_info : public pdecl_manager::sort_info {
 
     format * pp(pdecl_manager const & m) const override {
         if (m_args.empty()) {
-            return mk_string(m.m(), m_decl->get_name().str().c_str());
+            return mk_string(m.m(), m_decl->get_name().str());
         }
         else {
             ptr_buffer<format> b;
             for (auto arg : m_args)
                 b.push_back(m.pp(arg));
-            return mk_seq1(m.m(), b.begin(), b.end(), f2f(), m_decl->get_name().str().c_str());
+            return mk_seq1(m.m(), b.begin(), b.end(), f2f(), m_decl->get_name().str());
         }
     }
 };
@@ -819,11 +846,11 @@ struct pdecl_manager::indexed_sort_info : public pdecl_manager::sort_info {
 
     format * pp(pdecl_manager const & m) const override {
         if (m_indices.empty()) {
-            return mk_string(m.m(), m_decl->get_name().str().c_str());
+            return mk_string(m.m(), m_decl->get_name().str());
         }
         else {
             ptr_buffer<format> b;
-            b.push_back(mk_string(m.m(), m_decl->get_name().str().c_str()));
+            b.push_back(mk_string(m.m(), m_decl->get_name().str()));
             for (auto idx : m_indices)
                 b.push_back(mk_unsigned(m.m(), idx));
             return mk_seq1(m.m(), b.begin(), b.end(), f2f(), "_");
@@ -1049,11 +1076,11 @@ format * pdecl_manager::pp(sort * s) const {
         if (i == num_params) {
             // all parameters are integer
             ptr_buffer<format> b;
-            b.push_back(mk_string(m(), s->get_name().str().c_str()));
+            b.push_back(mk_string(m(), s->get_name().str()));
             for (unsigned i = 0; i < num_params; i++)
                 b.push_back(mk_unsigned(m(), s->get_parameter(i).get_int()));
             return mk_seq1(m(), b.begin(), b.end(), f2f(), "_");
         }
     }
-    return mk_string(m(), s->get_name().str().c_str());
+    return mk_string(m(), s->get_name().str());
 }

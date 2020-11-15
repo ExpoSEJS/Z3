@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef SOLVER_H_
-#define SOLVER_H_
+#pragma once
 
 #include "solver/check_sat_result.h"
 #include "solver/progress_callback.h"
@@ -26,6 +25,7 @@ Notes:
 class solver;
 class model_converter;
 
+
 class solver_factory {
 public:
     virtual ~solver_factory() {}
@@ -33,6 +33,8 @@ public:
 };
 
 solver_factory * mk_smt_strategic_solver_factory(symbol const & logic = symbol::null);
+
+solver* mk_smt2_solver(ast_manager& m, params_ref const& p);
 
 /**
    \brief Abstract interface for making solvers available in the Z3
@@ -161,6 +163,7 @@ public:
     virtual lbool check_sat_cc(expr_ref_vector const& cube, vector<expr_ref_vector> const& clauses) {
         if (clauses.empty()) return check_sat(cube.size(), cube.c_ptr());
         NOT_IMPLEMENTED_YET();
+        return l_undef;
     }
 
     /**
@@ -226,6 +229,52 @@ public:
 
     virtual expr_ref_vector cube(expr_ref_vector& vars, unsigned backtrack_level) = 0;
 
+
+    class propagate_callback {
+    public:
+        virtual void propagate_cb(unsigned num_fixed, unsigned const* fixed_ids, unsigned num_eqs, unsigned const* eq_lhs, unsigned const* eq_rhs, expr* conseq) = 0;
+    };
+    class context_obj {
+    public:
+        virtual ~context_obj() {}
+    };
+    typedef std::function<void(void*, solver::propagate_callback*)> final_eh_t;
+    typedef std::function<void(void*, solver::propagate_callback*, unsigned, expr*)> fixed_eh_t;
+    typedef std::function<void(void*, solver::propagate_callback*, unsigned, unsigned)> eq_eh_t;
+    typedef std::function<void*(void*, ast_manager&, solver::context_obj*&)> fresh_eh_t;
+    typedef std::function<void(void*)>                 push_eh_t;
+    typedef std::function<void(void*,unsigned)>        pop_eh_t;
+
+    virtual void user_propagate_init(
+        void* ctx, 
+        push_eh_t&                                   push_eh,
+        pop_eh_t&                                    pop_eh,
+        fresh_eh_t&                                  fresh_eh) {
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+
+    virtual void user_propagate_register_fixed(fixed_eh_t& fixed_eh) {
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+    virtual void user_propagate_register_final(final_eh_t& final_eh) {
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+    virtual void user_propagate_register_eq(eq_eh_t& eq_eh) {
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+    virtual void user_propagate_register_diseq(eq_eh_t& diseq_eh) {
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+    virtual unsigned user_propagate_register(expr* e) { 
+        throw default_exception("user-propagators are only supported on the SMT solver");
+    }
+
+
     /**
        \brief Display the content of this solver.
     */
@@ -281,4 +330,3 @@ inline std::ostream& operator<<(std::ostream& out, solver const& s) {
     return s.display(out);
 }
 
-#endif

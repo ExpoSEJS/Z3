@@ -16,7 +16,7 @@ See the [release notes](RELEASE_NOTES) for notes on various stable releases of Z
 
 | Azure Pipelines | TravisCI |
 | --------------- | -------- |
-[![Build Status](https://z3build.visualstudio.com/Z3Build/_apis/build/status/Z3Build-CI?branchName=master)](https://z3build.visualstudio.com/Z3Build/_build/latest?definitionId=10) | [![Build Status](https://travis-ci.org/Z3Prover/z3.svg?branch=master)](https://travis-ci.org/Z3Prover/z3)
+[![Build Status](https://dev.azure.com/Z3Public/Z3/_apis/build/status/Z3Prover.z3?branchName=master)](https://dev.azure.com/Z3Public/Z3/_build/latest?definitionId=1&branchName=master) | [![Build Status](https://travis-ci.org/Z3Prover/z3.svg?branch=master)](https://travis-ci.org/Z3Prover/z3)
 
 [1]: #building-z3-on-windows-using-visual-studio-command-prompt
 [2]: #building-z3-using-make-and-gccclang
@@ -101,6 +101,12 @@ Z3 has a build system using CMake. Read the [README-CMake.md](README-CMake.md)
 file for details. It is recommended for most build tasks, 
 except for building OCaml bindings.
 
+## Dependencies
+Z3 itself has few dependencies. It uses C++ runtime libraries, including pthreads for multi-threading.
+It is optionally possible to use GMP for multi-precision integers, but Z3 contains its own self-contained 
+multi-precision functionality. Python is required to build Z3. To build Java, .Net, OCaml, 
+Julia APIs requires installing relevant tool chains.
+
 ## Z3 bindings
 
 Z3 has bindings for various programming languages.
@@ -111,25 +117,6 @@ You can install a nuget package for the latest release Z3 from [nuget.org](https
 
 Use the ``--dotnet`` command line flag with ``mk_make.py`` to enable building these.
 
-On non-windows platforms [mono](http://www.mono-project.com/) is required. On these
-platforms the location of the C# compiler and gac utility need to be known. You
-can set these as follows if they aren't detected automatically. For example:
-
-```bash
-CSC=/usr/bin/csc GACUTIL=/usr/bin/gacutil python scripts/mk_make.py --dotnet
-```
-
-Note for very old versions of Mono (e.g. ``2.10``) you may need to set ``CSC``
-to ``/usr/bin/dmcs``.
-
-Note that when ``make install`` is executed on non-windows platforms the GAC
-utility is used to install ``Microsoft.Z3.dll`` into the
-[GAC](http://www.mono-project.com/docs/advanced/assemblies-and-the-gac/) as the
-``Microsoft.Z3.Sharp`` package. During install a
-[pkg-config](http://www.freedesktop.org/wiki/Software/pkg-config/) file
-(``Microsoft.Z3.Sharp.pc``) is also installed which allows the
-[MonoDevelop](http://www.monodevelop.com/) IDE to find the bindings. Running
-``make uninstall`` will remove the dll from the GAC and the ``pkg-config`` file.
 
 See [``examples/dotnet``](examples/dotnet) for examples.
 
@@ -200,6 +187,10 @@ python -c 'import z3; print(z3.get_version_string())'
 
 See [``examples/python``](examples/python) for examples.
 
+### ``Julia``
+
+The Julia package [Z3.jl](https://github.com/ahumenberger/Z3.jl) wraps the C++ API of Z3. Information about updating and building the Julia bindings can be found in [src/api/julia](src/api/julia).
+
 ### ``Web Assembly``
 
 [WebAssembly](https://github.com/cpitclaudel/z3.wasm) bindings are provided by Clément Pit-Claudel.
@@ -213,11 +204,12 @@ See [``examples/python``](examples/python) for examples.
 * Default input format is [SMTLIB2](http://smtlib.cs.uiowa.edu)
 
 * Other native foreign function interfaces:
- * [C++ API](https://z3prover.github.io/api/html/group__cppapi.html)
- * [.NET API](https://z3prover.github.io/api/html/namespace_microsoft_1_1_z3.html)
- * [Java API](https://z3prover.github.io/api/html/namespacecom_1_1microsoft_1_1z3.html)
- * [Python API](https://z3prover.github.io/api/html/namespacez3py.html) (also available in [pydoc format](https://z3prover.github.io/api/html/z3.html))
-  * C
-  * OCaml
+* [C++ API](https://z3prover.github.io/api/html/group__cppapi.html)
+* [.NET API](https://z3prover.github.io/api/html/namespace_microsoft_1_1_z3.html)
+* [Java API](https://z3prover.github.io/api/html/namespacecom_1_1microsoft_1_1z3.html)
+* [Python API](https://z3prover.github.io/api/html/namespacez3py.html) (also available in [pydoc format](https://z3prover.github.io/api/html/z3.html))
+* C
+* OCaml
+* [Julia](https://github.com/ahumenberger/Z3.jl)
 
 

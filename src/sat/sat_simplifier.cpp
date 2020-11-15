@@ -76,12 +76,17 @@ namespace sat {
     watch_list const & simplifier::get_wlist(literal l) const { return s.get_wlist(l); }
 
     bool simplifier::is_external(bool_var v) const { 
-        return 
-            s.is_assumption(v) ||
-            (s.is_external(v) && s.is_incremental()) ||
-            (s.is_external(v) && s.m_ext &&
-             (!m_ext_use_list.get(literal(v, false)).empty() ||
-              !m_ext_use_list.get(literal(v, true)).empty()));
+        if (!s.is_external(v))
+            return s.is_assumption(v);
+        if (s.is_incremental())
+            return true;
+        if (!s.m_ext)
+            return false;
+        if (s.m_ext->is_external(v))
+            return true;
+        if (m_ext_use_list.contains(v))
+            return true;
+        return false;
     }
 
     inline bool simplifier::was_eliminated(bool_var v) const { return s.was_eliminated(v); }
@@ -676,7 +681,7 @@ namespace sat {
         if (s.m_config.m_drat && c.contains(l)) {
             unsigned sz = c.size();
             c.elim(l);
-            s.m_drat.add(c, true); 
+            s.m_drat.add(c, status::redundant());
             c.restore(sz);
             s.m_drat.del(c);
             c.shrink(sz-1);
@@ -990,6 +995,7 @@ namespace sat {
             literal next() { SASSERT(!empty()); return to_literal(m_queue.erase_min()); }
             bool empty() const { return m_queue.empty(); }
             void reset() { m_queue.reset(); }
+            unsigned size() const { return m_queue.size(); }
         };
 
         simplifier &      s;
@@ -1584,9 +1590,8 @@ namespace sat {
             SASSERT(!s.is_external(l));
             model_converter::entry& new_entry = m_mc.mk(k, l.var());
             for (literal lit : c) {
-                if (lit != l && process_var(lit.var())) {
-                    m_queue.decreased(~lit);
-                }
+                if (lit != l && process_var(lit.var())) 
+                    m_queue.decreased(~lit);                
             }
             m_mc.insert(new_entry, m_covered_clause);
             m_mc.set_clause(new_entry, c);
@@ -1600,7 +1605,8 @@ namespace sat {
             s.set_learned(l1, l2);
             m_mc.insert(new_entry, m_covered_clause);
             m_mc.set_clause(new_entry, l1, l2);
-            m_queue.decreased(~l2);
+            if (process_var(l2.var()))
+                m_queue.decreased(~l2);
         }
 
         void bca() {
@@ -1895,7 +1901,6 @@ namespace sat {
     }
 
     bool simplifier::try_eliminate(bool_var v) {
-        TRACE("sat_simplifier", tout << "processing: " << v << "\n";);
         if (value(v) != l_undef)
             return false;
 
@@ -1958,7 +1963,7 @@ namespace sat {
                 }
             }
         }
-        TRACE("sat_simplifier", tout << "found var to eliminate, before: " << before_clauses << " after: " << after_clauses << "\n";);
+        TRACE("sat_simplifier", tout << "eliminate " << v << ", before: " << before_clauses << " after: " << after_clauses << "\n";);
         m_elim_counter -= num_pos * num_neg + before_lits;
 
         m_elim_counter -= num_pos * num_neg + before_lits;
@@ -2000,7 +2005,7 @@ namespace sat {
                         s.m_stats.m_mk_clause++;
                     clause * new_c = s.alloc_clause(m_new_cls.size(), m_new_cls.c_ptr(), false);
 
-                    if (s.m_config.m_drat) s.m_drat.add(*new_c, true);
+                    if (s.m_config.m_drat) s.m_drat.add(*new_c, status::redundant());
                     s.m_clauses.push_back(new_c);
 
                     m_use_list.insert(*new_c);

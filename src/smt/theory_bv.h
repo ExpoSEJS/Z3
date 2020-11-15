@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_BV_H_
-#define THEORY_BV_H_
+#pragma once
 
 #include "ast/rewriter/bit_blaster/bit_blaster.h"
 #include "util/trail.h"
@@ -106,13 +105,13 @@ namespace smt {
         atom * get_bv2a(bool_var bv) const { return m_bool_var2atom.get(bv, 0); }
 #endif
         theory_bv_stats          m_stats;
-        theory_bv_params const & m_params;
         bv_util                  m_util;
         arith_util               m_autil;
         bit_blaster              m_bb;
         th_trail_stack           m_trail_stack;
         th_union_find            m_find;
         vector<literal_vector>   m_bits;     // per var, the bits of a given variable.
+        ptr_vector<expr>         m_bits_expr;
         svector<unsigned>        m_wpos;     // per var, watch position for fixed variable detection. 
         vector<zero_one_bits>    m_zero_one_bits; // per var, see comment in the struct zero_one_bit
         bool_var2atom            m_bool_var2atom;
@@ -123,11 +122,12 @@ namespace smt {
         typedef map<value_sort_pair, theory_var, value_sort_pair_hash, default_eq<value_sort_pair> > value2var;
 
         value2var                m_fixed_var_table;
+        mutable vector<rational>         m_power2;
         
         unsigned char            m_eq_activity[256];
-        unsigned char            m_diseq_activity[256];
         svector<std::pair<theory_var, theory_var>> m_replay_diseq;
         vector<vector<std::pair<theory_var, theory_var>>> m_diseq_watch;
+        unsigned char            m_diseq_activity[256];
         svector<bool_var> m_diseq_watch_trail;
         unsigned_vector   m_diseq_watch_lim;
 
@@ -224,7 +224,6 @@ namespace smt {
         void assert_bv2int_axiom(app* n);
 
     protected:
-        void init(context * ctx) override;
         theory_var mk_var(enode * n) override;
         bool internalize_atom(app * atom, bool gate_ctx) override;
         bool internalize_term(app * term) override;
@@ -253,8 +252,9 @@ namespace smt {
         void init_model(model_generator & m) override;
         model_value_proc * mk_value(enode * n, model_generator & mg) override;
 
+        smt_params const& params() const;
     public:
-        theory_bv(ast_manager & m, theory_bv_params const & params, bit_blaster_params const & bb_params);
+        theory_bv(context& ctx);
         ~theory_bv() override;
         
         theory * mk_fresh(context * new_ctx) override;
@@ -265,6 +265,9 @@ namespace smt {
         void merge_eh(theory_var, theory_var, theory_var v1, theory_var v2);
         void after_merge_eh(theory_var r1, theory_var r2, theory_var v1, theory_var v2) { SASSERT(check_zero_one_bits(r1)); }
         void unmerge_eh(theory_var v1, theory_var v2);
+
+        bool get_lower(enode* n, rational& v);
+        bool get_upper(enode* n, rational& v);
 
         void display_var(std::ostream & out, theory_var v) const;
         void display_bit_atom(std::ostream & out, bool_var v, bit_atom const * a) const;
@@ -279,6 +282,3 @@ namespace smt {
         bool check_zero_one_bits(theory_var v);
     };
 };
-
-#endif /* THEORY_BV_H_ */
-

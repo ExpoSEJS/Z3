@@ -31,17 +31,26 @@ using namespace format_ns;
 #define MAX_INDENT   16
 #define SMALL_INDENT 2
 
+std::string ensure_quote(symbol const& s) {
+    std::string str;
+    if (is_smt2_quoted_symbol(s))
+        str = mk_smt2_quoted_symbol(s);
+    else
+        str = s.str();
+    return str;
+}
+
 format * smt2_pp_environment::pp_fdecl_name(symbol const & s, unsigned & len, bool is_skolem) const {
     ast_manager & m = get_manager();
     if (is_smt2_quoted_symbol(s)) {
         std::string str = mk_smt2_quoted_symbol(s);
         len = static_cast<unsigned>(str.length());
-        return mk_string(m, str.c_str());
+        return mk_string(m, str);
     }
     else if (s.is_numerical()) {
         std::string str = s.str();
         len = static_cast<unsigned>(str.length());
-        return mk_string(m, str.c_str());
+        return mk_string(m, str);
     }
     else if (!s.bare_str()) {
         len = 4;
@@ -114,7 +123,7 @@ format * smt2_pp_environment::pp_fdecl_params(format * fname, func_decl * f) {
             fs.push_back(mk_int(get_manager(), f->get_parameter(i).get_int()));
         else if (f->get_parameter(i).is_rational()) {
             std::string str = f->get_parameter(i).get_rational().to_string();
-            fs.push_back(mk_string(get_manager(), str.c_str()));
+            fs.push_back(mk_string(get_manager(), str));
         }
         else
             fs.push_back(pp_fdecl_ref(to_func_decl(f->get_parameter(i).get_ast())));
@@ -177,7 +186,7 @@ format * smt2_pp_environment::pp_bv_literal(app * t, bool use_bv_lits, bool bv_n
     format * vf;
     if (!use_bv_lits) {
         string_buffer<> buf;
-        buf << "(_ bv" << val.to_string().c_str() << " " << bv_size << ")";
+        buf << "(_ bv" << val.to_string() << ' ' << bv_size << ')';
         vf = mk_string(get_manager(), buf.c_str());
     }
     else {
@@ -238,30 +247,30 @@ format * smt2_pp_environment::pp_float_literal(app * t, bool use_bv_lits, bool u
     string_buffer<> buf;
     VERIFY(get_futil().is_numeral(t, v));
     if (fm.is_nan(v)) {
-        buf << "(_ NaN " << v.get().get_ebits() << " " << v.get().get_sbits() << ")";        
+        buf << "(_ NaN " << v.get().get_ebits() << ' ' << v.get().get_sbits() << ')';
         return mk_string(m, buf.c_str());
     }
     else if (fm.is_pinf(v)) {
-        buf << "(_ +oo " << v.get().get_ebits() << " " << v.get().get_sbits() << ")";
+        buf << "(_ +oo " << v.get().get_ebits() << ' ' << v.get().get_sbits() << ')';
         return mk_string(m, buf.c_str());
     }
     else if (fm.is_ninf(v)) {
-        buf << "(_ -oo " << v.get().get_ebits() << " " << v.get().get_sbits() << ")";
+        buf << "(_ -oo " << v.get().get_ebits() << ' ' << v.get().get_sbits() << ')';
         return mk_string(m, buf.c_str());
     }
     else if (fm.is_pzero(v)) {
-        buf << "(_ +zero " << v.get().get_ebits() << " " << v.get().get_sbits() << ")";
+        buf << "(_ +zero " << v.get().get_ebits() << ' ' << v.get().get_sbits() << ')';
         return mk_string(m, buf.c_str());
     }
     else if (fm.is_nzero(v)) {
-        buf << "(_ -zero " << v.get().get_ebits() << " " << v.get().get_sbits() << ")";
+        buf << "(_ -zero " << v.get().get_ebits() << ' ' << v.get().get_sbits() << ')';
         return mk_string(m, buf.c_str());
     }
     else if (use_float_real_lits)
     {
-        buf << "((_ to_fp " << v.get().get_ebits() << " " <<
+        buf << "((_ to_fp " << v.get().get_ebits() << ' ' <<
                                v.get().get_sbits() << ") RTZ " <<
-                               fm.to_string(v).c_str() << ")";
+                               fm.to_string(v) << ')';
         return mk_string(m, buf.c_str());
     }
     else {
@@ -301,9 +310,8 @@ format * smt2_pp_environment::mk_neg(format * f) const {
 format * smt2_pp_environment::mk_float(rational const & val) const {
     SASSERT(val.is_nonneg());
     SASSERT(val.is_int());
-    std::string s = val.to_string();
-    s += ".0";
-    return mk_string(get_manager(), s.c_str());
+    std::string s = val.to_string() + ".0";
+    return mk_string(get_manager(), s);
 }
 
 format * smt2_pp_environment::pp_arith_literal(app * t, bool decimal, unsigned decimal_prec) {
@@ -314,11 +322,11 @@ format * smt2_pp_environment::pp_arith_literal(app * t, bool decimal, unsigned d
     if (u.is_numeral(t, val, is_int)) {
         if (is_int) {
             if (val.is_nonneg()) {
-                return mk_string(get_manager(), val.to_string().c_str());
+                return mk_string(get_manager(), val.to_string());
             }
             else {
                 val.neg();
-                return mk_neg(mk_string(get_manager(), val.to_string().c_str()));
+                return mk_neg(mk_string(get_manager(), val.to_string()));
             }
         }
         else {
@@ -332,7 +340,7 @@ format * smt2_pp_environment::pp_arith_literal(app * t, bool decimal, unsigned d
             else if (decimal) {
                 std::ostringstream buffer;
                 val.display_decimal(buffer, decimal_prec);
-                vf = mk_string(get_manager(), buffer.str().c_str());
+                vf = mk_string(get_manager(), buffer.str());
             }
             else {
                 format * buffer[2] = { mk_float(numerator(val)), mk_float(denominator(val)) };
@@ -360,7 +368,7 @@ format * smt2_pp_environment::pp_arith_literal(app * t, bool decimal, unsigned d
         else {
             am.display_root_smt2(buffer, val2);
         }
-        vf = mk_string(get_manager(), buffer.str().c_str());
+        vf = mk_string(get_manager(), buffer.str());
         return is_neg ? mk_neg(vf) : vf;
     }
 }
@@ -380,16 +388,14 @@ format * smt2_pp_environment::pp_string_literal(app * t) {
             buffer << encs[i];
         }
     }
-    buffer << "\"";
-    return mk_string(get_manager(), buffer.str().c_str());
+    buffer << '"';
+    return mk_string(get_manager(), buffer.str());
 }
 
 format * smt2_pp_environment::pp_datalog_literal(app * t) {
     uint64_t v;
     VERIFY (get_dlutil().is_numeral(t, v));
-    std::ostringstream buffer;
-    buffer << v;
-    return mk_string(get_manager(), buffer.str().c_str());
+    return mk_string(get_manager(), std::to_string(v));
 }
 
 format_ns::format * smt2_pp_environment::pp_sort(sort * s) {
@@ -433,6 +439,8 @@ format_ns::format * smt2_pp_environment::pp_sort(sort * s) {
         fs.push_back(pp_sort(to_sort(s->get_parameter(0).get_ast())));
         return mk_seq1(m, fs.begin(), fs.end(), f2f(), get_sutil().is_seq(s)?"Seq":"RegEx");
     }
+    std::string name = ensure_quote(s->get_name());
+    
     if (get_dtutil().is_datatype(s)) {
         unsigned sz = get_dtutil().get_datatype_num_parameter_sorts(s);
         if (sz > 0) {
@@ -440,10 +448,10 @@ format_ns::format * smt2_pp_environment::pp_sort(sort * s) {
             for (unsigned i = 0; i < sz; i++) {
                 fs.push_back(pp_sort(get_dtutil().get_datatype_parameter_sort(s, i)));
             }
-            return mk_seq1(m, fs.begin(), fs.end(), f2f(), s->get_name().str().c_str());        
+            return mk_seq1(m, fs.begin(), fs.end(), f2f(), name);
         }
     }
-    return format_ns::mk_string(get_manager(), s->get_name().str().c_str());
+    return format_ns::mk_string(get_manager(), name);
 }
 
 typedef app_ref_vector format_ref_vector;
@@ -546,20 +554,10 @@ class smt2_printer {
     ast_manager & m() const { return m_manager; }
     ast_manager & fm() const { return format_ns::fm(m()); }
 
-    std::string ensure_quote(symbol const& s) {
-        std::string str;
-        if (is_smt2_quoted_symbol(s))
-            str = mk_smt2_quoted_symbol(s);
-        else
-            str = s.str();
-        return str;
-    }
 
     symbol ensure_quote_sym(symbol const& s) {
         if (is_smt2_quoted_symbol(s)) {
-            std::string str;
-            str = mk_smt2_quoted_symbol(s);
-            return symbol(str.c_str());
+            return symbol(mk_smt2_quoted_symbol(s));
         }
         else
             return s;
@@ -576,7 +574,7 @@ class smt2_printer {
             else {
                 vname = s.str();
             }
-            f = mk_string(m(), vname.c_str ());
+            f = mk_string(m(), vname);
         }
         else {
             // fallback... it is not supposed to happen when the printer is correctly used.
@@ -584,7 +582,7 @@ class smt2_printer {
             buf.append("(:var ");
             buf.append(v->get_idx());
             //buf.append(" ");
-            //buf.append(v->get_sort()->get_name().str().c_str());
+            //buf.append(v->get_sort()->get_name().str());
             buf.append(")");
             f = mk_string(m(), buf.c_str());
         }
@@ -604,7 +602,7 @@ class smt2_printer {
 
     format * pp_simple_attribute(char const * attr, symbol const & s) {
         std::string str = ensure_quote(s);
-        return mk_compose(m(), mk_string(m(), attr), mk_string(m(), str.c_str()));
+        return mk_compose(m(), mk_string(m(), attr), mk_string(m(), str));
     }
 
     format * pp_labels(bool is_pos, buffer<symbol> const & names, format * f) {
@@ -654,7 +652,7 @@ class smt2_printer {
         if (m_expr2alias->find(t, idx)) {
             unsigned lvl     = m_aliased_lvls_names[idx].first;
             symbol const & s = m_aliased_lvls_names[idx].second;
-            m_format_stack.push_back(mk_string(m(), s.str().c_str()));
+            m_format_stack.push_back(mk_string(m(), s.str()));
             m_info_stack.push_back(info(lvl+1, 1, 1));
             return true;
         }
@@ -707,7 +705,7 @@ class smt2_printer {
                   << ", lvl: " << f_info.m_lvl << " t: #" << t->get_id() << "\n" << mk_ll_pp(t, m())
                   << ", is-shared: " << m_soccs.is_shared(t) << "\n";);
             register_alias(t, f, f_info.m_lvl, a);
-            m_format_stack.push_back(mk_string(m(), a.str().c_str()));
+            m_format_stack.push_back(mk_string(m(), a.str()));
             m_info_stack.push_back(info(f_info.m_lvl + 1, 1, 1));
         }
         else {
@@ -811,15 +809,12 @@ class smt2_printer {
             format * f_def[1] = { m_aliased_pps.get(i) };
             decls.reserve(lvl+1);
             ptr_vector<format> & lvl_decls = decls[lvl];
-            lvl_decls.push_back(mk_seq1<format**, f2f>(m(), f_def, f_def+1, f2f(), f_name.str().c_str()));
+            lvl_decls.push_back(mk_seq1<format**, f2f>(m(), f_def, f_def+1, f2f(), f_name.str()));
         }
         TRACE("pp_let", tout << "decls.size(): " << decls.size() << "\n";);
         ptr_buffer<format> buf;
         unsigned num_op = 0;
-        vector<ptr_vector<format> >::iterator it  = decls.begin();
-        vector<ptr_vector<format> >::iterator end = decls.end();
-        for (; it != end; ++it) {
-            ptr_vector<format> & lvl_decls = *it;
+        for (ptr_vector<format> & lvl_decls : decls) {
             if (lvl_decls.empty())
                 continue;
             if (num_op > 0)
@@ -922,9 +917,9 @@ class smt2_printer {
                 var_name = mk_smt2_quoted_symbol (*it);
             }
             else {
-                var_name = it->str ();          
+                var_name = it->str();
             }
-            buf.push_back(mk_seq1<format**,f2f>(m(), fs, fs+1, f2f(), var_name.c_str ()));
+            buf.push_back(mk_seq1<format**,f2f>(m(), fs, fs+1, f2f(), var_name));
         }
         return mk_seq5(m(), buf.begin(), buf.end(), f2f());
     }
@@ -1350,6 +1345,17 @@ std::ostream& operator<<(std::ostream& out, mk_ismt2_pp const & p) {
     return out;
 }
 
+std::ostream& operator<<(std::ostream& out, mk_ismt2_func const& p) {
+    smt2_pp_environment_dbg env(p.m);        
+    format_ref r(fm(p.m));
+    unsigned len = 0;
+    r = env.pp_fdecl(p.m_fn, len);
+    params_ref pa;
+    pp(out, r.get(), p.m, pa);
+    return out;
+}
+
+
 std::ostream& operator<<(std::ostream& out, expr_ref const&  e) {
     return out << mk_ismt2_pp(e.get(), e.get_manager());
 }
@@ -1395,6 +1401,8 @@ std::ostream& operator<<(std::ostream& out, sort_ref_vector const&  e) {
         out << mk_ismt2_pp(s, e.get_manager()) << "\n";
     return out;
 }
+
+
 
 #ifdef Z3DEBUG
 void pp(expr const * n, ast_manager & m) {

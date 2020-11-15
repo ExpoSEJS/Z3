@@ -131,8 +131,6 @@ namespace recfun {
             path(nullptr), to_split(nullptr), to_unfold(to_unfold) {}
         branch(choice_lst const * path, ite_lst const * to_split, unfold_lst const * to_unfold) : 
             path(path), to_split(to_split), to_unfold(to_unfold) {}
-        branch(branch const & from) : 
-            path(from.path), to_split(from.to_split), to_unfold(from.to_unfold) {}
     };
 
     // state for computing cases from the RHS of a functions' definition
@@ -239,7 +237,6 @@ namespace recfun {
         st.push_branch(branch(st.mk_unfold_lst(rhs)));        
 
         while (! st.empty()) {
-            TRACEFN("main loop iter");
 
             branch b = st.pop_branch();
 
@@ -254,7 +251,6 @@ namespace recfun {
                 while (! stack.empty()) {
                     expr * e = stack.back();
                     stack.pop_back();
-                    TRACEFN("unfold: " << mk_pp(e, m));
 
                     if (m.is_ite(e)) {
                         // need to do a case split on `e`, forking the search space
@@ -305,7 +301,6 @@ namespace recfun {
                 
                 // substitute, to get rid of `ite` terms
                 expr_ref case_rhs = subst(rhs);
-                TRACEFN("case_rhs: " << case_rhs);
                 for (unsigned i = 0; i < conditions.size(); ++i) {
                     conditions[i] = subst(conditions.get(i));
                 }
@@ -341,10 +336,10 @@ namespace recfun {
         d.set_definition(subst, n_vars, vars, rhs1);
     }
 
-    app_ref util::mk_depth_limit_pred(unsigned d) {
+    app_ref util::mk_num_rounds_pred(unsigned d) {
         parameter p(d);
-        func_decl_info info(m_fid, OP_DEPTH_LIMIT, 1, &p);
-        func_decl* decl = m().mk_const_decl(symbol("recfun-depth-limit"), m().mk_bool_sort(), info);
+        func_decl_info info(m_fid, OP_NUM_ROUNDS, 1, &p);
+        func_decl* decl = m().mk_const_decl(symbol("recfun-num-rounds"), m().mk_bool_sort(), info);
         return app_ref(m().mk_const(decl), m());
     }
 
@@ -358,11 +353,7 @@ namespace recfun {
                 util & u;
                 find(util & u) : u(u) {}
                 bool operator()(expr * e) override {
-                    //return is_app(e) ? u.owns_app(to_app(e)) : false;
-                    if (! is_app(e)) return false;
-
-                    app * a = to_app(e);
-                    return u.is_defined(a);
+                    return is_app(e) && u.is_defined(to_app(e));
                 }
             };
             find f(u);
@@ -461,15 +452,17 @@ namespace recfun {
             for (expr* t : subterms(tmp)) {
                 if (is_app(t)) {
                     for (expr* arg : *to_app(t)) {
-                        parents.insert_if_not_there2(arg, ptr_vector<expr>())->get_data().m_value.push_back(t);        
+                        parents.insert_if_not_there(arg, ptr_vector<expr>()).push_back(t);        
                     }
                 }
-                by_depth.insert_if_not_there2(get_depth(t), ptr_vector<expr>())->get_data().m_value.push_back(t);
+                by_depth.insert_if_not_there(get_depth(t), ptr_vector<expr>()).push_back(t);
             }
             unsigned max_depth = get_depth(e);
             scores.insert(e, 0);
             // walk deepest terms first.
             for (unsigned i = max_depth; i > 0; --i) {
+                if (!by_depth.contains(i))
+                    continue;
                 for (expr* t : by_depth[i]) {
                     unsigned score = 0;
                     for (expr* parent : parents[t]) {

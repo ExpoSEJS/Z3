@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef RATIONAL_H_
-#define RATIONAL_H_
+#pragma once
 
 #include "util/mpq.h"
 
@@ -41,7 +40,7 @@ public:
     rational() {}
     
     rational(rational const & r) { m().set(m_val, r.m_val); }
-    rational(rational && r) : m_val(std::move(r.m_val)) {}
+    rational(rational&&) = default;
 
     explicit rational(int n) { m().set(m_val, n); }
 
@@ -132,7 +131,9 @@ public:
     rational const & get_rational() const { return *this; }
 
     rational const & get_infinitesimal() const { return m_zero; }
-    
+
+    rational & operator=(rational&&) = default;
+
     rational & operator=(rational const & r) {
         m().set(m_val, r.m_val);
         return *this;
@@ -148,7 +149,7 @@ private:
 
 public:
     rational & operator=(int v) {
-        *this = rational(v);
+        m().set(m_val, v);
         return *this;
     }
     rational & operator=(double v) { UNREACHABLE(); return *this; }
@@ -172,6 +173,7 @@ public:
         return *this; 
     }
 
+
     rational & operator*=(rational const & r) {
         m().mul(m_val, r.m_val, m_val);
         return *this; 
@@ -185,6 +187,18 @@ public:
     rational & operator%=(rational const & r) {
         m().rem(m_val, r.m_val, m_val);
         return *this; 
+    }    
+
+    rational & operator%=(int v) {
+        return *this %= rational(v);
+    }    
+
+    rational & operator/=(int v) {
+        return *this /= rational(v);
+    }    
+
+    rational & operator*=(int v) {
+        return *this *= rational(v);
     }    
 
     friend inline rational div(rational const & r1, rational const & r2) {
@@ -336,6 +350,10 @@ public:
             operator+=(k);
         else if (c.is_minus_one())
             operator-=(k);
+        else if (k.is_one())
+            operator+=(c);
+        else if (k.is_minus_one())
+            operator-=(c);
         else {
             rational tmp(k);
             tmp *= c;
@@ -417,18 +435,25 @@ public:
 
     static bool is_rational() { return true; }
 
-    unsigned get_num_bits() const {
-        rational two(2);
+    unsigned get_num_digits(rational const& base) const {
         SASSERT(is_int());
         SASSERT(!is_neg());
         rational n(*this);
-        unsigned num_bits = 1;
-        n = div(n, two);
+        unsigned num_digits = 1;
+        n = div(n, base);
         while (n.is_pos()) {
-            ++num_bits;
-            n = div(n, two);
+            ++num_digits;
+            n = div(n, base);
         }
-        return num_bits;
+        return num_digits;
+    }
+
+    unsigned get_num_bits() const {
+        return get_num_digits(rational(2));
+    }
+
+    unsigned get_num_decimal() const {
+        return get_num_digits(rational(10));
     }
 
     static bool limit_denominator(rational &num, rational const& limit);
@@ -569,7 +594,3 @@ inline rational gcd(rational const & r1, rational const & r2, rational & a, rati
   rational::m().gcd(r1.m_val, r2.m_val, a.m_val, b.m_val, result.m_val);
   return result;
 }
-
-
-#endif /* RATIONAL_H_ */
-

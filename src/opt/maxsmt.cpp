@@ -126,14 +126,14 @@ namespace opt {
             wth->reset_local();
         }
         else {
-            wth = alloc(smt::theory_wmaxsat, m, m_c.fm());
+            wth = alloc(smt::theory_wmaxsat, m_c.smt_context(), m, m_c.fm());
             m_c.smt_context().register_plugin(wth);
         }
         smt::theory_id th_pb = m.get_family_id("pb");
         smt::theory_pb* pb = dynamic_cast<smt::theory_pb*>(m_c.smt_context().get_theory(th_pb));
         if (!pb) {
             theory_pb_params params;
-            pb = alloc(smt::theory_pb, m, params);
+            pb = alloc(smt::theory_pb, m_c.smt_context());
             m_c.smt_context().register_plugin(pb);
         }
         return wth;
@@ -251,7 +251,8 @@ namespace opt {
             m_msolver = mk_sortmax(m_c, m_weights, m_soft_constraints);
         }
         else {
-            warning_msg("solver %s is not recognized, using default 'maxres'", maxsat_engine.str().c_str());
+            auto str = maxsat_engine.str();
+            warning_msg("solver %s is not recognized, using default 'maxres'", str.c_str());
             m_msolver = mk_maxres(m_c, m_index, m_weights, m_soft_constraints);
         }
 

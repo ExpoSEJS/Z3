@@ -16,13 +16,10 @@ Author:
 Revision History:
 
 --*/
-#if 0
-  // include "util/new_symbol.h"
-#else
-#ifndef SYMBOL_H_
-#define SYMBOL_H_
-#include<ostream>
-#include<climits>
+#pragma once
+#include <climits>
+#include <string>
+#include <ostream>
 
 #include "util/util.h"
 #include "util/tptr.h"
@@ -57,6 +54,7 @@ public:
         m_data(nullptr) {
     }
     explicit symbol(char const * d);
+    explicit symbol(const std::string & str) : symbol(str.c_str()) {}
     explicit symbol(unsigned idx):
         m_data(BOXTAGINT(char const *, idx, 1)) {
 #if !defined(__LP64__) && !defined(_WIN64)
@@ -155,6 +153,4 @@ void finalize_symbols();
 // two non-numerical symbols are compared using string comparison.
 bool lt(symbol const & s1, symbol const & s2);
 
-#endif /* SYMBOL_H_ */
 
-#endif

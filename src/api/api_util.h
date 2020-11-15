@@ -15,8 +15,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef API_UTIL_H_
-#define API_UTIL_H_
+#pragma once
 
 #include "util/params.h"
 #include "util/lbool.h"
@@ -93,7 +92,7 @@ struct Z3_params_ref : public api::object {
 
 inline Z3_params_ref * to_params(Z3_params p) { return reinterpret_cast<Z3_params_ref *>(p); }
 inline Z3_params of_params(Z3_params_ref * p) { return reinterpret_cast<Z3_params>(p); }
-inline params_ref to_param_ref(Z3_params p) { return p == nullptr ? params_ref() : to_params(p)->m_params; }
+inline params_ref& to_param_ref(Z3_params p) { return p == nullptr ? const_cast<params_ref&>(params_ref::get_empty()) : to_params(p)->m_params; }
 
 struct Z3_param_descrs_ref : public api::object {
     param_descrs m_descrs;
@@ -172,4 +171,3 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned num_args, Z3_ast const* args) { \
     Z3_CATCH_RETURN(0);                                                 \
 }
 
-#endif

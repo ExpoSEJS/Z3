@@ -13,7 +13,35 @@ Author:
     Nikolaj Bjorner (nbjorner)
     Lev Nachmanson (levnach)
 
-Revision History:
+Notes:
+
+Basic:
+    For each row a*x + b = 0, where fixed variables are replaced by b, 
+    check if gcd(a) divides b 
+
+Extended:
+    For each row a*x + b*y + c = 0, where 
+    - the coefficients in a are all the same and smaller than the coefficients in b
+    - the variables x are bounded
+    Let l := a*lb(x), u := a*ub(x)
+    - that is the lower and upper bounds for a*x based on the bounds for x.
+    let ll := ceil  (l / gcd(b,c))
+        uu := floor (u / gcd(b,c))
+    If uu > ll, there is no space to find solutions for x within the bounds
+
+Accumulative:
+    For each row a*x + b*y - c = 0, where |a| = 1 < |b|, and x is a single variable,
+    (it could also be a group of variables) accumulate constraint x = c mod b
+
+    If there are row gcd constraints, such that 
+    - x = c1 mod b1, from rows R1
+    - x = c2 mod b2, from rows R2
+    
+    - If c1 mod gcd(b1,b2) != c2 mod gcd(b1,b2) report conflict for the rows involved.
+   
+    - Otherwise accumulate x = (c1 * lcm(b1,b2) / b2) + (c2 * lcm(b1,b2) / b1) mod lcm(b,b2)
+      and accumulate the rows from R1, R2
+
 --*/
 
 #include "math/lp/int_solver.h"
@@ -26,17 +54,9 @@ namespace lp {
 
     bool int_gcd_test::should_apply() {
 
-        if (!lia.settings().m_int_run_gcd_test)
+        if (!lia.settings().int_run_gcd_test())
             return false;
-#if 1
         return true;
-#else
-        if (m_delay == 0) {
-            return true;
-        }
-        --m_delay;
-        return false;
-#endif
     }
 
     lia_move int_gcd_test::operator()() {              
@@ -56,7 +76,7 @@ namespace lp {
     }
 
     bool int_gcd_test::gcd_test() {
-        auto & A = lra.A_r(); // getting the matrix
+        const auto & A = lra.A_r(); // getting the matrix
         for (unsigned i = 0; i < A.row_count(); i++)
             if (!gcd_test_for_row(A, i)) 
                 return false;        
@@ -71,10 +91,9 @@ namespace lp {
         return r;
     }
     
-    bool int_gcd_test::gcd_test_for_row(static_matrix<mpq, numeric_pair<mpq>> & A, unsigned i) {
+    bool int_gcd_test::gcd_test_for_row(const static_matrix<mpq, numeric_pair<mpq>> & A, unsigned i) {
         auto const& row = A.m_rows[i];
-        auto & lcs = lra.m_mpq_lar_core_solver;
-        unsigned basic_var = lcs.m_r_basis[i];
+        unsigned basic_var = lra.r_basis()[i];
         
         if (!lia.column_is_int(basic_var) || lia.get_value(basic_var).is_int())
             return true;
@@ -154,7 +173,7 @@ namespace lp {
         unsigned j;
         for (const auto & c : row) {
             j = c.var();
-            TRACE("ext_gcd_test", tout << "col = "; lra.m_mpq_lar_core_solver.m_r_solver.print_column_bound_info(j, tout););
+            TRACE("ext_gcd_test", tout << "col = "; lra.print_column_info(j, tout););
             const mpq & a = c.coeff();
             if (lra.column_is_fixed(j))
                 continue;
@@ -211,8 +230,8 @@ namespace lp {
     void int_gcd_test::add_to_explanation_from_fixed_or_boxed_column(unsigned j) {
         constraint_index lc, uc;
         lra.get_bound_constraint_witnesses_for_column(j, lc, uc);
-        lia.m_ex->push_justification(lc);
-        lia.m_ex->push_justification(uc);
+        lia.m_ex->push_back(lc);
+        lia.m_ex->push_back(uc);
     }
 
 }

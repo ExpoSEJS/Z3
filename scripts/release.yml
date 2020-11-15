@@ -6,7 +6,7 @@
 trigger: none
 
 variables:
-  ReleaseVersion: '4.8.8'
+  ReleaseVersion: '4.8.9'
 
 stages:
 
@@ -75,8 +75,8 @@ stages:
   - job: ManyLinuxBuild
     displayName: "ManyLinux build"
     pool:
-      vmImage: "ubuntu-16.04"
-    container: "rhelmot/manylinux1_x86_64:latest"
+      vmImage: "ubuntu-latest"
+    container: "quay.io/pypa/manylinux2010_x86_64:latest"
     variables:
       python: "/opt/python/cp35-cp35m/bin/python"
     steps:
@@ -232,13 +232,13 @@ stages:
     - script: cd $(Agent.TempDirectory); mkdir linux-bin; cd linux-bin; unzip ../*centos*.zip
     - script: cd $(Agent.TempDirectory); mkdir win32-bin; cd win32-bin; unzip ../*x86-win*.zip
     - script: cd $(Agent.TempDirectory); mkdir win64-bin; cd win64-bin; unzip ../*x64-win*.zip
-    - script: python -m pip install --user -U setuptools wheel
-    - script: cd src/api/python; python setup.py sdist
+    - script: python3 -m pip install --user -U setuptools wheel
+    - script: cd src/api/python; python3 setup.py sdist
     # take a look at this PREMIUM HACK I came up with to get around the fact that the azure variable syntax overloads the bash syntax for subshells
-    - script: cd src/api/python; echo $(Agent.TempDirectory)/osx-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python setup.py bdist_wheel
-    - script: cd src/api/python; echo $(Agent.TempDirectory)/linux-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python setup.py bdist_wheel
-    - script: cd src/api/python; echo $(Agent.TempDirectory)/win32-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python setup.py bdist_wheel
-    - script: cd src/api/python; echo $(Agent.TempDirectory)/win64-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python setup.py bdist_wheel
+    - script: cd src/api/python; echo $(Agent.TempDirectory)/osx-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
+    - script: cd src/api/python; echo $(Agent.TempDirectory)/linux-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
+    - script: cd src/api/python; echo $(Agent.TempDirectory)/win32-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
+    - script: cd src/api/python; echo $(Agent.TempDirectory)/win64-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
     - task: PublishPipelineArtifact@0
       inputs:
         artifactName: 'PythonPackage'
@@ -254,6 +254,11 @@ stages:
       vmImage: "windows-latest"
     steps:
     - task: DownloadPipelineArtifact@2
+      displayName: 'Download Ubuntu Build'
+      inputs:
+        artifact: 'UbuntuBuild'
+        path: $(Agent.TempDirectory)
+    - task: DownloadPipelineArtifact@2
       displayName: 'Download macOS Build'
       inputs:
         artifact: 'macOSBuild'
@@ -268,6 +273,11 @@ stages:
       inputs:
         artifact: 'WindowsBuild-x64'
         path: $(Agent.TempDirectory)
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download NuGet Package'
+      inputs:
+        artifact: 'NuGetPackage'
+        path: $(Agent.TempDirectory)
     - task: GitHubRelease@0
       inputs:
         gitHubConnection: Z3GitHub
@@ -279,11 +289,13 @@ stages:
         title: 'z3-$(ReleaseVersion)'
         releaseNotesSource: 'input'
         releaseNotes: '$(ReleaseVersion) release'
-        assets: '$(Agent.TempDirectory)/*.zip'
+        assets: '$(Agent.TempDirectory)/*.*'
         isDraft: true
         isPreRelease: false
 
+  # Enable on release:
   - job: NuGetPublish
+    condition: eq(0,1)
     displayName: "Publish to NuGet.org"
     steps:
     - task: DownloadPipelineArtifact@2
@@ -291,18 +303,20 @@ stages:
       inputs:
         artifact: 'NuGetPackage'
         path: $(Agent.TempDirectory)
-    - task: NuGetAuthenticate@0
+    - task: NuGetToolInstaller@0
       inputs:
-        nuGetServiceConnections: Z3Nuget
-#    - task: NuGetCommand@2
-#      inputs:
-#        command: push
-#        nuGetFeedType: external
-#        feedsToUse: select
-#        includeNuGetOrg: true
-#        packagesToPush: $(Agent.TempDirectory)
+        versionSpec: 5.x
+        checkLatest: false
+    - task: NuGetCommand@2
+      inputs:
+        command: push
+        nuGetFeedType: External
+        publishFeedCredentials: Z3Nuget
+        packagesToPush: $(Agent.TempDirectory)/*.nupkg
 
+  # Enable on release:
   - job: PyPIPublish
+    condition: eq(0,1)
     displayName: "Publish to PyPI"
     pool:
       vmImage: "ubuntu-16.04"
@@ -315,7 +329,6 @@ stages:
       name: pypirc
       inputs:
         secureFile: 'pypirc'
-    - script: pip install --upgrade pip
-    - script: python -m pip install --user -U setuptools importlib_metadata wheel twine 
-    # Uncomment on release:
-    #- script: python -m twine upload --config-file $(pypirc.secureFilePath) -r $(pypiReleaseServer) dist/*
+    - script: python3 -m pip install --upgrade pip
+    - script: python3 -m pip install --user -U setuptools importlib_metadata wheel twine 
+    - script: python3 -m twine upload --config-file $(pypirc.secureFilePath) -r $(pypiReleaseServer) dist/*

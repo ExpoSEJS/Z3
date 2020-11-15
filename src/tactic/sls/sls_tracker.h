@@ -17,8 +17,7 @@ Notes:
 
 --*/
 
-#ifndef SLS_TRACKER_H_
-#define SLS_TRACKER_H_
+#pragma once
 
 #include<math.h>
 #include "ast/for_each_expr.h"
@@ -38,27 +37,12 @@ class sls_tracker {
     unsigned              m_random_bits;
     unsigned              m_random_bits_cnt;
     mpz                   m_zero, m_one, m_two;
-        
-    struct value_score { 
+
+    struct value_score {
     value_score() : m(nullptr), value(unsynch_mpz_manager::mk_z(0)), score(0.0), score_prune(0.0), has_pos_occ(0), has_neg_occ(0), distance(0), touched(1) {};
-        value_score(value_score && other) :
-            m(other.m),
-            value(std::move(other.value)),
-            score(other.score),
-            score_prune(other.score_prune),
-            has_pos_occ(other.has_pos_occ),
-            has_neg_occ(other.has_neg_occ),
-            distance(other.distance),
-            touched(other.touched) {}
+        value_score(value_score&&) noexcept = default;
         ~value_score() { if (m) m->del(value); }
-        void operator=(value_score && other) {
-            this->~value_score();
-            new (this) value_score(std::move(other));
-        }
-        value_score& operator=(value_score& other) {
-            UNREACHABLE();
-            return *this;
-        }
+        value_score& operator=(value_score&&) = default;
         unsynch_mpz_manager * m;
         mpz value;
         double score;
@@ -309,8 +293,7 @@ public:
         unsigned na = n->get_num_args();
         for (unsigned i = 0; i < na; i++) {
             expr * c = n->get_arg(i); 
-            uplinks_type::obj_map_entry * entry = m_uplinks.insert_if_not_there2(c, ptr_vector<expr>());
-            entry->get_data().m_value.push_back(n);
+            m_uplinks.insert_if_not_there(c, ptr_vector<expr>()).push_back(n);
         }
 
         func_decl * d = n->get_decl();
@@ -639,8 +622,10 @@ public:
             return get_random_bv(s);
         else if (m_manager.is_bool(s))
             return m_mpz_manager.dup(get_random_bool());
-        else
+        else {
             NOT_IMPLEMENTED_YET(); // This only works for bit-vectors for now.
+            return get_random_bv(nullptr);
+        }
     }    
 
     void randomize(ptr_vector<expr> const & as) {
@@ -963,8 +948,10 @@ public:
             return score_bool(n);
         else if (m_bv_util.is_bv(n))
             return score_bv(n);
-        else
+        else {
             NOT_IMPLEMENTED_YET();
+            return 0;
+        }
     }    
 
     ptr_vector<func_decl> & get_constants(expr * e) {
@@ -1105,4 +1092,3 @@ public:
     }
 };
 
-#endif

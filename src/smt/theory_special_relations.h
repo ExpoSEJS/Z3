@@ -17,8 +17,7 @@ Notes:
 
 --*/
 
-#ifndef THEORY_SPECIAL_RELATIONS_H_
-#define THEORY_SPECIAL_RELATIONS_H_
+#pragma once
 
 #include "ast/special_relations_decl_plugin.h"
 #include "smt/smt_theory.h"
@@ -177,7 +176,7 @@ namespace smt {
         void internalize_next(func_decl* f, app * term);
 
     public:
-        theory_special_relations(ast_manager& m);
+        theory_special_relations(context& ctx, ast_manager& m);
         ~theory_special_relations() override;
 
         theory * mk_fresh(context * new_ctx) override;
@@ -204,4 +203,3 @@ namespace smt {
     };
 }
 
-#endif

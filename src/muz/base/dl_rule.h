@@ -17,8 +17,7 @@ Revision History:
 
 --*/
 
-#ifndef DL_RULE_H_
-#define DL_RULE_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "muz/base/dl_costs.h"
@@ -288,13 +287,13 @@ namespace datalog {
     class rule : public accounted_object {
         friend class rule_manager;
 
-        app *    m_head;
-        proof*   m_proof;
+        app*     m_head{ nullptr };
+        proof*   m_proof{ nullptr };
         unsigned m_tail_size:20;
         // unsigned m_reserve:12;
-        unsigned m_ref_cnt;
-        unsigned m_positive_cnt;
-        unsigned m_uninterp_cnt;
+        unsigned m_ref_cnt{ 0 };
+        unsigned m_positive_cnt{ 0 };
+        unsigned m_uninterp_cnt{ 0 };
         symbol   m_name;
         /**
            The following field is an array of tagged pointers. 
@@ -390,5 +389,4 @@ namespace datalog {
 
 };
 
-#endif /* DL_RULE_H_ */
 

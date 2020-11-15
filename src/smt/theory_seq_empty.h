@@ -16,12 +16,12 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_SEQ_EMPTY_H_
-#define THEORY_SEQ_EMPTY_H_
+#pragma once
 
-#include "smt/smt_theory.h"
 #include "ast/seq_decl_plugin.h"
 #include "model/seq_factory.h"
+#include "smt/smt_theory.h"
+#include "smt/smt_model_generator.h"
 
 namespace smt {
 
@@ -32,11 +32,11 @@ namespace smt {
         bool internalize_term(app*) override { return internalize_atom(nullptr,false);  }
         void new_eq_eh(theory_var, theory_var) override { }
         void new_diseq_eh(theory_var, theory_var) override {}
-        theory* mk_fresh(context* new_ctx) override { return alloc(theory_seq_empty, new_ctx->get_manager()); }
+        theory* mk_fresh(context* new_ctx) override { return alloc(theory_seq_empty, *new_ctx); }
         char const * get_name() const override { return "seq-empty"; }
         void display(std::ostream& out) const override {}
     public:
-        theory_seq_empty(ast_manager& m):theory(m.mk_family_id("seq")), m_used(false) {}
+        theory_seq_empty(context& ctx):theory(ctx, ctx.get_manager().mk_family_id("seq")), m_used(false) {}
         void init_model(model_generator & mg) override {
             mg.register_factory(alloc(seq_factory, get_manager(), get_family_id(), mg.get_model()));
         }
@@ -45,5 +45,4 @@ namespace smt {
 
 };
 
-#endif /* THEORY_SEQ_EMPTY_H_ */
 

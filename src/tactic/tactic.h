@@ -18,8 +18,7 @@ Author:
 Notes:
 
 --*/
-#ifndef TACTIC_H_
-#define TACTIC_H_
+#pragma once
 
 #include "tactic/goal.h"
 #include "util/params.h"
@@ -63,7 +62,7 @@ public:
     */
     virtual void operator()(goal_ref const & in, goal_ref_buffer& result) = 0;
 
-    virtual void collect_statistics(statistics & st) const {}
+    virtual void collect_statistics(statistics & st) const { }
     virtual void reset_statistics() {}
     virtual void cleanup() = 0;
     virtual void reset() { cleanup(); }
@@ -130,4 +129,3 @@ void fail_if_unsat_core_generation(char const * tactic_name, goal_ref const & in
 void fail_if_model_generation(char const * tactic_name, goal_ref const & in);
 void fail_if_has_quantifiers(char const* tactic_name, goal_ref const& in);
 
-#endif

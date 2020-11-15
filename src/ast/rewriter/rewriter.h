@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef REWRITER_H_
-#define REWRITER_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/rewriter/rewriter_types.h"
@@ -151,9 +150,9 @@ public:
        - (VAR i + s2) if i < b 
 */
 class var_shifter : public var_shifter_core {
-    unsigned  m_bound;
-    unsigned  m_shift1;
-    unsigned  m_shift2;
+    unsigned  m_bound  { 0 };
+    unsigned  m_shift1 { 0 };
+    unsigned  m_shift2 { 0 };
     void process_var(var * v) override;
 public:
     var_shifter(ast_manager & m):var_shifter_core(m) {}
@@ -391,6 +390,7 @@ struct default_rewriter_cfg {
     }
     bool reduce_var(var * t, expr_ref & result, proof_ref & result_pr) { return false; }
     bool get_macro(func_decl * d, expr * & def, quantifier * & q, proof * & def_pr) { return false; }
+    bool reduce_macro() { return false; }
     bool get_subst(expr * s, expr * & t, proof * & t_pr) { return false; }
     void reset() {}
     void cleanup() {}
@@ -407,4 +407,3 @@ public:
         rewriter_tpl<beta_reducer_cfg>(m, false, m_cfg) {}
 };
 
-#endif

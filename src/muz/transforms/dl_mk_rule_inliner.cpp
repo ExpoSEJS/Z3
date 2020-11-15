@@ -116,7 +116,7 @@ namespace datalog {
         SASSERT(tail.size()==tail_neg.size());
         std::ostringstream comb_name;
         comb_name << tgt.name().str() << ";" << src.name().str();
-        symbol combined_rule_name = symbol(comb_name.str().c_str());
+        symbol combined_rule_name(comb_name.str());
         res = m_rm.mk(new_head, tail.size(), tail.c_ptr(), tail_neg.c_ptr(), combined_rule_name, m_normalize);
         res->set_accounting_parent_object(m_context, const_cast<rule*>(&tgt));
         TRACE("dl",
@@ -639,9 +639,9 @@ namespace datalog {
     }
 
     unsigned_vector const& mk_rule_inliner::visitor::add_position(expr* e, unsigned j) {
-        obj_map<expr, unsigned_vector>::obj_map_entry * et = m_positions.insert_if_not_there2(e, unsigned_vector());
-        et->get_data().m_value.push_back(j);
-        return et->get_data().m_value;
+        auto& value = m_positions.insert_if_not_there(e, unsigned_vector());
+        value.push_back(j);
+        return value;
     }
 
     unsigned_vector const& mk_rule_inliner::visitor::del_position(expr* e, unsigned j) {

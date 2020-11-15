@@ -51,10 +51,17 @@ public:
         return m_inf_set.size() == 0;
     }
     bool current_x_is_infeasible() const { return m_inf_set.size() != 0; }
+private:
     u_set m_inf_set;
     bool m_using_infeas_costs;
-
-
+public:
+    const u_set& inf_set() const { return m_inf_set; }
+    u_set& inf_set() { return m_inf_set; }
+    void inf_set_increase_size_by_one() { m_inf_set.increase_size_by_one(); }
+    bool inf_set_contains(unsigned j) const { return m_inf_set.contains(j); }
+    unsigned inf_set_size() const { return m_inf_set.size(); }
+    bool using_infeas_costs() const { return m_using_infeas_costs; }
+    void set_using_infeas_costs(bool val)  { m_using_infeas_costs = val; }
     vector<unsigned>      m_columns_nz; // m_columns_nz[i] keeps an approximate value of non zeroes the i-th column
     vector<unsigned>      m_rows_nz; // m_rows_nz[i] keeps an approximate value of non zeroes in the i-th row
     indexed_vector<T>     m_pivot_row_of_B_1;  // the pivot row of the reverse of B
@@ -143,11 +150,13 @@ public:
         return m_status;
     }
 
-    void fill_cb(T * y);
+    void fill_cb(T * y) const;
 
-    void fill_cb(vector<T> & y);
+    void fill_cb(vector<T> & y) const;
 
-    void solve_yB(vector<T> & y);
+    void solve_yB(vector<T> & y) const;
+    
+    void solve_Bd(unsigned entering, indexed_vector<T> & d_buff, indexed_vector<T>& w_buff) const;
 
     void solve_Bd(unsigned entering);
 
@@ -159,7 +168,7 @@ public:
 
     void restore_state(T * w_buffer, T * d_buffer);
 
-    X get_cost() {
+    X get_cost() const {
         return dot_product(m_costs, m_x);
     }
 
@@ -182,7 +191,7 @@ public:
 
     void add_delta_to_entering(unsigned entering, const X & delta);
 
-    const T & get_var_value(unsigned j) const {
+    const X & get_var_value(unsigned j) const {
         return m_x[j];
     }
 
@@ -450,9 +459,8 @@ public:
     int pivots_in_column_and_row_are_different(int entering, int leaving) const;
     void pivot_fixed_vars_from_basis();
     bool remove_from_basis(unsigned j);
+    bool remove_from_basis(unsigned j, const impq&);
     bool pivot_column_general(unsigned j, unsigned j_basic, indexed_vector<T> & w);
-    bool pivot_for_tableau_on_basis();
-    bool pivot_row_for_tableau_on_basis(unsigned row);
     void init_basic_part_of_basis_heading() {
         unsigned m = m_basis.size();
         for (unsigned i = 0; i < m; i++) {
@@ -557,7 +565,7 @@ public:
         return true;
     }
 
-    void print_column_bound_info(unsigned j, std::ostream & out) const {
+    std::ostream& print_column_bound_info(unsigned j, std::ostream & out) const {
         out << column_name(j) << " type = " << column_type_to_string(m_column_types[j]) << std::endl;
         switch (m_column_types[j]) {
         case column_type::fixed:
@@ -573,6 +581,7 @@ public:
         default:
             break;
         }
+        return out;
     }
 
     std::ostream& print_column_info(unsigned j, std::ostream & out) const {
@@ -581,37 +590,39 @@ public:
             return out;
         }
 
-        out << "[" << j << "]\t";
-            
+        std::stringstream strm;
+        strm << m_x[j];
+        std::string j_val = strm.str();
+        out << "[" << j << "] " << std::setw(6) << " := " << j_val;
+        if (m_basis_heading[j] >= 0)
+            out << " base ";
+        else 
+            out << "      ";
+        for (auto k = j_val.size(); k < 15; ++k)
+            out << " ";
         switch (m_column_types[j]) {
         case column_type::fixed:
         case column_type::boxed:
-            out << " [" << m_lower_bounds[j] << ", " << m_upper_bounds[j] << "]";
+            out << "[" << m_lower_bounds[j] << ", " << m_upper_bounds[j] << "]";
             break;
         case column_type::lower_bound:
-            out << " [" << m_lower_bounds[j] << "," << "oo" << "]";
+            out << "[" << m_lower_bounds[j] << ", oo" << "]";
             break;
         case column_type::upper_bound:
-            out << " [-oo, " << m_upper_bounds[j] << ']';
+            out << "[-oo, " << m_upper_bounds[j] << ']';
             break;
         case column_type::free_column:
-            out << " [-oo, oo]";
+            out << "[-oo, oo]";
             break;
         default:
             lp_assert(false);
         }
-        //        out << "basis heading = " << m_basis_heading[j] << std::endl;
-        out << "\tx = " << m_x[j];
-        if (m_basis_heading[j] >= 0)
-            out << " base\n";
-        else
-           out << " \n";
-        return out;
+        return out << "\n";
     }
 
-    bool column_is_free(unsigned j) const { return this->m_column_type[j] == column_type::free_column; }
+    bool column_is_free(unsigned j) const { return this->m_column_types[j] == column_type::free_column; }
 
-    bool column_is_fixed(unsigned j) const { return this->m_column_type[j] == column_type::fixed; }
+    bool column_is_fixed(unsigned j) const { return this->m_column_types[j] == column_type::fixed; }
 
     
     bool column_has_upper_bound(unsigned j) const {
@@ -685,6 +696,11 @@ public:
         return m_inf_set.contains(j);
     }
 
+    bool column_is_base(unsigned j) const {
+        return m_basis_heading[j] >= 0;
+    }
+
+    
     void update_x_with_feasibility_tracking(unsigned j, const X & v) {
         TRACE("lar_solver", tout << "j = " << j << ", v = " << v << "\n";);
         m_x[j] = v;
@@ -715,13 +731,26 @@ public:
             insert_column_into_inf_set(j);
     }
     void insert_column_into_inf_set(unsigned j) {
+        TRACE("lar_solver", tout << "j = " << j << "\n";);
         m_inf_set.insert(j);
         lp_assert(!column_is_feasible(j));
     }
     void remove_column_from_inf_set(unsigned j) {
+        TRACE("lar_solver", tout << "j = " << j << "\n";);
         m_inf_set.erase(j);
         lp_assert(column_is_feasible(j));
     }
+
+    void resize_inf_set(unsigned size) {
+        TRACE("lar_solver",);
+        m_inf_set.resize(size);
+    }
+
+    void clear_inf_set() {
+        TRACE("lar_solver",);
+        m_inf_set.clear();
+    }
+    
     bool costs_on_nbasis_are_zeros() const {
         lp_assert(this->basis_heading_is_correct());
         for (unsigned j = 0; j < this->m_n(); j++) {

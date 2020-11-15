@@ -11,7 +11,7 @@ if (POLICY CMP0042)
 endif()
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE_CXX "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cxx_compiler_flags_overrides.cmake")
-project(Z3 VERSION 4.8.8.0 LANGUAGES CXX)
+project(Z3 VERSION 4.8.10.0 LANGUAGES CXX)
 
 ################################################################################
 # Project version
@@ -72,7 +72,7 @@ set(GIT_DIR "${PROJECT_SOURCE_DIR}/.git")
 if (EXISTS "${GIT_DIR}")
   # Try to make CMake configure depend on the current git HEAD so that
   # a re-configure is triggered when the HEAD changes.
-  add_git_dir_dependency("${PROJECT_SOURCE_DIR}" ADD_GIT_DEP_SUCCESS)
+  add_git_dir_dependency("${GIT_DIR}" ADD_GIT_DEP_SUCCESS)
   if (ADD_GIT_DEP_SUCCESS)
     if (Z3_INCLUDE_GIT_HASH)
       get_git_head_hash("${GIT_DIR}" Z3GITHASH)
@@ -200,6 +200,9 @@ if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   if ("${TARGET_ARCHITECTURE}" STREQUAL "x86_64")
     list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_USE_THREAD_LOCAL")
   endif()
+elseif ("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+  message(STATUS "Platform: Android")
+  list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_ANDROID_")
 elseif ("${CMAKE_SYSTEM_NAME}" MATCHES "GNU")
   message(STATUS "Platform: GNU/Hurd")
   list(APPEND Z3_COMPONENT_CXX_DEFINES "-D_HURD_")
@@ -315,6 +318,7 @@ endif()
 ################################################################################
 # Threading support
 ################################################################################
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads)
 list(APPEND Z3_DEPENDENT_LIBS ${CMAKE_THREAD_LIBS_INIT})
 
@@ -374,16 +378,15 @@ endif()
 # Position independent code
 ################################################################################
 # This is required because code built in the components will end up in a shared
-# library. If not building a shared library ``-fPIC`` isn't needed and would add
-# unnecessary overhead.
-if (Z3_BUILD_LIBZ3_SHARED)
-  # Avoid adding -fPIC compiler switch if we compile with MSVC (which does not
-  # support the flag) or if we target Windows, which generally does not use
-  # position independent code for native code shared libraries (DLLs).
-  if (NOT (MSVC OR MINGW OR WIN32))
-    z3_add_cxx_flag("-fPIC" REQUIRED)
-  endif()
+# library.
+
+# Avoid adding -fPIC compiler switch if we compile with MSVC (which does not
+# support the flag) or if we target Windows, which generally does not use
+# position independent code for native code shared libraries (DLLs).
+if (NOT (MSVC OR MINGW OR WIN32))
+  z3_add_cxx_flag("-fPIC" REQUIRED)
 endif()
+
 
 ################################################################################
 # Link time optimization
@@ -569,6 +572,9 @@ write_basic_package_version_file("${PROJECT_BINARY_DIR}/Z3ConfigVersion.cmake"
   COMPATIBILITY SameMajorVersion
 )
 
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/z3.pc.cmake.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/z3.pc" @ONLY)
+
 ################################################################################
 # Create `Z3Config.cmake` and related files for install tree so clients can use
 # Z3 via CMake.
@@ -609,6 +615,12 @@ install(
 install(
   FILES "${PROJECT_BINARY_DIR}/Z3ConfigVersion.cmake"
   DESTINATION "${CMAKE_INSTALL_Z3_CMAKE_PACKAGE_DIR}"
+)
+
+# Add install rule to install ${PROJECT_BINARY_DIR}/z3.pc
+install(
+  FILES "${PROJECT_BINARY_DIR}/z3.pc"
+  DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}"
 )
 
 ################################################################################

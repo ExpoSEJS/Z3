@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef STATIC_FEATURES_H_
-#define STATIC_FEATURES_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
@@ -135,6 +134,8 @@ struct static_features {
             m_num_theories++; 
         }
     }
+
+    void check_array(sort* s);
     
     void acc_num(rational const & r) {
         if (r.is_neg())
@@ -186,5 +187,4 @@ struct static_features {
 
 };
 
-#endif /* STATIC_FEATURES_H_ */
 

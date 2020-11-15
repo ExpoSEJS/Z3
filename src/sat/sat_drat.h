@@ -15,27 +15,58 @@ Author:
 
 Notes:
 
+    For DIMACS input it produces DRAT proofs.
+
+    For SMT extensions are as follows:
+
+    Input assertion:
+      i <literal>* 0
+
+    Assertion (true modulo a theory):
+      a [<theory-id>] <literal>* 0
+    The if no theory id is given, the assertion is a tautology
+    modulo Tseitin converison. Theory ids track whether the
+    tautology is modulo a theory.
+    Assertions are irredundant.
+
+    Bridge from ast-node to boolean variable:
+      b <bool-var-id> <ast-node-id> 0
+
+    Definition of an expression (ast-node):
+      e <ast-node-id> <name> <ast-node-id>* 0
+
+    Redundant clause (theory lemma if theory id is given)
+      [r [<theory-id>]] <literal>* 0
+
+    Declaration of an auxiliary function:
+      f <smtlib2-function-declaration> 0
+
+    Garbage collection of a Boolean variable:
+      g <bool-var-id> 0
+
+    Available theories are:
+      - euf   The theory lemma should be a consequence of congruence closure.
+      - ba    TBD (need to also log cardinality and pb constraints)
+
+    Life times of theory lemmas is TBD. When they are used for conflict resolution
+    they are only used for the next lemma.
+
 --*/
-#ifndef SAT_DRAT_H_
-#define SAT_DRAT_H_
+#pragma once
+
+#include "sat_types.h"
 
 namespace sat {
+    class justification;
+    class clause;
+
     class drat {
-    public:
-        struct s_ext {};
-        struct s_unit {};
-        struct premise {
-            enum { t_clause, t_unit, t_ext } m_type;
-            union {
-                clause* m_clause;
-                unsigned m_literal;                
-            };
-            premise(s_ext, literal l): m_type(t_ext), m_literal(l.index()) {}
-            premise(s_unit, literal l): m_type(t_unit), m_literal(l.index()) {}
-            premise(clause* c): m_type(t_clause), m_clause(c) {}
+        struct stats {
+            unsigned m_num_drup { 0 };
+            unsigned m_num_drat { 0 };
+            unsigned m_num_add { 0 };
+            unsigned m_num_del { 0 };
         };
-    private:
-        enum status { asserted, learned, deleted, external };
         struct watched_clause {
             clause* m_clause;
             literal m_l1, m_l2;
@@ -53,9 +84,10 @@ namespace sat {
         literal_vector          m_units;
         vector<watch>           m_watches;
         svector<lbool>          m_assignment;
+        vector<std::string>     m_theory;
         bool                    m_inconsistent;
-        unsigned                m_num_add, m_num_del;
         bool                    m_check_unsat, m_check_sat, m_check, m_activity;
+        stats                   m_stats;
 
         void dump_activity();
         void dump(unsigned n, literal const* c, status st);
@@ -66,7 +98,7 @@ namespace sat {
 
         bool is_clause(clause& c, literal l1, literal l2, literal l3, status st1, status st2);
 
-        friend std::ostream& operator<<(std::ostream & out, status st);
+        std::ostream& pp(std::ostream & out, status st) const;
         status get_status(bool learned) const;
 
         void declare(literal l);
@@ -84,16 +116,32 @@ namespace sat {
         bool match(unsigned n, literal const* lits, clause const& c) const;
 
     public:
+
         drat(solver& s);
         ~drat();  
 
         void updt_config();
+
+        void add_theory(int id, symbol const& s) { m_theory.setx(id, s.str(), std::string()); }
         void add();
         void add(literal l, bool learned);
-        void add(literal l1, literal l2, bool learned);
-        void add(clause& c, bool learned);
-        void add(literal_vector const& c, svector<premise> const& premises);
+        void add(literal l1, literal l2, status st);
+        void add(clause& c, status st);
+        void add(literal_vector const& c, status st);
         void add(literal_vector const& c); // add learned clause
+        void add(unsigned sz, literal const* lits, status st);
+
+        // support for SMT - connect Boolean variables with AST nodes
+        // associate AST node id with Boolean variable v
+        void bool_def(bool_var v, unsigned n);
+
+        // declare AST node n with 'name' and arguments arg
+        void def_begin(char id, unsigned n, std::string const& name);
+        void def_add_arg(unsigned arg);
+        void def_end();
+
+        // ad-hoc logging until a format is developed
+        void log_adhoc(std::function<void(std::ostream&)>& fn);
 
         bool is_cleaned(clause& c) const;        
         void del(literal l);
@@ -113,8 +161,15 @@ namespace sat {
         bool contains(literal c, justification const& j);
 
         void check_model(model const& m);
+
+        void collect_statistics(statistics& st) const;
+
+        bool inconsistent() const { return m_inconsistent; }
+        literal_vector const& units() { return m_units; }
+        bool is_drup(unsigned n, literal const* c, literal_vector& units);
+        solver& get_solver() { return s; }
     };
 
-};
+}
 
-#endif
+

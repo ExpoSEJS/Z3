@@ -18,8 +18,7 @@ Notes:
 
 --*/
 
-#ifndef DOM_SIMPLIFY_TACTIC_H_
-#define DOM_SIMPLIFY_TACTIC_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/expr_substitution.h"
@@ -41,7 +40,7 @@ private:
     tree_t                m_tree;
 
     void add_edge(tree_t& tree, expr * src, expr* dst) {        
-        tree.insert_if_not_there2(src, ptr_vector<expr>())->get_data().m_value.push_back(dst);        
+        tree.insert_if_not_there(src, ptr_vector<expr>()).push_back(dst);        
     }
 
     void compute_post_order();
@@ -148,4 +147,3 @@ tactic * mk_dom_simplify_tactic(ast_manager & m, params_ref const & p = params_r
 ADD_TACTIC("dom-simplify", "apply dominator simplification rules.", "mk_dom_simplify_tactic(m, p)")
 */
 
-#endif

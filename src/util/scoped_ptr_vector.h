@@ -17,8 +17,7 @@ Author:
 Notes:
 
 --*/
-#ifndef SCOPED_PTR_VECTOR_H_
-#define SCOPED_PTR_VECTOR_H_
+#pragma once
 
 #include "util/vector.h"
 #include "util/util.h"
@@ -33,6 +32,7 @@ public:
     void pop_back() { SASSERT(!empty()); set(size()-1, nullptr); m_vector.pop_back(); }
     T * back() const { return m_vector.back(); }
     T * operator[](unsigned idx) const { return m_vector[idx]; }
+    T * get(unsigned idx, T* d = nullptr) const { return (0 <= idx && idx < m_vector.size()) ? (*this)[idx] : d; }
     void set(unsigned idx, T * ptr) { 
         if (m_vector[idx] == ptr) 
             return; 
@@ -52,6 +52,11 @@ public:
                 push_back(nullptr);
         }
     }
+    void reserve(unsigned sz) {
+        if (sz >= m_vector.size())
+            resize(sz);
+    }
+
     //!< swap last element with given pointer
     void swap_back(scoped_ptr<T> & ptr) {
         SASSERT(!empty());
@@ -63,4 +68,3 @@ public:
     typename ptr_vector<T>::const_iterator end() const { return m_vector.end(); }
 };
 
-#endif

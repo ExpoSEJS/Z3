@@ -99,7 +99,6 @@ void inductive_property::to_model(model_ref& md) const {
     }
     TRACE("spacer", tout << *md;);
     apply(const_cast<model_converter_ref&>(m_mc), md);
-    md->compress();
 }
 
 expr_ref inductive_property::to_expr() const
@@ -107,6 +106,7 @@ expr_ref inductive_property::to_expr() const
     model_ref md;
     expr_ref result(m);
     to_model(md);
+    md->compress();
     model2expr(md, result);
     return result;
 }
@@ -141,12 +141,12 @@ void inductive_property::display(datalog::rule_manager& rm, ptr_vector<datalog::
 
     out << to_string() << "\n";
     for (auto* r : rules) {
-        out << "(push)\n";
+        out << "(push 1)\n";
         out << "(assert (not\n";
         rm.display_smt2(*r, out);
         out << "))\n";
         out << "(check-sat)\n";
-        out << "(pop)\n";
+        out << "(pop 1)\n";
     }
 }
 
@@ -180,7 +180,7 @@ func_decl * manager::get_n_pred(func_decl* s) {
 app* mk_zk_const(ast_manager &m, unsigned idx, sort *s) {
     std::stringstream name;
     name << "sk!" << idx;
-    return m.mk_const(symbol(name.str().c_str()), s);
+    return m.mk_const(symbol(name.str()), s);
 }
 
 namespace find_zk_const_ns {

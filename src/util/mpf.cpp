@@ -16,6 +16,7 @@ Author:
 Revision History:
 
 --*/
+#include <cstring>
 #include<sstream>
 #include<iomanip>
 #include "util/mpf.h"
@@ -350,10 +351,7 @@ void mpf_manager::set(mpf & o, unsigned ebits, unsigned sbits, mpf_rounding_mode
 
         signed ds = sbits - x.sbits + 3;  // plus rounding bits
         if (ds > 0)
-        {
             m_mpz_manager.mul2k(o.significand, ds);
-            round(rm, o);
-        }
         else if (ds < 0)
         {
             bool sticky = false;
@@ -365,8 +363,9 @@ void mpf_manager::set(mpf & o, unsigned ebits, unsigned sbits, mpf_rounding_mode
             }
             if (sticky && m_mpz_manager.is_even(o.significand))
                 m_mpz_manager.inc(o.significand);
-            round(rm, o);
         }
+
+        round(rm, o);
     }
 }
 
@@ -747,7 +746,7 @@ void mpf_manager::div(mpf_rounding_mode rm, mpf const & x, mpf const & y, mpf & 
 
 void mpf_manager::fma(mpf_rounding_mode rm, mpf const & x, mpf const & y, mpf const &z, mpf & o) {
     SASSERT(x.sbits == y.sbits && x.ebits == y.ebits &&
-            x.sbits == y.sbits && z.ebits == z.ebits);
+            x.sbits == z.sbits && x.ebits == z.ebits);
 
     TRACE("mpf_dbg", tout << "X = " << to_string(x) << std::endl;);
     TRACE("mpf_dbg", tout << "Y = " << to_string(y) << std::endl;);
@@ -1310,7 +1309,7 @@ void mpf_manager::partial_remainder(mpf & x, mpf const & y, mpf_exp_t const & ex
     bool Q_sgn = x_div_y_sgn;
     mpf_exp_t Q_exp = x_div_y_exp;
     scoped_mpz Q_sig(m_mpz_manager), Q_rem(m_mpz_manager);
-    unsigned Q_shft = (sbits-1) + (sbits+3) -  (unsigned) (partial ? N :Q_exp);
+    unsigned Q_shft = (sbits-1) + (sbits+3) - (unsigned) (partial ? N : Q_exp);
     if (partial) {
         // Round according to MPF_ROUND_TOWARD_ZERO
         SASSERT(0 < N && N < Q_exp && Q_exp < INT_MAX);

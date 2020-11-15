@@ -18,14 +18,14 @@ Notes:
 
 --*/
 
-#ifndef RULE_PROPERTIES_H_
-#define RULE_PROPERTIES_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/datatype_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/arith_decl_plugin.h"
+#include "ast/recfun_decl_plugin.h"
 #include "muz/base/dl_rule.h"
 #include "ast/expr_functors.h"
 
@@ -40,6 +40,7 @@ namespace datalog {
         arith_util    m_a;
         bv_util       m_bv;
         array_util    m_ar;
+        recfun::util  m_rec;
         bool          m_generate_proof;
         rule*         m_rule;
         obj_map<quantifier, rule*> m_quantifiers;
@@ -53,6 +54,7 @@ namespace datalog {
         void insert(ptr_vector<rule>& rules, rule* r);
         void check_sort(sort* s);
         void visit_rules(expr_sparse_mark& visited, rule_set const& rules);
+        bool evaluates_to_numeral(expr * n, rational& val);
     public:
         rule_properties(ast_manager & m, rule_manager& rm, context& ctx, i_expr_pred& is_predicate);
         ~rule_properties();    
@@ -73,4 +75,3 @@ namespace datalog {
     };
 }
 
-#endif /* RULE_PROPERTIES_H_ */

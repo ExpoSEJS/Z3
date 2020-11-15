@@ -94,10 +94,8 @@ public:
     }
 
     expr_ref_vector get_trail() override {
-        throw default_exception("cannot retrieve trail from solvers created using tactcis");
+        throw default_exception("cannot retrieve trail from solvers created using tactics");
     }
-
-
 };
 
 ast_manager& tactic2solver::get_manager() const { return m_assertions.get_manager(); }

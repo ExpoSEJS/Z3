@@ -375,7 +375,7 @@ namespace smt {
     }
 
     void dyn_ack_manager::propagate_eh() {
-        if (m_params.m_dack == DACK_DISABLED)
+        if (m_params.m_dack == dyn_ack_strategy::DACK_DISABLED)
             return;
         m_num_propagations_since_last_gc++;
         if (m_num_propagations_since_last_gc > m_params.m_dack_gc) {
@@ -398,7 +398,7 @@ namespace smt {
     }
 
     literal dyn_ack_manager::mk_eq(expr * n1, expr * n2) {
-        app * eq  = m_context.mk_eq_atom(n1, n2);
+		app_ref eq(m_context.mk_eq_atom(n1, n2), m);
         m_context.internalize(eq, true);
         literal l = m_context.get_literal(eq);
         TRACE("dyn_ack", tout << "eq:\n" << mk_pp(eq, m) << "\nliteral: "; 
@@ -407,7 +407,7 @@ namespace smt {
     }
 
     void dyn_ack_manager::instantiate(app * n1, app * n2) {
-        SASSERT(m_params.m_dack != DACK_DISABLED);
+        SASSERT(m_params.m_dack != dyn_ack_strategy::DACK_DISABLED);
         SASSERT(n1->get_decl() == n2->get_decl());
         SASSERT(n1->get_num_args() == n2->get_num_args());
         SASSERT(n1 != n2);
@@ -461,7 +461,7 @@ namespace smt {
 
     void dyn_ack_manager::instantiate(app * n1, app * n2, app* r) {
         context& ctx = m_context;
-        SASSERT(m_params.m_dack != DACK_DISABLED);
+        SASSERT(m_params.m_dack != dyn_ack_strategy::DACK_DISABLED);
         SASSERT(n1 != n2 && n1 != r && n2 != r);
         ctx.m_stats.m_num_dyn_ack++;
         TRACE("dyn_ack_inst", tout << "dyn_ack: " << n1->get_id() << " " << n2->get_id() << " " << r->get_id() << "\n";);

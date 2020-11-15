@@ -18,8 +18,7 @@ Revision History:
     Related to bit_vector, but is based on a manager.
 
 --*/
-#ifndef FIXED_BIT_VECTOR_H_
-#define FIXED_BIT_VECTOR_H_
+#pragma once
 
 #include<string.h>
 #include "util/debug.h"
@@ -44,11 +43,6 @@ class fixed_bit_vector {
     }
 
 public:
-
-    fixed_bit_vector() {}
-    
-    ~fixed_bit_vector() {}
-    
     unsigned get_word(unsigned word_idx) const { return m_data[word_idx]; }
 
     bool operator[](unsigned bit_idx) const {
@@ -142,5 +136,4 @@ public:
 
 
 
-#endif /* FIXED_BIT_VECTOR_H_ */
 

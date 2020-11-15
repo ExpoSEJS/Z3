@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_TYPES_H_
-#define SAT_TYPES_H_
+#pragma once
 
 #include "util/debug.h"
 #include "util/approx_set.h"
@@ -27,7 +26,7 @@ Revision History:
 #include "util/vector.h"
 #include "util/uint_set.h"
 #include "util/stopwatch.h"
-#include<iomanip>
+#include "util/symbol.h"
 
 class params_ref;
 class reslimit;
@@ -177,12 +176,6 @@ namespace sat {
             for (unsigned i = 0; i < v.size(); ++i) insert(v[i]);
             return *this;
         }
-        literal_set& operator=(literal_set const& other) {
-            if (this != &other) {
-                m_set = other.m_set;
-            }
-            return *this;
-        }
 
         void insert(literal l) { m_set.insert(l.index()); }
         void remove(literal l) { m_set.remove(l.index()); }
@@ -213,14 +206,6 @@ namespace sat {
             return *this;
         }
     };
-
-    struct mem_stat {
-    };
-
-    inline std::ostream & operator<<(std::ostream & out, mem_stat const & m) {
-        double mem = static_cast<double>(memory::get_allocation_size())/static_cast<double>(1024*1024);
-        return out << std::fixed << std::setprecision(2) << mem;
-    }
 
     struct dimacs_lit {
         literal m_lit;
@@ -267,6 +252,43 @@ namespace sat {
         virtual double get_priority(bool_var v) const { return 0; }
 
     };
+
+    class status {
+    public:
+        enum class st { input, asserted, redundant, deleted };
+        st m_st;
+        int m_orig;
+    public:
+        status(st s, int o) : m_st(s), m_orig(o) {};
+        status(status const& s) : m_st(s.m_st), m_orig(s.m_orig) {}
+        status(status&& s) noexcept { m_st = st::asserted; m_orig = -1; std::swap(m_st, s.m_st); std::swap(m_orig, s.m_orig); }
+        status& operator=(status const& other) { m_st = other.m_st; m_orig = other.m_orig; return *this; }
+        static status redundant() { return status(status::st::redundant, -1); }
+        static status asserted() { return status(status::st::asserted, -1); }
+        static status deleted() { return status(status::st::deleted, -1); }
+        static status input() { return status(status::st::input, -1); }
+
+        static status th(bool redundant, int id) { return status(redundant ? st::redundant : st::asserted, id); }
+
+        bool is_input() const { return st::input == m_st; }
+        bool is_redundant() const { return st::redundant == m_st; }
+        bool is_asserted() const { return st::asserted == m_st; }
+        bool is_deleted() const { return st::deleted == m_st; }
+
+        bool is_sat() const { return -1 == m_orig; }
+        int  get_th() const { return m_orig;  }
+    };
+
+    struct status_pp {
+        status const& st;
+        std::function<symbol(int)>& th;
+        status_pp(status const& st, std::function<symbol(int)>& th) : st(st), th(th) {}
+    };
+
+    std::ostream& operator<<(std::ostream& out, sat::status const& st);
+    std::ostream& operator<<(std::ostream& out, sat::status_pp const& p);
+
 };
 
-#endif
+
+

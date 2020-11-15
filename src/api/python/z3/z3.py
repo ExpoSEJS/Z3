@@ -859,13 +859,14 @@ def RecFunction(name, *sig):
 
 def RecAddDefinition(f, args, body):
     """Set the body of a recursive function.
-       Recursive definitions are only unfolded during search.
+       Recursive definitions can be simplified if they are applied to ground
+       arguments.       
     >>> ctx = Context()
     >>> fac = RecFunction('fac', IntSort(ctx), IntSort(ctx))
     >>> n = Int('n', ctx)
     >>> RecAddDefinition(fac, n, If(n == 0, 1, n*fac(n-1)))
     >>> simplify(fac(5))
-    fac(5)
+    120
     >>> s = Solver(ctx=ctx)
     >>> s.add(fac(n) < 3)
     >>> s.check()
@@ -2791,6 +2792,14 @@ class IntNumRef(ArithRef):
         """
         return Z3_get_numeral_string(self.ctx_ref(), self.as_ast())
 
+    def as_binary_string(self):
+        """Return a Z3 integer numeral as a Python binary string.
+        >>> v = IntVal(10)
+        >>> v.as_binary_string()
+        '1010'
+        """
+        return Z3_get_numeral_binary_string(self.ctx_ref(), self.as_ast())
+
 class RatNumRef(ArithRef):
     """Rational values."""
 
@@ -2911,6 +2920,12 @@ class AlgebraicNumRef(ArithRef):
         '1.41421356237309504880?'
         """
         return Z3_get_numeral_decimal_string(self.ctx_ref(), self.as_ast(), prec)
+
+    def poly(self):
+        return AstVector(Z3_algebraic_get_poly(self.ctx_ref(), self.as_ast()), self.ctx)
+
+    def index(self):
+        return Z3_algebraic_get_i(self.ctx_ref(), self.as_ast())
 
 def _py2expr(a, ctx=None):
     if isinstance(a, bool):
@@ -3060,7 +3075,8 @@ def IntVector(prefix, sz, ctx=None):
     >>> Sum(X)
     x__0 + x__1 + x__2
     """
-    return [ Int('%s__%s' % (prefix, i)) for i in range(sz) ]
+    ctx = _get_ctx(ctx)
+    return [ Int('%s__%s' % (prefix, i), ctx) for i in range(sz) ]
 
 def FreshInt(prefix='x', ctx=None):
     """Return a fresh integer constant in the given context using the given prefix.
@@ -3112,7 +3128,8 @@ def RealVector(prefix, sz, ctx=None):
     >>> Sum(X).sort()
     Real
     """
-    return [ Real('%s__%s' % (prefix, i)) for i in range(sz) ]
+    ctx = _get_ctx(ctx)
+    return [ Real('%s__%s' % (prefix, i), ctx) for i in range(sz) ]
 
 def FreshReal(prefix='b', ctx=None):
     """Return a fresh real constant in the given context using the given prefix.
@@ -3699,6 +3716,10 @@ class BitVecNumRef(BitVecRef):
 
     def as_string(self):
         return Z3_get_numeral_string(self.ctx_ref(), self.as_ast())
+
+    def as_binary_string(self):
+        return Z3_get_numeral_binary_string(self.ctx_ref(), self.as_ast())
+    
 
 def is_bv(a):
     """Return `True` if `a` is a Z3 bit-vector expression.
@@ -5392,9 +5413,9 @@ class Goal(Z3PPObject):
         """Return a textual representation of the s-expression representing the goal."""
         return Z3_goal_to_string(self.ctx.ref(), self.goal)
 
-    def dimacs(self):
+    def dimacs(self, include_names = True):
         """Return a textual representation of the goal in DIMACS format."""
-        return Z3_goal_to_dimacs_string(self.ctx.ref(), self.goal)
+        return Z3_goal_to_dimacs_string(self.ctx.ref(), self.goal, include_names)
 
     def translate(self, target):
         """Copy goal `self` to context `target`.
@@ -6245,7 +6266,7 @@ class ModelRef(Z3PPObject):
         if z3_debug():
             _z3_assert(isinstance(target, Context), "argument must be a Z3 context")
         model = Z3_model_translate(self.ctx.ref(), self.model, target.ref())
-        return Model(model, target)
+        return ModelRef(model, target)
 
     def __copy__(self):
         return self.translate(self.ctx)
@@ -6467,7 +6488,7 @@ class Solver(Z3PPObject):
             self.solver = solver
         Z3_solver_inc_ref(self.ctx.ref(), self.solver)
         if logFile is not None:
-            self.set("solver.smtlib2_log", logFile)
+            self.set("smtlib2_log", logFile)
 
     def __del__(self):
         if self.solver is not None and self.ctx.ref() is not None:
@@ -6667,11 +6688,12 @@ class Solver(Z3PPObject):
         >>> s.check()
         unknown
         """
+        s = BoolSort(self.ctx)
         assumptions = _get_args(assumptions)
         num = len(assumptions)
         _assumptions = (Ast * num)()
         for i in range(num):
-            _assumptions[i] = assumptions[i].as_ast()
+            _assumptions[i] = s.cast(assumptions[i]).as_ast()
         r = Z3_solver_check_assumptions(self.ctx.ref(), self.solver, num, _assumptions)
         return CheckSatResult(r)
 
@@ -10466,3 +10488,188 @@ def TransitiveClosure(f):
     The transitive closure R+ is a new relation.
     """
     return FuncDeclRef(Z3_mk_transitive_closure(f.ctx_ref(), f.ast), f.ctx)
+
+
+class PropClosures:
+    def __init__(self):
+        self.bases = {}
+        self.lock = None
+
+    def set_threaded():
+        if self.lock is None:
+            import threading
+            self.lock = threading.thread.Lock()
+
+    def get(self, ctx):
+        if self.lock: self.lock.acquire()
+        r = self.bases[ctx]
+        if self.lock: self.lock.release()
+        return r
+
+    def set(self, ctx, r):
+        if self.lock: self.lock.acquire()
+        self.bases[ctx] = r
+        if self.lock: self.lock.release()
+
+    def insert(self, r):
+        if self.lock: self.lock.acquire()
+        id = len(self.bases) + 3
+        self.bases[id] = r
+        if self.lock: self.lock.release()
+        return id
+
+_prop_closures = None
+
+def ensure_prop_closures():
+    global _prop_closures
+    if _prop_closures is None:
+        _prop_closures = PropClosures()
+
+def user_prop_push(ctx):
+    _prop_closures.get(ctx).push();
+
+def user_prop_pop(ctx, num_scopes):
+    _prop_closures.get(ctx).pop(num_scopes)
+
+def user_prop_fresh(id, ctx):
+    prop = _prop_closures.get(id)
+    _prop_closures.set_threaded()
+    new_prop = UsePropagateBase(None, ctx)
+    _prop_closures.set(new_prop.id, new_prop.fresh())
+    return ctypes.c_void_p(new_prop.id)
+
+def user_prop_fixed(ctx, cb, id, value):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.fixed(id, _to_expr_ref(ctypes.c_void_p(value), prop.ctx()))
+    prop.cb = None
+
+def user_prop_final(ctx, cb):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.final()
+    prop.cb = None
+
+def user_prop_eq(ctx, cb, x, y):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.eq(x, y)
+    prop.cb = None
+
+def user_prop_diseq(ctx, cb, x, y):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.diseq(x, y)
+    prop.cb = None
+
+_user_prop_push  = push_eh_type(user_prop_push)
+_user_prop_pop   = pop_eh_type(user_prop_pop)
+_user_prop_fresh = fresh_eh_type(user_prop_fresh)
+_user_prop_fixed = fixed_eh_type(user_prop_fixed)
+_user_prop_final = final_eh_type(user_prop_final)
+_user_prop_eq    = eq_eh_type(user_prop_eq)
+_user_prop_diseq = eq_eh_type(user_prop_diseq)
+
+class UserPropagateBase:
+
+    #
+    # Either solver is set or ctx is set.
+    # Propagators that are created throuh callbacks
+    # to "fresh" inherit the context of that is supplied
+    # as argument to the callback.
+    # This context should not be deleted. It is owned by the solver.
+    # 
+    def __init__(self, s, ctx = None):
+        assert s is None or ctx is None
+        ensure_prop_closures()
+        self.solver = s        
+        self._ctx = None
+        self.cb = None
+        self.id = _prop_closures.insert(self)
+        self.fixed = None
+        self.final = None
+        self.eq    = None
+        self.diseq = None
+        if ctx:
+            self._ctx = Context()
+            Z3_del_context(self._ctx.ctx)
+            self._ctx.ctx = ctx
+            self._ctx.eh = Z3_set_error_handler(ctx, z3_error_handler)
+            Z3_set_ast_print_mode(ctx, Z3_PRINT_SMTLIB2_COMPLIANT)
+        if s:
+            Z3_solver_propagate_init(self.ctx_ref(),
+                                     s.solver,
+                                     ctypes.c_void_p(self.id),
+                                     _user_prop_push,
+                                     _user_prop_pop,
+                                     _user_prop_fresh)
+
+    def __del__(self):
+        if self._ctx:
+            self._ctx.ctx = None
+
+    def ctx(self):
+        if self._ctx:
+            return self._ctx
+        else:
+            return self.solver.ctx
+        
+    def ctx_ref(self):
+        return self.ctx().ref()
+                    
+    def add_fixed(self, fixed):
+        assert not self.fixed
+        assert not self._ctx
+        Z3_solver_propagate_fixed(self.ctx_ref(), self.solver.solver, _user_prop_fixed)
+        self.fixed = fixed
+ 
+    def add_final(self, final):
+        assert not self.final
+        assert not self._ctx
+        Z3_solver_propagate_final(self.ctx_ref(), self.solver.solver, _user_prop_final)
+        self.final = final
+
+    def add_eq(self, eq):
+        assert not self.eq
+        assert not self._ctx
+        Z3_solver_propagate_eq(self.ctx_ref(), self.solver.solver, _user_prop_eq)
+        self.eq = eq
+
+    def add_diseq(self, diseq):
+        assert not self.diseq
+        assert not self._ctx
+        Z3_solver_propagate_diseq(self.ctx_ref(), self.solver.solver, _user_prop_diseq)
+        self.diseq = diseq
+
+    def push(self):
+        raise Z3Exception("push needs to be overwritten")
+
+    def pop(self, num_scopes):
+        raise Z3Exception("pop needs to be overwritten")
+
+    def fresh(self):
+        raise Z3Exception("fresh needs to be overwritten")
+        
+    def add(self, e):
+        assert self.solver
+        assert not self._ctx
+        return Z3_solver_propagate_register(self.ctx_ref(), self.solver.solver, e.ast)
+
+    #
+    # Propagation can only be invoked as during a fixed-callback.
+    # 
+    def propagate(self, e, ids, eqs = []):
+        num_fixed = len(ids)
+        _ids = (ctypes.c_uint * num_fixed)()
+        for i in range(num_fixed):
+            _ids[i] = ids[i]
+        num_eqs = len(eqs)
+        _lhs = (ctypes.c_uint * num_eqs)()
+        _rhs = (ctypes.c_uint * num_eqs)()
+        for i in range(num_eqs):
+            _lhs[i] = eqs[i][0]
+            _rhs[i] = eqs[i][1]
+        Z3_solver_propagate_consequence(e.ctx.ref(), ctypes.c_void_p(self.cb), num_fixed, _ids, num_eqs, _lhs, _rhs, e.ast)
+
+    def conflict(self, ids):
+        self.propagate(BoolVal(False, self.ctx()), ids, eqs=[])

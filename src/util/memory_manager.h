@@ -16,15 +16,15 @@ Author:
 Revision History:
 
 --*/
-#ifndef MEMORY_H_
-#define MEMORY_H_
+#pragma once
 
 #include<cstdlib>
 #include<ostream>
+#include<iomanip>
 #include "util/z3_exception.h"
 
 #ifndef __has_builtin
-# define __has_builtin(x) 0
+#define __has_builtin(x) 0
 #endif
 
 
@@ -55,7 +55,7 @@ public:
     static bool above_high_watermark();
     static void set_max_size(size_t max_size);
     static void set_max_alloc_count(size_t max_count);
-    static void finalize();
+    static void finalize(bool shutdown = true);
     static void display_max_usage(std::ostream& os);
     static void display_i_max_usage(std::ostream& os);
     static void deallocate(void* p);
@@ -128,6 +128,13 @@ void dealloc_svect(T * ptr) {
     memory::deallocate(ptr);
 }
 
+struct mem_stat {
+};
 
-#endif /* MEMORY_H_ */
+inline std::ostream & operator<<(std::ostream & out, mem_stat const & m) {
+    double mem = static_cast<double>(memory::get_allocation_size())/static_cast<double>(1024*1024);
+    return out << std::fixed << std::setprecision(2) << mem;
+}
+
+
 

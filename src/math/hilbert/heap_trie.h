@@ -34,15 +34,14 @@ Notes:
 
 --*/
 
-#ifndef HEAP_TRIE_H_
-#define HEAP_TRIE_H_
+#pragma once
 
+#include <cstring>
 #include "util/map.h"
 #include "util/vector.h"
 #include "util/buffer.h"
 #include "util/statistics.h"
 #include "util/small_object_allocator.h"
-
 
 template<typename Key, typename KeyLE, typename KeyHash, typename Value>
 class heap_trie {
@@ -663,4 +662,3 @@ private:
     }
 };
 
-#endif 

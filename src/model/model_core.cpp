@@ -56,41 +56,47 @@ void model_core::register_decl(func_decl * d, expr * v) {
     TRACE("model", tout << "register " << d->get_name() << "\n";
           if (v) tout << mk_pp(v, m) << "\n";
           );
-    decl2expr::obj_map_entry * entry = m_interp.insert_if_not_there2(d, nullptr);
-    if (entry->get_data().m_value == nullptr) {
+    auto& value = m_interp.insert_if_not_there(d, nullptr);
+    if (value == nullptr) {
         // new entry
         m_decls.push_back(d);
         m_const_decls.push_back(d);
         m.inc_ref(d);
         m.inc_ref(v);
-        entry->get_data().m_value = v;
+        value = v;
     }
     else {
         // replacing entry
         m.inc_ref(v);
-        m.dec_ref(entry->get_data().m_value);
-        entry->get_data().m_value = v;
+        m.dec_ref(value);
+        value = v;
     }
 }
 
 void model_core::register_decl(func_decl * d, func_interp * fi) {
+    func_interp* old_fi = update_func_interp(d, fi);
+    dealloc(old_fi);
+}
+
+func_interp* model_core::update_func_interp(func_decl* d, func_interp* fi) {
     TRACE("model", tout << "register " << d->get_name() << "\n";);
     SASSERT(d->get_arity() > 0);
     SASSERT(&fi->m() == &m);
-    decl2finterp::obj_map_entry * entry = m_finterp.insert_if_not_there2(d, nullptr);
-    if (entry->get_data().m_value == nullptr) {
+    func_interp* old_fi = nullptr;
+    auto& value = m_finterp.insert_if_not_there(d, nullptr);
+    if (value == nullptr) {
         // new entry
         m_decls.push_back(d);
         m_func_decls.push_back(d);
         m.inc_ref(d);
-        entry->get_data().m_value = fi;
+        value = fi;
     }
     else {
         // replacing entry
-        if (fi != entry->get_data().m_value)
-            dealloc(entry->get_data().m_value);
-        entry->get_data().m_value = fi;
+        old_fi = value;
+        value = fi;
     }
+    return old_fi;
 }
 
 void model_core::unregister_decl(func_decl * d) {

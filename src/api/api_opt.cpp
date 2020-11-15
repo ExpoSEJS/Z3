@@ -230,8 +230,7 @@ extern "C" {
         param_descrs descrs;
         to_optimize_ptr(o)->collect_param_descrs(descrs);
         to_params(p)->m_params.validate(descrs);
-        params_ref pr = to_param_ref(p);
-        to_optimize_ptr(o)->updt_params(pr);
+        to_optimize_ptr(o)->updt_params(to_param_ref(p));
         Z3_CATCH;
     }
     
@@ -358,14 +357,14 @@ extern "C" {
         try {
             if (!parse_smt2_commands(*ctx.get(), s)) {
                 ctx = nullptr;
-                SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str().c_str());
+                SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str());
                 return;
             }        
         }
         catch (z3_exception& e) {
             errstrm << e.msg();
             ctx = nullptr;
-            SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str().c_str());
+            SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str());
             return;
         }
 

@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_ARITH_EQ_H_
-#define THEORY_ARITH_EQ_H_
+#pragma once
 
 // #define PROFILE_OFFSET_ROW
 
@@ -223,8 +222,7 @@ namespace smt {
         theory_var x;
         theory_var y;
         numeral k;
-        if (is_offset_row(r, x, y, k)) {
-            
+        if (is_offset_row(r, x, y, k)) {            
             if (y == null_theory_var) {
                 // x is an implied fixed var at k.
                 value_sort_pair key(k, is_int_src(x));
@@ -248,12 +246,13 @@ namespace smt {
                     //
                     // x1 <= k1 x1 >= k1, x2 <= x1 + k2 x2 >= x1 + k2
                     // 
-                    TRACE("arith_eq_propagation", tout << "fixed\n";);
+                    TRACE("arith_eq", tout << "fixed\n";);
                     lower(x2)->push_justification(ante, numeral::zero(), proofs_enabled());
                     upper(x2)->push_justification(ante, numeral::zero(), proofs_enabled());
                     m_stats.m_fixed_eqs++;
                     propagate_eq_to_core(x, x2, ante);
                 }
+                //return;
             }
 
             if (k.is_zero() && y != null_theory_var && !is_equal(x, y) && is_int_src(x) == is_int_src(y)) {
@@ -278,16 +277,10 @@ namespace smt {
                 numeral    k2;
                 if (r2.get_base_var() != null_theory_var && is_offset_row(r2, x2, y2, k2)) {
                     bool new_eq  = false;
-#ifdef _TRACE
-                    bool swapped = false;
-#endif
                     if (y == y2 && k == k2) {
                         new_eq = true;
                     }
                     else if (y2 != null_theory_var) {
-#ifdef _TRACE
-                        swapped = true;
-#endif
                         std::swap(x2, y2);
                         k2.neg();
                         if (y == y2 && k == k2) {
@@ -302,7 +295,6 @@ namespace smt {
                             collect_fixed_var_justifications(r, ante);
                             collect_fixed_var_justifications(r2, ante);
                             TRACE("arith_eq", tout << "propagate eq two rows:\n"; 
-                                  tout << "swapped: " << swapped << "\n";
                                   tout << "x  : v" << x << "\n";
                                   tout << "x2 : v" << x2 << "\n";
                                   display_row_info(tout, r); 
@@ -313,8 +305,8 @@ namespace smt {
                         return;
                     }
                 }
+
                 // the original row was delete or it is not offset row anymore ===> remove it from table 
-                m_var_offset2row_id.erase(key);
             }
             // add new entry
             m_var_offset2row_id.insert(key, rid);
@@ -350,14 +342,13 @@ namespace smt {
                     antecedents.num_params(), antecedents.params("eq-propagate")));
         TRACE("arith_eq", tout << "detected equality: #" << _x->get_owner_id() << " = #" << _y->get_owner_id() << "\n";
               display_var(tout, x);
-              display_var(tout, y););
-        TRACE("arith_eq_propagation",
-              for (unsigned i = 0; i <  lits.size(); ++i) {
-                  ctx.display_detailed_literal(tout, lits[i]);
+              display_var(tout, y); 
+              for (literal lit : lits) {
+                  ctx.display_detailed_literal(tout, lit);
                   tout << "\n";
               } 
-              for (unsigned i = 0; i < eqs.size(); ++i) {
-                  tout << mk_pp(eqs[i].first->get_owner(), m) << " = " << mk_pp(eqs[i].second->get_owner(), m) << "\n";
+              for (auto const& p : eqs) {
+                  tout << mk_pp(p.first->get_owner(), m) << " = " << mk_pp(p.second->get_owner(), m) << "\n";
               } 
               tout << " ==> ";
               tout << mk_pp(_x->get_owner(), m) << " = " << mk_pp(_y->get_owner(), m) << "\n";
@@ -366,5 +357,4 @@ namespace smt {
     }
 };
 
-#endif /* THEORY_ARITH_EQ_H_ */
 

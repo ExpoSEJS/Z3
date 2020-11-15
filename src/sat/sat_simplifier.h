@@ -18,8 +18,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_SIMPLIFIER_H_
-#define SAT_SIMPLIFIER_H_
+#pragma once
 
 #include "sat/sat_types.h"
 #include "sat/sat_clause.h"
@@ -127,7 +126,7 @@ namespace sat {
         void init_visited();
         void mark_visited(literal l) { m_visited[l.index()] = true; }
         void unmark_visited(literal l) { m_visited[l.index()] = false; }
-        bool is_marked(literal l) const { return m_visited[l.index()] != 0; }
+        
         void mark_all_but(clause const & c, literal l);
         void unmark_all(clause const & c);
 
@@ -240,7 +239,8 @@ namespace sat {
         void propagate_unit(literal l);
         void subsume();
 
+        bool is_marked(literal l) const { return m_visited[l.index()] != 0; }
+
     };
 };
 
-#endif

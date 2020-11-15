@@ -16,24 +16,12 @@ Author:
 Revision History:
 
 --*/
-#ifndef DEBUG_H_
-#define DEBUG_H_
+#pragma once
 
 #include <stdlib.h>
 
 void enable_assertions(bool f);
 bool assertions_enabled();
-
-#if 0
-#define _CRTDBG_MAP_ALLOC
-#include<stdlib.h>
-#include<new>
-#include<crtdbg.h>
-#endif
-
-#ifndef __has_builtin
-# define __has_builtin(x) 0
-#endif
 
 #include "util/error_codes.h"
 #include "util/warning.h"
@@ -78,34 +66,24 @@ bool is_debug_enabled(const char * tag);
 #ifdef Z3DEBUG
 # define UNREACHABLE() DEBUG_CODE(notify_assertion_violation(__FILE__, __LINE__, "UNREACHABLE CODE WAS REACHED."); INVOKE_DEBUGGER();)
 #else
-#if (defined(__GNUC__) && ((__GNUC__ * 100 + __GNUC_MINOR__) >= 405)) || __has_builtin(__builtin_unreachable)
-// only available in gcc >= 4.5 and in newer versions of clang
-# define UNREACHABLE() __builtin_unreachable()
-#elif defined(_MSC_VER)
-# define UNREACHABLE() __assume(0)
+# define UNREACHABLE() { notify_assertion_violation(__FILE__, __LINE__, "UNREACHABLE CODE WAS REACHED."); exit(ERR_UNREACHABLE); } ((void) 0)
+#endif
+
+#ifdef Z3DEBUG
+# define NOT_IMPLEMENTED_YET() DEBUG_CODE(notify_assertion_violation(__FILE__, __LINE__, "NOT IMPLEMENTED YET!"); INVOKE_DEBUGGER();)
 #else
-#define UNREACHABLE() DEBUG_CODE(notify_assertion_violation(__FILE__, __LINE__, "UNREACHABLE CODE WAS REACHED."); INVOKE_DEBUGGER();)
-#endif
+# define NOT_IMPLEMENTED_YET() { notify_assertion_violation(__FILE__, __LINE__, "NOT IMPLEMENTED YET!"); exit(ERR_NOT_IMPLEMENTED_YET); } ((void) 0)
 #endif
 
-#define NOT_IMPLEMENTED_YET() { std::cerr << "NOT IMPLEMENTED YET!\n"; UNREACHABLE(); exit(ERR_NOT_IMPLEMENTED_YET); } ((void) 0)
-
-#define VERIFY(_x_) if (!(_x_)) {                               \
-        std::cerr << "Failed to verify: " << #_x_ << "\n";      \
-        UNREACHABLE();                                          \
+#define VERIFY(_x_) if (!(_x_)) {                                                       \
+        notify_assertion_violation(__FILE__, __LINE__, "Failed to verify: " #_x_ "\n"); \
+        exit(ERR_UNREACHABLE);                                                          \
     }                                                           
 
-#define ENSURE(_x_)                                         \
-    if (!(_x_)) {                                           \
-        std::cerr << "Failed to verify: " << #_x_ << "\n";  \
-        exit(-1);                                           \
-    }
+#define ENSURE(_x_) VERIFY(_x_)
 
 
 void finalize_debug();
 /*
   ADD_FINALIZER('finalize_debug();')
 */
-
-#endif /* DEBUG_H_ */
-

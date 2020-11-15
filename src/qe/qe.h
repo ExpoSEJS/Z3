@@ -18,8 +18,7 @@ Revision History:
 
 --*/
 
-#ifndef QE_H_
-#define QE_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "smt/params/smt_params.h"
@@ -230,10 +229,8 @@ namespace qe {
     class def_vector {
         func_decl_ref_vector m_vars;
         expr_ref_vector      m_defs;
-        def_vector& operator=(def_vector const& other);
     public:
         def_vector(ast_manager& m): m_vars(m), m_defs(m) {}
-        def_vector(def_vector const& other): m_vars(other.m_vars), m_defs(other.m_defs) {}
         void push_back(func_decl* v, expr* e) {
             m_vars.push_back(v);
             m_defs.push_back(e);
@@ -328,6 +325,8 @@ namespace qe {
 
     void mk_exists(unsigned num_vars, app* const* vars, expr_ref& fml);
 
+    bool has_quantified_uninterpreted(ast_manager& m, expr* fml);
+
     void get_nnf(expr_ref& fml, i_expr_pred& pred, i_nnf_atom& mk_atom, atom_set& pos, atom_set& neg); 
 
     class simplify_rewriter_cfg : public default_rewriter_cfg {
@@ -370,5 +369,4 @@ namespace qe {
 
 };
 
-#endif
 

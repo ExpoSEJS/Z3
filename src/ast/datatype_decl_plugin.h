@@ -14,13 +14,13 @@ Author:
     Nikolaj Bjorner (nbjorner) 2017-9-1 
 
 Revision History:
-
+   
     rewritten to support SMTLIB-2.6 parameters from
      Leonardo de Moura (leonardo) 2008-01-09.
 
+
 --*/
-#ifndef DATATYPE_DECL_PLUGIN_H_
-#define DATATYPE_DECL_PLUGIN_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "util/buffer.h"
@@ -53,7 +53,7 @@ namespace datatype {
         symbol    m_name;
         sort_ref  m_range;
         unsigned m_index;    // reference to recursive data-type may only get resolved after all mutually recursive data-types are procssed.
-        constructor* m_constructor;
+        constructor* m_constructor{ nullptr };
     public:
         accessor(ast_manager& m, symbol const& n, sort* range):
             m_name(n),
@@ -339,14 +339,16 @@ namespace datatype {
         bool is_is(func_decl * f) const { return is_decl_of(f, fid(), OP_DT_IS); }
         bool is_accessor(func_decl * f) const { return is_decl_of(f, fid(), OP_DT_ACCESSOR); }
         bool is_update_field(func_decl * f) const { return is_decl_of(f, fid(), OP_DT_UPDATE_FIELD); }
-        bool is_constructor(app * f) const { return is_app_of(f, fid(), OP_DT_CONSTRUCTOR); }
-        bool is_constructor(expr* e) const { return is_app(e) && is_constructor(to_app(e)); }
-        bool is_recognizer0(app * f) const { return is_app_of(f, fid(), OP_DT_RECOGNISER);} 
-        bool is_is(app * f) const { return is_app_of(f, fid(), OP_DT_IS);} 
-        bool is_is(expr * e) const { return is_app(e) && is_is(to_app(e)); }
-        bool is_recognizer(app * f) const { return is_recognizer0(f) || is_is(f); }
-        bool is_accessor(app * f) const { return is_app_of(f, fid(), OP_DT_ACCESSOR); }
-        bool is_update_field(app * f) const { return is_app_of(f, fid(), OP_DT_UPDATE_FIELD); }
+        bool is_constructor(app const * f) const { return is_app_of(f, fid(), OP_DT_CONSTRUCTOR); }
+        bool is_constructor(expr const * e) const { return is_app(e) && is_constructor(to_app(e)); }
+        bool is_recognizer0(app const* f) const { return is_app_of(f, fid(), OP_DT_RECOGNISER);} 
+        bool is_is(app const * f) const { return is_app_of(f, fid(), OP_DT_IS);} 
+        bool is_is(expr const * e) const { return is_app(e) && is_is(to_app(e)); }
+        bool is_recognizer(expr const * f) const { return is_app(f) && (is_recognizer0(to_app(f)) || is_is(to_app(f))); }
+        MATCH_UNARY(is_recognizer);
+        bool is_accessor(expr const* e) const { return is_app(e) && is_app_of(to_app(e), fid(), OP_DT_ACCESSOR); }
+        MATCH_UNARY(is_accessor);
+        bool is_update_field(expr * f) const { return is_app(f) && is_app_of(to_app(f), fid(), OP_DT_UPDATE_FIELD); }
         app* mk_is(func_decl * c, expr *f);
         ptr_vector<func_decl> const * get_datatype_constructors(sort * ty);
         unsigned get_datatype_num_constructors(sort * ty);
@@ -428,4 +430,3 @@ inline void del_datatype_decl(datatype_decl * d) {}
 inline void del_datatype_decls(unsigned num, datatype_decl * const * ds) {}
 
 
-#endif /* DATATYPE_DECL_PLUGIN_H_ */

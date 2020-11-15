@@ -8,7 +8,8 @@ Module Name:
 Abstract:
 
     Cuts (branches) from Hermite matrices
-
+    The implementation is based on ideas from
+    "Cutting the Mix" by Jurgen Christ and Jochen Hoenicke.
 Author:
     Lev Nachmanson (levnach)
 
@@ -81,7 +82,11 @@ private:
 #endif
     void shrink_explanation(const svector<unsigned>& basis_rows);
     bool overflow() const;    
-    lia_move create_cut(lar_term& t, mpq& k, explanation* ex, bool & upper, const vector<mpq> & x0);
+    lia_move create_cut(lar_term& t, mpq& k, explanation* ex, bool & upper
+#ifdef Z3DEBUG
+                        , const vector<mpq> & x0
+#endif
+                        );
     svector<unsigned> vars() const;
 };
 }

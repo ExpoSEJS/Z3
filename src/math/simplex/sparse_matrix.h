@@ -16,11 +16,11 @@ Notes:
 
 --*/
 
-#ifndef SPARSE_MATRIX_H_
-#define SPARSE_MATRIX_H_
+#pragma once
 
 #include "util/mpq_inf.h"
 #include "util/statistics.h"
+#include <cstring>
 
 namespace simplex {
 
@@ -140,6 +140,7 @@ namespace simplex {
         bool well_formed_row(unsigned row_id) const;
         bool well_formed_column(unsigned column_id) const;
         void del_row_entry(_row& r, unsigned pos);
+        void reset_rows();
 
     public:
 
@@ -270,6 +271,3 @@ namespace simplex {
     };
 
 };
-
-
-#endif

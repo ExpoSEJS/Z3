@@ -18,8 +18,7 @@ Revision History:
 
 --*/
 
-#ifndef SYMBOLIC_AUTOMATA_H_
-#define SYMBOLIC_AUTOMATA_H_
+#pragma once
 
 
 #include "math/automata/automaton.h"
@@ -120,6 +119,9 @@ private:
     }
     void generate_min_terms_rec(vector<ref_t> &constraints, vector<std::pair<vector<bool>, ref_t> > &min_terms, unsigned i, vector<bool> &curr_bv, ref_t &curr_pred) {
         lbool is_sat = m_ba.is_sat(curr_pred);
+        if (is_sat == l_undef)
+            throw default_exception("incomplete theory: unable to generate min-terms");
+
         if (is_sat != l_true) {
             return;
         }
@@ -148,4 +150,3 @@ private:
 
 
 
-#endif 

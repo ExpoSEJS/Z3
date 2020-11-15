@@ -33,6 +33,7 @@ Notes:
 #include "util/scoped_numeral_buffer.h"
 #include "util/ref_buffer.h"
 #include "util/common_msgs.h"
+#include <memory>
 
 namespace polynomial {
 
@@ -528,7 +529,7 @@ namespace polynomial {
             SASSERT(new_capacity > m_capacity);
             monomial * new_ptr  = allocate(new_capacity);
             new_ptr->m_size = m_ptr->m_size;
-            memcpy(new_ptr->m_powers, m_ptr->m_powers, sizeof(power)*m_ptr->m_size);
+            std::uninitialized_copy(m_ptr->m_powers, m_ptr->m_powers + m_ptr->m_size, new_ptr->m_powers);
             deallocate(m_ptr, m_capacity);
             m_ptr      = new_ptr;
             m_capacity = new_capacity;
@@ -548,8 +549,7 @@ namespace polynomial {
                 increase_capacity(sz * 2);
             SASSERT(sz < m_capacity);
             m_ptr->m_size = sz;
-            if (sz == 0) return;
-            memcpy(m_ptr->m_powers, pws, sizeof(power) * sz);
+            std::uninitialized_copy(pws, pws + sz, m_ptr->m_powers);
         }
 
         void reset() {
@@ -794,11 +794,15 @@ namespace polynomial {
         ~monomial_manager() {
             dec_ref(m_unit);
             CTRACE("polynomial", !m_monomials.empty(),
-                   tout << "monomials leaked\n";
+                   tout << "monomials leaked (can happen during cancelation)\n";
                    for (auto * m : m_monomials) {
                        m->display(tout << m->id() << " " << m->ref_count() << " ") << "\n";
                    });
-            SASSERT(m_monomials.empty());
+            for (monomial* m : m_monomials) {
+                unsigned obj_sz = monomial::get_obj_size(m->size());
+                m_allocator->deallocate(obj_sz, m);                
+            }
+            m_monomials.reset();
             if (m_own_allocator)
                 dealloc(m_allocator);
         }
@@ -2653,6 +2657,9 @@ namespace polynomial {
                 m_tmp_linear_ms.push_back(mk_unit());
             }
             polynomial * p = mk_polynomial(m_tmp_linear_as.size(), m_tmp_linear_as.c_ptr(), m_tmp_linear_ms.c_ptr());
+            for (auto& a : m_tmp_linear_as) {
+                m_manager.del(a);
+            }
             m_tmp_linear_as.reset();
             m_tmp_linear_ms.reset();
             return p;

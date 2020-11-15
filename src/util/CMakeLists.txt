@@ -51,6 +51,7 @@ z3_add_component(util
     small_object_allocator.cpp
     smt2_util.cpp
     stack.cpp
+    state_graph.cpp
     statistics.cpp
     symbol.cpp
     timeit.cpp
@@ -64,9 +65,11 @@ z3_add_component(util
   MEMORY_INIT_FINALIZER_HEADERS
     debug.h
     gparams.h
+    scoped_timer.h
     prime_generator.h
     rational.h
     rlimit.h
+    state_graph.h
     symbol.h
     trace.h
 )

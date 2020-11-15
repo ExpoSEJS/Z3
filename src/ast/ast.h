@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef AST_H_
-#define AST_H_
+#pragma once
 
 
 #include "util/vector.h"
@@ -35,6 +34,7 @@ Revision History:
 #include "util/small_object_allocator.h"
 #include "util/obj_ref.h"
 #include "util/ref_vector.h"
+#include "util/ref_pair_vector.h"
 #include "util/ref_buffer.h"
 #include "util/obj_mark.h"
 #include "util/obj_hashtable.h"
@@ -126,10 +126,11 @@ public:
     explicit parameter(rational && r) : m_kind(PARAM_RATIONAL), m_rational(alloc(rational, std::move(r))) {}
     explicit parameter(double d):m_kind(PARAM_DOUBLE), m_dval(d) {}
     explicit parameter(const char *s):m_kind(PARAM_SYMBOL), m_symbol(symbol(s)) {}
+    explicit parameter(const std::string &s):m_kind(PARAM_SYMBOL), m_symbol(symbol(s)) {}
     explicit parameter(unsigned ext_id, bool):m_kind(PARAM_EXTERNAL), m_ext_id(ext_id) {}
     parameter(parameter const&);
 
-    parameter(parameter && other) : m_kind(other.m_kind) {
+    parameter(parameter && other) noexcept : m_kind(other.m_kind) {
         switch (other.m_kind) {
         case PARAM_INT: m_int = other.get_int(); break;
         case PARAM_AST: m_ast = other.get_ast(); break;
@@ -263,7 +264,6 @@ public:
               unsigned num_parameters = 0, parameter const * parameters = nullptr, bool private_params = false);
 
     decl_info(decl_info const& other);
-    ~decl_info() {}
 
     void init_eh(ast_manager & m);
     void del_eh(ast_manager & m);
@@ -311,9 +311,8 @@ class sort_size {
     uint64_t m_size; // It is only meaningful if m_kind == SS_FINITE
     sort_size(kind_t k, uint64_t r):m_kind(k), m_size(r) {}
 public:
-    sort_size():m_kind(SS_INFINITE) {}
+    sort_size():m_kind(SS_INFINITE), m_size(0) {}
     sort_size(uint64_t const & sz):m_kind(SS_FINITE), m_size(sz) {}
-    sort_size(sort_size const& other): m_kind(other.m_kind), m_size(other.m_size) {}
     explicit sort_size(rational const& r) {
         if (r.is_uint64()) {
             m_kind = SS_FINITE;
@@ -370,8 +369,6 @@ public:
     sort_info(decl_info const& di, sort_size const& num_elements) : 
         decl_info(di), m_num_elements(num_elements) {}
 
-    ~sort_info() {}
-
     bool is_infinite() const { return m_num_elements.is_infinite(); }
     bool is_very_big() const { return m_num_elements.is_very_big(); }
     sort_size const & get_num_elements() const { return m_num_elements; }
@@ -402,7 +399,6 @@ struct func_decl_info : public decl_info {
     bool m_lambda:1;
 
     func_decl_info(family_id family_id = null_family_id, decl_kind k = null_decl_kind, unsigned num_parameters = 0, parameter const * parameters = nullptr);
-    ~func_decl_info() {}
 
     bool is_associative() const { return m_left_assoc && m_right_assoc; }
     bool is_left_associative() const { return m_left_assoc; }
@@ -489,7 +485,7 @@ protected:
 
     void dec_ref() {
         SASSERT(m_ref_count > 0);
-        m_ref_count --;
+        --m_ref_count;
     }
 
     ast(ast_kind k):m_id(UINT_MAX), m_kind(k), m_mark1(false), m_mark2(false), m_mark_shared_occs(false), m_ref_count(0) {
@@ -984,6 +980,7 @@ struct builtin_name {
     decl_kind m_kind;
     symbol    m_name;
     builtin_name(char const * name, decl_kind k) : m_kind(k), m_name(name) {}
+    builtin_name(const std::string &name, decl_kind k) : m_kind(k), m_name(name) {}
 };
 
 /**
@@ -1553,7 +1550,6 @@ protected:
     bool slow_not_contains(ast const * n);
 #endif
     ast_manager *             m_format_manager; // hack for isolating format objects in a different manager.
-    symbol                    m_rec_fun;
     symbol                    m_lambda_def;
 
     void init();
@@ -1573,6 +1569,12 @@ public:
 
     bool has_trace_stream() const { return m_trace_stream != nullptr; }
     std::ostream & trace_stream() { SASSERT(has_trace_stream()); return *m_trace_stream; }
+    struct suspend_trace {
+        ast_manager& m;
+        std::fstream* m_tr;
+        suspend_trace(ast_manager& m): m(m), m_tr(m.m_trace_stream) { m.m_trace_stream = nullptr; }
+        ~suspend_trace() { m.m_trace_stream = m_tr; }
+    };
 
     void enable_int_real_coercions(bool f) { m_int_real_coercions = f; }
     bool int_real_coercions() const { return m_int_real_coercions; }
@@ -1666,13 +1668,10 @@ public:
 
     bool contains(ast * a) const { return m_ast_table.contains(a); }
     
-    bool is_rec_fun_def(quantifier* q) const { return q->get_qid() == m_rec_fun; }
     bool is_lambda_def(quantifier* q) const { return q->get_qid() == m_lambda_def; }
     void add_lambda_def(func_decl* f, quantifier* q);
     quantifier* is_lambda_def(func_decl* f);
-    func_decl* get_rec_fun_decl(quantifier* q) const;
     
-    symbol const& rec_fun_qid() const { return m_rec_fun; }
 
     symbol const& lambda_def_qid() const { return m_lambda_def; }
 
@@ -1681,9 +1680,8 @@ public:
     void debug_ref_count() { m_debug_ref_count = true; }
 
     void inc_ref(ast* n) {
-        if (n) {
+        if (n) 
             n->inc_ref();
-        }
     }
     
     void dec_ref(ast* n) {
@@ -1887,11 +1885,19 @@ public:
         return mk_app(decl, args.size(), args.c_ptr());
     }
 
+    app* mk_app(func_decl* decl, ref_buffer<expr, ast_manager> const& args) {
+        return mk_app(decl, args.size(), args.c_ptr());
+    }
+
     app* mk_app(func_decl* decl, ref_vector<app, ast_manager> const& args) {
         return mk_app(decl, args.size(), (expr*const*)args.c_ptr());
     }
 
     app * mk_app(func_decl * decl, ptr_vector<expr> const& args) {
+        return mk_app(decl, args.size(), args.c_ptr());
+    }
+
+    app * mk_app(func_decl * decl, ptr_buffer<expr> const& args) {
         return mk_app(decl, args.size(), args.c_ptr());
     }
 
@@ -1966,7 +1972,8 @@ public:
     }
 
     app * mk_fresh_const(symbol const& prefix, sort * s, bool skolem = true) { 
-        return mk_fresh_const(prefix.str().c_str(), s, skolem);
+        auto str = prefix.str();
+        return mk_fresh_const(str.c_str(), s, skolem);
     }
 
     symbol mk_fresh_var_name(char const * prefix = nullptr);
@@ -2191,6 +2198,15 @@ public:
     app * mk_or(expr * arg1, expr * arg2, expr * arg3) { return mk_app(m_basic_family_id, OP_OR, arg1, arg2, arg3); }
     app * mk_or(expr* a, expr* b, expr* c, expr* d) { expr* args[4] = { a, b, c, d }; return mk_app(m_basic_family_id, OP_OR, 4, args); }
     app * mk_and(expr * arg1, expr * arg2, expr * arg3) { return mk_app(m_basic_family_id, OP_AND, arg1, arg2, arg3); }
+
+    app * mk_and(ref_vector<expr, ast_manager> const& args) { return mk_and(args.size(), args.c_ptr()); }
+    app * mk_and(ptr_vector<expr> const& args) { return mk_and(args.size(), args.c_ptr()); }
+    app * mk_and(ref_buffer<expr, ast_manager> const& args) { return mk_and(args.size(), args.c_ptr()); }
+    app * mk_and(ptr_buffer<expr> const& args) { return mk_and(args.size(), args.c_ptr()); }
+    app * mk_or(ref_vector<expr, ast_manager> const& args) { return mk_or(args.size(), args.c_ptr()); }
+    app * mk_or(ptr_vector<expr> const& args) { return mk_or(args.size(), args.c_ptr()); }
+    app * mk_or(ref_buffer<expr, ast_manager> const& args) { return mk_or(args.size(), args.c_ptr()); }
+    app * mk_or(ptr_buffer<expr> const& args) { return mk_or(args.size(), args.c_ptr()); }
     app * mk_implies(expr * arg1, expr * arg2) { return mk_app(m_basic_family_id, OP_IMPLIES, arg1, arg2); }
     app * mk_not(expr * n) { return mk_app(m_basic_family_id, OP_NOT, n); }
     app * mk_distinct(unsigned num_args, expr * const * args);
@@ -2454,6 +2470,9 @@ typedef ref_vector<var, ast_manager>       var_ref_vector;
 typedef ref_vector<quantifier, ast_manager> quantifier_ref_vector;
 typedef app_ref_vector                     proof_ref_vector;
 
+typedef ref_pair_vector<expr, ast_manager> expr_ref_pair_vector;
+
+
 // -----------------------------------
 //
 // ast_buffer
@@ -2676,6 +2695,5 @@ inline std::ostream& operator<<(std::ostream& out, parameter_pp const& pp) {
 }
 
 
-#endif /* AST_H_ */
 
 

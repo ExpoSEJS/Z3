@@ -16,8 +16,8 @@ Author:
 Notes:
 
 --*/
+#include "params/rewriter_params.hpp"
 #include "ast/rewriter/th_rewriter.h"
-#include "ast/rewriter/rewriter_params.hpp"
 #include "ast/rewriter/bool_rewriter.h"
 #include "ast/rewriter/arith_rewriter.h"
 #include "ast/rewriter/bv_rewriter.h"
@@ -26,6 +26,7 @@ Notes:
 #include "ast/rewriter/fpa_rewriter.h"
 #include "ast/rewriter/dl_rewriter.h"
 #include "ast/rewriter/pb_rewriter.h"
+#include "ast/rewriter/recfun_rewriter.h"
 #include "ast/rewriter/seq_rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/rewriter/var_subst.h"
@@ -46,6 +47,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     dl_rewriter         m_dl_rw;
     pb_rewriter         m_pb_rw;
     seq_rewriter        m_seq_rw;
+    recfun_rewriter     m_rec_rw;
     arith_util          m_a_util;
     bv_util             m_bv_util;
     unsigned long long  m_max_memory; // in bytes
@@ -201,6 +203,11 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 if (st != BR_FAILED)
                     return st;
             }
+            if ((k == OP_AND || k == OP_OR /*|| k == OP_EQ*/) && m_seq_rw.u().has_re()) {
+                st = m_seq_rw.mk_bool_app(f, num, args, result); 
+                if (st != BR_FAILED)
+                    return st;
+            }
             return m_b_rw.mk_app_core(f, num, args, result);
         }
         if (fid == m_a_rw.get_fid())
@@ -219,6 +226,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             return m_pb_rw.mk_app_core(f, num, args, result);
         if (fid == m_seq_rw.get_fid())
             return m_seq_rw.mk_app_core(f, num, args, result);
+        if (fid == m_rec_rw.get_fid())
+            return m_rec_rw.mk_app_core(f, num, args, result);
         return BR_FAILED;
     }
 
@@ -694,11 +703,12 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 p1 = m().mk_pull_quant(old_q, q1);
             }
         }
-        else if (
-                 old_q->get_kind() == lambda_k &&
+        else if (old_q->get_kind() == lambda_k &&
                  is_ground(new_body)) {
             result = m_ar_rw.util().mk_const_array(old_q->get_sort(), new_body);
-            result_pr = nullptr;
+            if (m().proofs_enabled()) {
+                result_pr = m().mk_rewrite(old_q, result);
+            }
             return true;
         }
         else {
@@ -747,6 +757,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         m_dl_rw(m),
         m_pb_rw(m),
         m_seq_rw(m),
+        m_rec_rw(m),
         m_a_util(m),
         m_bv_util(m),
         m_used_dependencies(m),
@@ -777,8 +788,6 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
 };
 }
-
-template class rewriter_tpl<th_rewriter_cfg>;
 
 struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
     th_rewriter_cfg m_cfg;

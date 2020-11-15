@@ -16,15 +16,13 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_DL_H_
-#define THEORY_DL_H_
+#pragma once
 
 
 namespace smt {
 
-    theory* mk_theory_dl(ast_manager& m);
+    theory* mk_theory_dl(context& ctx);
 
 };
 
-#endif /* THEORY_DL_H_ */
 

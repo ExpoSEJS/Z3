@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef STATISTICS_H_
-#define STATISTICS_H_
+#pragma once
 
 #include<iostream>
 #include "util/vector.h"
@@ -33,8 +32,8 @@ public:
     void reset();
     void update(char const * key, unsigned inc);
     void update(char const * key, double inc);
-    void display(std::ostream & out) const;
-    void display_smt2(std::ostream & out) const;
+    std::ostream& display(std::ostream & out) const;
+    std::ostream& display_smt2(std::ostream & out) const;
     void display_internal(std::ostream & out) const;
     unsigned size() const;
     bool is_uint(unsigned idx) const;
@@ -43,7 +42,8 @@ public:
     double get_double_value(unsigned idx) const;
 };
 
+inline std::ostream& operator<<(std::ostream& out, statistics const& st) { return st.display(out); }
+
 void get_memory_statistics(statistics& st);
 void get_rlimit_statistics(reslimit& l, statistics& st);
 
-#endif
